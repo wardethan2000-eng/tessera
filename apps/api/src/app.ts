@@ -2,6 +2,8 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./lib/auth.js";
+import { treesPlugin } from "./routes/trees.js";
+import { peoplePlugin } from "./routes/people.js";
 
 export function buildApp() {
   const app = Fastify({ logger: true });
@@ -38,6 +40,9 @@ export function buildApp() {
     name: "FamilyTree API",
     status: "ready",
   }));
+
+  app.register(treesPlugin);
+  app.register(peoplePlugin);
 
   return app;
 }
