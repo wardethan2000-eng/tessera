@@ -2,6 +2,8 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./lib/auth.js";
+import { invitationsPlugin } from "./routes/invitations.js";
+import { exportPlugin } from "./routes/export.js";
 import { treesPlugin } from "./routes/trees.js";
 import { peoplePlugin } from "./routes/people.js";
 import { mediaPlugin } from "./routes/media.js";
@@ -49,6 +51,8 @@ export function buildApp() {
   app.register(mediaPlugin);
   app.register(memoriesPlugin);
   app.register(relationshipsPlugin);
+  app.register(invitationsPlugin);
+  app.register(exportPlugin);
 
   return app;
 }

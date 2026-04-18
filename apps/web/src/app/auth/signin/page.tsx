@@ -1,12 +1,18 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { signIn } from "@/lib/auth-client";
 
-export default function SignInPage() {
+function SignInContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const inviteToken = searchParams.get("invite");
+  const afterAuth = inviteToken
+    ? `/invitations/accept?token=${encodeURIComponent(inviteToken)}`
+    : "/";
+
   const [mode, setMode] = useState<"password" | "magic">("password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -21,14 +27,14 @@ export default function SignInPage() {
     const { error: err } = await signIn.email({
       email,
       password,
-      callbackURL: "/dashboard",
+      callbackURL: afterAuth,
     });
     setLoading(false);
     if (err) {
       setError(err.message ?? "Sign in failed. Check your email and password.");
       return;
     }
-    router.push("/dashboard");
+    router.push(afterAuth);
   }
 
   async function handleMagicLink(e: React.FormEvent) {
@@ -37,7 +43,7 @@ export default function SignInPage() {
     setLoading(true);
     const { error: err } = await signIn.magicLink({
       email,
-      callbackURL: "/dashboard",
+      callbackURL: afterAuth,
     });
     setLoading(false);
     if (err) {
@@ -113,7 +119,7 @@ export default function SignInPage() {
         <p className="text-center text-sm text-stone-500">
           New here?{" "}
           <Link
-            href="/auth/signup"
+            href={inviteToken ? `/auth/signup?invite=${encodeURIComponent(inviteToken)}` : "/auth/signup"}
             className="text-stone-900 underline underline-offset-2"
           >
             Create an account
@@ -123,6 +129,15 @@ export default function SignInPage() {
     </main>
   );
 }
+
+export default function SignInPage() {
+  return (
+    <Suspense fallback={<main className="flex min-h-screen items-center justify-center bg-stone-50" />}>
+      <SignInContent />
+    </Suspense>
+  );
+}
+
 
 function Field({
   label,

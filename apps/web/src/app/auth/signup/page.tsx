@@ -1,12 +1,19 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { signUp } from "@/lib/auth-client";
 
-export default function SignUpPage() {
+function SignUpContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const inviteToken = searchParams.get("invite");
+  // New users with an invite go to the accept page; others go to onboarding
+  const afterAuth = inviteToken
+    ? `/invitations/accept?token=${encodeURIComponent(inviteToken)}`
+    : "/onboarding";
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -21,14 +28,14 @@ export default function SignUpPage() {
       name,
       email,
       password,
-      callbackURL: "/onboarding",
+      callbackURL: afterAuth,
     });
     setLoading(false);
     if (err) {
       setError(err.message ?? "Failed to create account.");
       return;
     }
-    router.push("/onboarding");
+    router.push(afterAuth);
   }
 
   return (
@@ -37,10 +44,12 @@ export default function SignUpPage() {
         <div className="text-center">
           <p className="text-xs uppercase tracking-widest text-stone-400">FamilyTree</p>
           <h1 className="mt-2 text-2xl font-semibold text-stone-900">
-            Create your account
+            {inviteToken ? "Create your account" : "Create your account"}
           </h1>
           <p className="mt-1 text-sm text-stone-500">
-            You'll be the founder of your family's archive.
+            {inviteToken
+              ? "Create an account to accept your invitation."
+              : "You'll be the founder of your family's archive."}
           </p>
         </div>
 
@@ -81,7 +90,7 @@ export default function SignUpPage() {
         <p className="text-center text-sm text-stone-500">
           Already have an account?{" "}
           <Link
-            href="/auth/signin"
+            href={inviteToken ? `/auth/signin?invite=${encodeURIComponent(inviteToken)}` : "/auth/signin"}
             className="text-stone-900 underline underline-offset-2"
           >
             Sign in
@@ -91,6 +100,15 @@ export default function SignUpPage() {
     </main>
   );
 }
+
+export default function SignUpPage() {
+  return (
+    <Suspense fallback={<main className="flex min-h-screen items-center justify-center bg-stone-50" />}>
+      <SignUpContent />
+    </Suspense>
+  );
+}
+
 
 function Field({
   label,

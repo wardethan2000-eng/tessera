@@ -64,4 +64,35 @@ export async function treesPlugin(app: FastifyInstance): Promise<void> {
 
     return reply.send({ ...membership.tree, role: membership.role });
   });
+
+  /** GET /api/trees/:treeId/members — list all members of a tree */
+  app.get("/api/trees/:treeId/members", async (request, reply) => {
+    const session = await getSession(request.headers);
+    if (!session) return reply.status(401).send({ error: "Unauthorized" });
+
+    const { treeId } = request.params as { treeId: string };
+
+    const userMembership = await db.query.treeMemberships.findFirst({
+      where: (t, { and, eq }) =>
+        and(eq(t.treeId, treeId), eq(t.userId, session.user.id)),
+    });
+    if (!userMembership) {
+      return reply.status(403).send({ error: "Not a member of this tree" });
+    }
+
+    const members = await db.query.treeMemberships.findMany({
+      where: (t, { eq }) => eq(t.treeId, treeId),
+      with: { user: true },
+    });
+
+    return reply.send(
+      members.map((m) => ({
+        userId: m.userId,
+        role: m.role,
+        name: m.user?.name ?? null,
+        email: m.user?.email ?? "",
+        joinedAt: m.joinedAt,
+      }))
+    );
+  });
 }

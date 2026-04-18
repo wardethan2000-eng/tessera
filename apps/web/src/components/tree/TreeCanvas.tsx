@@ -349,7 +349,7 @@ function TreeCanvasInner({
 
         {/* Settings */}
         <a
-          href="/dashboard"
+          href={`/trees/${treeId}/settings`}
           style={{
             fontFamily: "var(--font-ui)",
             fontSize: 12,

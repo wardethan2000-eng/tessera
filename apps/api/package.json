@@ -16,6 +16,8 @@
     "@better-auth/drizzle-adapter": "^1.6.5",
     "@familytree/database": "workspace:*",
     "@fastify/cors": "^11.2.0",
+    "@types/archiver": "^7.0.0",
+    "archiver": "^7.0.1",
     "better-auth": "^1.6.5",
     "drizzle-orm": "^0.44.7",
     "fastify": "^5.6.1",
