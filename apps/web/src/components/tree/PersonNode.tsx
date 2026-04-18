@@ -13,7 +13,6 @@ function PersonNodeComponent({ data }: NodeProps<PersonFlowNode>) {
     essenceLine,
     isYou,
     isFocused,
-    isDimmed,
   } = data;
 
   const initials = name
@@ -39,7 +38,6 @@ function PersonNodeComponent({ data }: NodeProps<PersonFlowNode>) {
   return (
     <div
       style={{
-        opacity: isDimmed ? 0.2 : 1,
         transition: "opacity 500ms cubic-bezier(0.22, 0.61, 0.36, 1)",
         display: "flex",
         flexDirection: "column",

@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
+  MiniMap,
   useNodesState,
   useEdgesState,
   useReactFlow,
@@ -16,14 +17,11 @@ import "@xyflow/react/dist/style.css";
 import React from "react";
 
 import { PersonNode as PersonNodeComponent } from "./PersonNode";
-import { MemoryCardNode as MemoryCardNodeComponent } from "./MemoryCardNode";
+import { CinematicPersonOverlay } from "./CinematicPersonOverlay";
 import type {
   ApiPerson,
   ApiRelationship,
-  ApiMemory,
-  FocusLevel,
   PersonFlowNode,
-  MemoryCardFlowNode,
   TreeFlowNode,
   TreeEdge,
 } from "./treeTypes";
@@ -31,9 +29,6 @@ import {
   computeLayout,
   buildPersonNodes,
   buildEdges,
-  getImmediateFamily,
-  buildMemoryCardNodes,
-  buildMemoryEdges,
 } from "./treeLayout";
 
 // Cast to avoid React 19 JSX type incompatibility with @xyflow/react's React 18 types
@@ -41,20 +36,22 @@ const ReactFlow = ReactFlowBase as unknown as React.ComponentType<ReactFlowProps
 
 const NODE_TYPES = {
   person: PersonNodeComponent,
-  memoryCard: MemoryCardNodeComponent,
 };
+
+interface HoverState {
+  personId: string;
+  screenX: number;
+  screenY: number;
+}
 
 interface TreeCanvasProps {
   treeId: string;
   treeName: string;
   people: ApiPerson[];
   relationships: ApiRelationship[];
-  currentUserId: string | null;
   currentUserPersonId: string | null;
-  onMemoryClick: (memory: ApiMemory, person: ApiPerson) => void;
   onDriftClick: () => void;
   onPersonDetailClick: (personId: string) => void;
-  apiBase: string;
 }
 
 function TreeCanvasInner({
@@ -62,25 +59,19 @@ function TreeCanvasInner({
   treeName,
   people,
   relationships,
-  currentUserId,
   currentUserPersonId,
-  onMemoryClick,
   onDriftClick,
   onPersonDetailClick,
-  apiBase,
 }: TreeCanvasProps) {
   const reactFlow = useReactFlow();
   const [nodes, setNodes, onNodesChange] = useNodesState<TreeFlowNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<TreeEdge>([]);
-  const [focusLevel, setFocusLevel] = useState<FocusLevel>(0);
-  const [focusedPersonId, setFocusedPersonId] = useState<string | null>(null);
-  const [loadingMemories, setLoadingMemories] = useState(false);
-  const [memoriesCache, setMemoriesCache] = useState<Map<string, ApiMemory[]>>(new Map());
-  const [hintVisible, setHintVisible] = useState(true);
-  const hasInteracted = useRef(false);
+  const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
+  const [hoverState, setHoverState] = useState<HoverState | null>(null);
+  const [showLegend, setShowLegend] = useState(false);
   const layoutRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Compute base layout once
   const layout = useMemo(
     () => computeLayout(people, relationships),
     [people, relationships]
@@ -90,167 +81,98 @@ function TreeCanvasInner({
     layoutRef.current = layout;
   }, [layout]);
 
-  // Initialize nodes + edges at Level 0
+  // Rebuild nodes whenever people/layout/selected changes
   useEffect(() => {
-    const personNodes = buildPersonNodes(
-      people,
-      layout,
-      null,
-      new Set(),
-      currentUserPersonId
-    );
+    const personNodes = buildPersonNodes(people, layout, selectedPersonId, currentUserPersonId);
     const edgeList = buildEdges(relationships);
     setNodes(personNodes);
     setEdges(edgeList);
+  }, [people, relationships, layout, selectedPersonId, currentUserPersonId, setNodes, setEdges]);
 
-    setTimeout(() => {
+  // Initial fitView after nodes are set
+  useEffect(() => {
+    const timer = setTimeout(() => {
       reactFlow.fitView({ duration: 600, padding: 0.12 });
-    }, 100);
-  }, [people, relationships, layout, currentUserPersonId, reactFlow, setNodes, setEdges]);
+    }, 120);
+    return () => clearTimeout(timer);
+  // Only run on mount / people change
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [people.length]);
 
-  const fetchMemories = useCallback(
-    async (personId: string): Promise<ApiMemory[]> => {
-      if (memoriesCache.has(personId)) return memoriesCache.get(personId)!;
-      setLoadingMemories(true);
-      try {
-        const res = await fetch(
-          `${apiBase}/api/trees/${treeId}/people/${personId}`,
-          { credentials: "include" }
-        );
-        if (!res.ok) return [];
-        const data = await res.json();
-        const memories: ApiMemory[] = (data.memories ?? []).map((m: ApiMemory) => ({
-          ...m,
-          personId: personId,
-        }));
-        setMemoriesCache((prev) => new Map(prev).set(personId, memories));
-        return memories;
-      } finally {
-        setLoadingMemories(false);
+  const selectPerson = useCallback(
+    (personId: string) => {
+      setSelectedPersonId(personId);
+      const pos = layoutRef.current.get(personId);
+      if (pos) {
+        reactFlow.setCenter(pos.x + 48, pos.y + 65, { duration: 600, zoom: 1.4 });
       }
     },
-    [apiBase, treeId, memoriesCache]
+    [reactFlow]
   );
 
-  const focusPerson = useCallback(
-    async (personId: string) => {
-      const clusterIds = getImmediateFamily(personId, relationships);
-      const memories = await fetchMemories(personId);
-
-      const personPos = layoutRef.current.get(personId) ?? { x: 0, y: 0 };
-      const memCardNodes = buildMemoryCardNodes(
-        personPos.x,
-        personPos.y,
-        personId,
-        memories
-      );
-      const memEdges = buildMemoryEdges(personId, memCardNodes);
-
-      // Rebuild person nodes with focus state
-      const personNodes = buildPersonNodes(
-        people,
-        layoutRef.current,
-        personId,
-        clusterIds,
-        currentUserPersonId
-      );
-
-      const baseEdges = buildEdges(relationships);
-      setNodes([...personNodes, ...memCardNodes]);
-      setEdges([...baseEdges, ...memEdges]);
-      setFocusedPersonId(personId);
-      setFocusLevel(1);
-
-      // Compute bounds for cluster + memory cards
-      const clusterNodeIds = [...clusterIds];
-      const clusterPositions = clusterNodeIds
-        .map((id) => layoutRef.current.get(id))
-        .filter(Boolean) as { x: number; y: number }[];
-
-      const memCardPositions = memCardNodes.map((n) => n.position);
-      const allPositions = [...clusterPositions, ...memCardPositions];
-
-      if (allPositions.length > 0) {
-        const minX = Math.min(...allPositions.map((p) => p.x)) - 60;
-        const minY = Math.min(...allPositions.map((p) => p.y)) - 60;
-        const maxX = Math.max(...allPositions.map((p) => p.x)) + 160;
-        const maxY = Math.max(...allPositions.map((p) => p.y)) + 170;
-
-        reactFlow.fitBounds(
-          { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
-          { duration: 700 }
-        );
-      }
-    },
-    [
-      people,
-      relationships,
-      currentUserPersonId,
-      fetchMemories,
-      reactFlow,
-      setNodes,
-      setEdges,
-    ]
-  );
-
-  const unfocus = useCallback(() => {
-    const personNodes = buildPersonNodes(
-      people,
-      layoutRef.current,
-      null,
-      new Set(),
-      currentUserPersonId
-    );
-    const edgeList = buildEdges(relationships);
-    setNodes(personNodes);
-    setEdges(edgeList);
-    setFocusedPersonId(null);
-    setFocusLevel(0);
+  const clearSelection = useCallback(() => {
+    setSelectedPersonId(null);
     setTimeout(() => {
       reactFlow.fitView({ duration: 600, padding: 0.12 });
     }, 50);
-  }, [people, relationships, currentUserPersonId, reactFlow, setNodes, setEdges]);
+  }, [reactFlow]);
 
   const handleNodeClick: NodeMouseHandler<TreeFlowNode> = useCallback(
     (_, node) => {
-      if (!hasInteracted.current) {
-        hasInteracted.current = true;
-        setHintVisible(false);
+      if (node.type !== "person") return;
+      const personNode = node as PersonFlowNode;
+
+      // Cancel any pending single-click timer
+      if (clickTimerRef.current) {
+        clearTimeout(clickTimerRef.current);
+        clickTimerRef.current = null;
       }
 
-      if (node.type === "person") {
-        const personNode = node as PersonFlowNode;
-        if (focusedPersonId === personNode.data.personId) {
-          // Already focused — navigate to person detail
-          onPersonDetailClick(personNode.data.personId);
-        } else {
-          focusPerson(personNode.data.personId);
-        }
-      } else if (node.type === "memoryCard") {
-        const cardNode = node as MemoryCardFlowNode;
-        if (cardNode.data.isOverflow) {
-          const personId = cardNode.data.personId;
-          onPersonDetailClick(personId);
-        } else {
-          const person = people.find((p) => p.id === cardNode.data.personId);
-          if (person) {
-            const memories = memoriesCache.get(cardNode.data.personId) ?? [];
-            const memory = memories.find((m) => m.id === cardNode.data.memoryId);
-            if (memory) onMemoryClick(memory, person);
-          }
-        }
-      }
+      // Debounce: wait to see if a double-click follows
+      clickTimerRef.current = setTimeout(() => {
+        clickTimerRef.current = null;
+        selectPerson(personNode.data.personId);
+      }, 240);
     },
-    [focusPerson, focusedPersonId, memoriesCache, onMemoryClick, onPersonDetailClick, people]
+    [selectPerson]
+  );
+
+  const handleNodeDoubleClick: NodeMouseHandler<TreeFlowNode> = useCallback(
+    (_, node) => {
+      if (node.type !== "person") return;
+      const personNode = node as PersonFlowNode;
+
+      // Cancel pending single-click action
+      if (clickTimerRef.current) {
+        clearTimeout(clickTimerRef.current);
+        clickTimerRef.current = null;
+      }
+
+      onPersonDetailClick(personNode.data.personId);
+    },
+    [onPersonDetailClick]
   );
 
   const handlePaneClick = useCallback(() => {
-    if (!hasInteracted.current) {
-      hasInteracted.current = true;
-      setHintVisible(false);
-    }
-    if (focusLevel > 0) unfocus();
-  }, [focusLevel, unfocus]);
+    if (selectedPersonId) clearSelection();
+  }, [selectedPersonId, clearSelection]);
+
+  const handleNodeMouseEnter: NodeMouseHandler<TreeFlowNode> = useCallback(
+    (event, node) => {
+      if (node.type !== "person") return;
+      const personNode = node as PersonFlowNode;
+      setHoverState({
+        personId: personNode.data.personId,
+        screenX: event.clientX,
+        screenY: event.clientY,
+      });
+    },
+    []
+  );
+
+  const handleNodeMouseLeave: NodeMouseHandler<TreeFlowNode> = useCallback(() => {
+    setHoverState(null);
+  }, []);
 
   const handleLocateMe = useCallback(() => {
     if (!currentUserPersonId) return;
@@ -260,8 +182,12 @@ function TreeCanvasInner({
     }
   }, [currentUserPersonId, reactFlow]);
 
-  const focusedPerson = focusedPersonId
-    ? people.find((p) => p.id === focusedPersonId)
+  const selectedPerson = selectedPersonId
+    ? people.find((p) => p.id === selectedPersonId) ?? null
+    : null;
+
+  const hoveredPerson = hoverState
+    ? people.find((p) => p.id === hoverState.personId) ?? null
     : null;
 
   return (
@@ -281,10 +207,9 @@ function TreeCanvasInner({
           display: "flex",
           alignItems: "center",
           padding: "0 20px",
-          gap: 16,
+          gap: 12,
         }}
       >
-        {/* Tree name */}
         <span
           style={{
             fontFamily: "var(--font-display)",
@@ -296,38 +221,8 @@ function TreeCanvasInner({
           {treeName}
         </span>
 
-        {/* Breadcrumb */}
-        {focusedPerson && (
-          <span
-            style={{
-              fontFamily: "var(--font-ui)",
-              fontSize: 12,
-              color: "var(--ink-faded)",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              transition: "opacity 400ms cubic-bezier(0.22, 0.61, 0.36, 1)",
-            }}
-          >
-            <span>›</span>
-            <span
-              style={{ color: "var(--ink-soft)", fontStyle: "italic" }}
-            >
-              {focusedPerson.name}
-            </span>
-          </span>
-        )}
-
         <div style={{ flex: 1 }} />
 
-        {/* Loading indicator */}
-        {loadingMemories && (
-          <span style={{ fontFamily: "var(--font-ui)", fontSize: 11, color: "var(--ink-faded)" }}>
-            Loading…
-          </span>
-        )}
-
-        {/* Drift button */}
         <button
           onClick={onDriftClick}
           style={{
@@ -335,19 +230,15 @@ function TreeCanvasInner({
             fontSize: 13,
             color: "var(--moss)",
             background: "none",
-            border: "none",
+            border: "1px solid var(--rule)",
             cursor: "pointer",
-            padding: "4px 10px",
+            padding: "5px 12px",
             borderRadius: 4,
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
           }}
         >
           Drift ›
         </button>
 
-        {/* Settings */}
         <a
           href={`/trees/${treeId}/settings`}
           style={{
@@ -355,18 +246,19 @@ function TreeCanvasInner({
             fontSize: 12,
             color: "var(--ink-faded)",
             textDecoration: "none",
+            padding: "4px 8px",
           }}
         >
           ⚙
         </a>
       </div>
 
-      {/* Zoom controls */}
+      {/* Left zoom controls */}
       <div
         style={{
           position: "absolute",
           left: 16,
-          bottom: 80,
+          bottom: 60,
           zIndex: 10,
           display: "flex",
           flexDirection: "column",
@@ -376,12 +268,13 @@ function TreeCanvasInner({
         {[
           { label: "+", action: () => reactFlow.zoomIn({ duration: 300 }) },
           { label: "−", action: () => reactFlow.zoomOut({ duration: 300 }) },
-          { label: "⊕", action: handleLocateMe, disabled: !currentUserPersonId },
-        ].map(({ label, action, disabled }) => (
+          { label: "⊕", action: handleLocateMe, disabled: !currentUserPersonId, title: "Locate me" },
+        ].map(({ label, action, disabled, title }) => (
           <button
             key={label}
             onClick={action}
             disabled={disabled}
+            title={title}
             style={{
               width: 32,
               height: 32,
@@ -390,8 +283,8 @@ function TreeCanvasInner({
               borderRadius: 6,
               cursor: disabled ? "default" : "pointer",
               fontFamily: "var(--font-ui)",
-              fontSize: label === "⊕" ? 14 : 16,
-              color: disabled ? "var(--ink-faded)" : label === "⊕" ? "var(--moss)" : "var(--ink)",
+              fontSize: label === "⊕" ? 14 : 18,
+              color: disabled ? "var(--rule)" : label === "⊕" ? "var(--moss)" : "var(--ink)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -403,27 +296,193 @@ function TreeCanvasInner({
         ))}
       </div>
 
-      {/* Canvas hint */}
-      {hintVisible && (
-        <div
+      {/* Legend button */}
+      <div style={{ position: "absolute", left: 16, bottom: 18, zIndex: 10 }}>
+        <button
+          onClick={() => setShowLegend((v) => !v)}
           style={{
-            position: "absolute",
-            bottom: 20,
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 10,
             fontFamily: "var(--font-ui)",
-            fontSize: 12,
+            fontSize: 11,
             color: "var(--ink-faded)",
-            background: "rgba(246,241,231,0.7)",
-            padding: "6px 14px",
-            borderRadius: 20,
-            pointerEvents: "none",
-            transition: "opacity 600ms cubic-bezier(0.22, 0.61, 0.36, 1)",
-            opacity: hintVisible ? 1 : 0,
+            background: "rgba(246,241,231,0.88)",
+            border: "1px solid var(--rule)",
+            borderRadius: 4,
+            padding: "4px 10px",
+            cursor: "pointer",
+            backdropFilter: "blur(8px)",
           }}
         >
-          Drag to move · Scroll to zoom
+          Legend
+        </button>
+
+        {/* Legend panel */}
+        {showLegend && (
+          <div
+            style={{
+              position: "absolute",
+              bottom: 36,
+              left: 0,
+              background: "var(--paper)",
+              border: "1px solid var(--rule)",
+              borderRadius: 6,
+              padding: "14px 16px",
+              minWidth: 180,
+              boxShadow: "0 4px 20px rgba(28,25,21,0.12)",
+            }}
+          >
+            <div
+              style={{
+                fontFamily: "var(--font-ui)",
+                fontSize: 10,
+                color: "var(--ink-faded)",
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+                marginBottom: 10,
+              }}
+            >
+              Legend
+            </div>
+            {[
+              {
+                ring: "1.5px solid var(--rule)",
+                label: "Family member",
+              },
+              {
+                ring: "2px solid var(--moss)",
+                label: "That's you",
+              },
+              {
+                ring: "1.5px dashed var(--ink)",
+                label: "Selected",
+              },
+            ].map(({ ring, label }) => (
+              <div
+                key={label}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  marginBottom: 8,
+                }}
+              >
+                <div
+                  style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: "50%",
+                    border: ring,
+                    background: "var(--paper-deep)",
+                    flexShrink: 0,
+                  }}
+                />
+                <span
+                  style={{
+                    fontFamily: "var(--font-ui)",
+                    fontSize: 12,
+                    color: "var(--ink-soft)",
+                  }}
+                >
+                  {label}
+                </span>
+              </div>
+            ))}
+            <div
+              style={{
+                borderTop: "1px solid var(--rule)",
+                paddingTop: 8,
+                marginTop: 4,
+              }}
+            >
+              {[
+                { dash: "none", label: "Parent / child" },
+                { dash: "4 4", label: "Spouse" },
+              ].map(({ dash, label }) => (
+                <div
+                  key={label}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    marginBottom: 6,
+                  }}
+                >
+                  <svg width="24" height="10">
+                    <line
+                      x1="0"
+                      y1="5"
+                      x2="24"
+                      y2="5"
+                      stroke="var(--rule)"
+                      strokeWidth="1.5"
+                      strokeDasharray={dash === "none" ? undefined : dash}
+                    />
+                  </svg>
+                  <span
+                    style={{
+                      fontFamily: "var(--font-ui)",
+                      fontSize: 12,
+                      color: "var(--ink-soft)",
+                    }}
+                  >
+                    {label}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Hover tooltip */}
+      {hoveredPerson && hoverState && !selectedPersonId && (
+        <div
+          style={{
+            position: "fixed",
+            left: hoverState.screenX + 14,
+            top: hoverState.screenY - 16,
+            zIndex: 15,
+            background: "var(--paper)",
+            border: "1px solid var(--rule)",
+            borderRadius: 6,
+            padding: "10px 14px",
+            boxShadow: "0 4px 20px rgba(28,25,21,0.14)",
+            pointerEvents: "none",
+            minWidth: 140,
+          }}
+        >
+          <div
+            style={{
+              fontFamily: "var(--font-display)",
+              fontSize: 14,
+              color: "var(--ink)",
+              lineHeight: 1.3,
+            }}
+          >
+            {hoveredPerson.name}
+          </div>
+          {hoveredPerson.essenceLine && (
+            <div
+              style={{
+                fontFamily: "var(--font-body)",
+                fontSize: 12,
+                fontStyle: "italic",
+                color: "var(--ink-faded)",
+                marginTop: 3,
+              }}
+            >
+              {hoveredPerson.essenceLine.slice(0, 40)}
+            </div>
+          )}
+          <div
+            style={{
+              fontFamily: "var(--font-ui)",
+              fontSize: 11,
+              color: "var(--moss)",
+              marginTop: 6,
+            }}
+          >
+            Click to explore ›
+          </div>
         </div>
       )}
 
@@ -434,6 +493,9 @@ function TreeCanvasInner({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={handleNodeClick}
+        onNodeDoubleClick={handleNodeDoubleClick}
+        onNodeMouseEnter={handleNodeMouseEnter}
+        onNodeMouseLeave={handleNodeMouseLeave}
         onPaneClick={handlePaneClick}
         nodeTypes={NODE_TYPES}
         panOnScroll={false}
@@ -442,12 +504,6 @@ function TreeCanvasInner({
         maxZoom={2.5}
         style={{ background: "var(--paper)", paddingTop: 52 }}
         proOptions={{ hideAttribution: true }}
-        onMove={() => {
-          if (!hasInteracted.current) {
-            hasInteracted.current = true;
-            setHintVisible(false);
-          }
-        }}
       >
         <Background
           style={{ background: "var(--paper)" }}
@@ -455,7 +511,65 @@ function TreeCanvasInner({
           size={1}
           color="var(--rule)"
         />
+        <MiniMap
+          style={{
+            background: "rgba(246,241,231,0.92)",
+            border: "1px solid var(--rule)",
+          }}
+          nodeColor="var(--ink-faded)"
+          maskColor="rgba(237,230,214,0.5)"
+          position="bottom-right"
+        />
       </ReactFlow>
+
+      {/* Tips & affordances bar */}
+      <div
+        style={{
+          position: "absolute",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: 36,
+          background: "rgba(246,241,231,0.88)",
+          backdropFilter: "blur(8px)",
+          borderTop: "1px solid var(--rule)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 20,
+          zIndex: 10,
+          pointerEvents: "none",
+        }}
+      >
+        {[
+          "Scroll to zoom",
+          "Double-click to open a person",
+          "Click to preview",
+          "Use minimap to navigate",
+        ].map((tip, i) => (
+          <React.Fragment key={tip}>
+            {i > 0 && (
+              <span style={{ color: "var(--rule)", fontSize: 10 }}>·</span>
+            )}
+            <span
+              style={{
+                fontFamily: "var(--font-ui)",
+                fontSize: 11,
+                color: "var(--ink-faded)",
+              }}
+            >
+              {tip}
+            </span>
+          </React.Fragment>
+        ))}
+      </div>
+
+      {/* Cinematic person overlay */}
+      <CinematicPersonOverlay
+        person={selectedPerson}
+        onClose={clearSelection}
+        onEnter={onPersonDetailClick}
+      />
     </div>
   );
 }

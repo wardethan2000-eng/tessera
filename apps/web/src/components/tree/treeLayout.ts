@@ -2,13 +2,11 @@ import Dagre from "@dagrejs/dagre";
 import type {
   ApiPerson,
   ApiRelationship,
-  ApiMemory,
   PersonFlowNode,
-  MemoryCardFlowNode,
   TreeEdge,
 } from "./treeTypes";
 
-function extractYearFromText(text?: string | null): number | null {
+export function extractYearFromText(text?: string | null): number | null {
   if (!text) return null;
   const m = text.match(/\b(\d{4})\b/);
   return m ? parseInt(m[1]!, 10) : null;
@@ -16,11 +14,6 @@ function extractYearFromText(text?: string | null): number | null {
 
 const NODE_WIDTH = 96;
 const NODE_HEIGHT = 130;
-const MEMORY_CARD_WIDTH = 220;
-const MEMORY_CARD_HEIGHT = 110;
-const MEMORY_CARD_GAP = 16;
-const MEMORY_Y_OFFSET = 200;
-const MAX_VISIBLE_MEMORIES = 6;
 
 /** Build dagre layout from people + parent_child relationships */
 export function computeLayout(
@@ -41,7 +34,6 @@ export function computeLayout(
     g.setNode(p.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
   }
 
-  // Only parent_child edges determine vertical ranking
   for (const r of relationships) {
     if (r.type === "parent_child") {
       g.setEdge(r.fromPersonId, r.toPersonId);
@@ -63,18 +55,15 @@ export function computeLayout(
   return positions;
 }
 
-/** Build ReactFlow nodes from people + positions */
+/** Build ReactFlow person nodes */
 export function buildPersonNodes(
   people: ApiPerson[],
   positions: Map<string, { x: number; y: number }>,
-  focusedPersonId: string | null,
-  clusterId: Set<string>,
+  selectedPersonId: string | null,
   currentUserId: string | null
 ): PersonFlowNode[] {
   return people.map((person) => {
     const pos = positions.get(person.id) ?? { x: 0, y: 0 };
-    const isFocused = person.id === focusedPersonId;
-    const isDimmed = focusedPersonId !== null && !clusterId.has(person.id);
 
     return {
       id: person.id,
@@ -88,11 +77,9 @@ export function buildPersonNodes(
         portraitUrl: person.portraitUrl,
         essenceLine: person.essenceLine,
         isYou: person.id === currentUserId,
-        isFocused,
-        isDimmed,
+        isFocused: person.id === selectedPersonId,
       },
       draggable: false,
-      selectable: !isDimmed,
     };
   });
 }
@@ -107,10 +94,7 @@ export function buildEdges(relationships: ApiRelationship[]): TreeEdge[] {
           source: r.fromPersonId,
           target: r.toPersonId,
           type: "smoothstep",
-          style: {
-            stroke: "var(--rule)",
-            strokeWidth: 1.5,
-          },
+          style: { stroke: "var(--rule)", strokeWidth: 1.5 },
           animated: false,
         } as TreeEdge,
       ];
@@ -136,8 +120,8 @@ export function buildEdges(relationships: ApiRelationship[]): TreeEdge[] {
 }
 
 /**
- * Collect the immediate family cluster for a focused person.
- * Returns Set of personIds that should remain fully visible.
+ * Collect immediate family cluster for a person.
+ * Returns Set of personIds (person + parents + children + spouses).
  */
 export function getImmediateFamily(
   personId: string,
@@ -147,8 +131,8 @@ export function getImmediateFamily(
 
   for (const r of relationships) {
     if (r.type === "parent_child") {
-      if (r.toPersonId === personId) ids.add(r.fromPersonId); // parents
-      if (r.fromPersonId === personId) ids.add(r.toPersonId); // children
+      if (r.toPersonId === personId) ids.add(r.fromPersonId);
+      if (r.fromPersonId === personId) ids.add(r.toPersonId);
     }
     if (r.type === "spouse") {
       if (r.fromPersonId === personId) ids.add(r.toPersonId);
@@ -159,84 +143,4 @@ export function getImmediateFamily(
   return ids;
 }
 
-/**
- * Compute positions for memory cards below a focused person node.
- * Returns array of { id, x, y } in canvas coordinates.
- */
-export function memoryCardPositions(
-  personX: number,
-  personY: number,
-  memoryCount: number
-): { x: number; y: number }[] {
-  const displayed = Math.min(memoryCount, MAX_VISIBLE_MEMORIES);
-  const totalWidth =
-    displayed * MEMORY_CARD_WIDTH + (displayed - 1) * MEMORY_CARD_GAP;
-  const startX = personX + NODE_WIDTH / 2 - totalWidth / 2;
-  const cardY = personY + NODE_HEIGHT + MEMORY_Y_OFFSET;
-
-  return Array.from({ length: displayed }, (_, i) => ({
-    x: startX + i * (MEMORY_CARD_WIDTH + MEMORY_CARD_GAP),
-    y: cardY,
-  }));
-}
-
-/**
- * Build memory card ReactFlow nodes for the focused person.
- */
-export function buildMemoryCardNodes(
-  personX: number,
-  personY: number,
-  personId: string,
-  memories: ApiMemory[]
-): MemoryCardFlowNode[] {
-  const positions = memoryCardPositions(personX, personY, memories.length);
-  const displayed = memories.slice(0, MAX_VISIBLE_MEMORIES);
-
-  return displayed.map((memory, i) => {
-    const pos = positions[i]!;
-    const isOverflow = i === MAX_VISIBLE_MEMORIES - 1 && memories.length > MAX_VISIBLE_MEMORIES;
-
-    return {
-      id: `memory-card-${memory.id}`,
-      type: "memoryCard" as const,
-      position: pos,
-      data: {
-        memoryId: memory.id,
-        personId,
-        kind: memory.kind,
-        title: memory.title,
-        bodyPreview: memory.body?.slice(0, 80),
-        mediaUrl: memory.mediaUrl,
-        year: extractYearFromText(memory.dateOfEventText),
-        contributorName: null,
-        isOverflow,
-        overflowCount: isOverflow ? memories.length - MAX_VISIBLE_MEMORIES + 1 : 0,
-      },
-      draggable: false,
-    } as MemoryCardFlowNode;
-  });
-}
-
-/**
- * Build dashed edges from person node to each of their memory cards.
- */
-export function buildMemoryEdges(
-  personId: string,
-  memoryNodes: MemoryCardFlowNode[]
-): TreeEdge[] {
-  return memoryNodes.map((card) => ({
-    id: `memory-edge-${card.id}`,
-    source: personId,
-    target: card.id,
-    type: "straight",
-    style: {
-      stroke: "var(--rule)",
-      strokeWidth: 1,
-      strokeDasharray: "3 4",
-      opacity: 0.6,
-    },
-    animated: false,
-  }));
-}
-
-export { NODE_WIDTH, NODE_HEIGHT, MEMORY_CARD_WIDTH, MEMORY_CARD_HEIGHT, MAX_VISIBLE_MEMORIES };
+export { NODE_WIDTH, NODE_HEIGHT };

@@ -79,6 +79,16 @@
   50%       { box-shadow: 0 0 0 6px color-mix(in srgb, var(--moss) 0%, transparent); }
 }
 
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes wavePulse {
+  from { transform: scaleY(0.6); }
+  to   { transform: scaleY(1.2); }
+}
+
 /* ─── Base styles ────────────────────────────────────────────────────────── */
 
 html,

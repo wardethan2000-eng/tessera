@@ -6,7 +6,7 @@ import { getSession } from "../lib/session.js";
 import { mediaUrl } from "../lib/storage.js";
 
 const CreateMemoryBody = z.object({
-  kind: z.enum(["story", "photo"]),
+  kind: z.enum(["story", "photo", "voice", "document", "other"]),
   title: z.string().min(1).max(200),
   body: z.string().optional(),
   mediaId: z.string().uuid().optional(),
@@ -41,14 +41,13 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
       const { kind, title, body, mediaId, dateOfEventText } = parsed.data;
 
       if (kind === "story" && !body) {
-        return reply
-          .status(400)
-          .send({ error: "Story memories require a body" });
+        return reply.status(400).send({ error: "Story memories require a body" });
       }
       if (kind === "photo" && !mediaId) {
-        return reply
-          .status(400)
-          .send({ error: "Photo memories require a mediaId" });
+        return reply.status(400).send({ error: "Photo memories require a mediaId" });
+      }
+      if (kind === "voice" && !mediaId) {
+        return reply.status(400).send({ error: "Voice memories require a mediaId" });
       }
 
       const [memory] = await db

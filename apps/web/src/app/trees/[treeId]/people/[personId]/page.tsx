@@ -3,9 +3,11 @@
 import { use, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
+import { MemoryLightbox, type LightboxMemory } from "@/components/tree/MemoryLightbox";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
+type MemoryKind = "story" | "photo" | "voice" | "document" | "other";
 type RelationshipType = "parent_child" | "sibling" | "spouse";
 
 type Person = {
@@ -25,7 +27,7 @@ type Person = {
 
 type Memory = {
   id: string;
-  kind: "story" | "photo";
+  kind: MemoryKind;
   title: string;
   body: string | null;
   dateOfEventText: string | null;
@@ -36,8 +38,8 @@ type Memory = {
 type Relationship = {
   id: string;
   type: RelationshipType;
-  fromPerson: { id: string; displayName: string };
-  toPerson: { id: string; displayName: string };
+  fromPerson: { id: string; displayName: string; portraitUrl?: string | null };
+  toPerson: { id: string; displayName: string; portraitUrl?: string | null };
 };
 
 type PersonSummary = { id: string; displayName: string };
@@ -64,7 +66,7 @@ function getDecade(year: number): string {
   return `${Math.floor(year / 10) * 10}s`;
 }
 
-type Tab = "memories" | "stories" | "about";
+type Tab = "memories" | "stories" | "connections" | "about";
 
 export default function PersonPage({
   params,
@@ -82,6 +84,10 @@ export default function PersonPage({
   const [allPeople, setAllPeople] = useState<PersonSummary[]>([]);
   const [activeTab, setActiveTab] = useState<Tab>("memories");
   const [activeDecade, setActiveDecade] = useState<string | null>(null);
+
+  // Lightbox
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [lightboxMemories, setLightboxMemories] = useState<LightboxMemory[]>([]);
 
   // Edit state
   const [editing, setEditing] = useState(false);
@@ -102,7 +108,7 @@ export default function PersonPage({
   // Add memory
   const [showMemoryForm, setShowMemoryForm] = useState(false);
   const [memoryForm, setMemoryForm] = useState({
-    kind: "story" as "story" | "photo",
+    kind: "story" as MemoryKind,
     title: "",
     body: "",
     dateOfEventText: "",
@@ -129,6 +135,7 @@ export default function PersonPage({
       loadPerson();
       loadAllPeople();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, treeId, personId]);
 
   async function loadPerson() {
@@ -142,7 +149,6 @@ export default function PersonPage({
     }
     const data = (await res.json()) as Person;
     setPerson(data);
-    // Set initial active decade from first memory
     const firstYear = data.memories
       .map((m) => extractYear(m.dateOfEventText))
       .find((y) => y !== null);
@@ -219,7 +225,7 @@ export default function PersonPage({
     e.preventDefault();
     setSavingMemory(true);
     let resolvedMediaId = memoryForm.mediaId;
-    if (memoryForm.kind === "photo" && memoryFile) {
+    if ((memoryForm.kind === "photo" || memoryForm.kind === "voice") && memoryFile) {
       const presignRes = await fetch(`${API}/api/trees/${treeId}/media/presign`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -239,8 +245,8 @@ export default function PersonPage({
       body: JSON.stringify({
         kind: memoryForm.kind,
         title: memoryForm.title,
-        body: memoryForm.kind === "story" ? memoryForm.body : undefined,
-        mediaId: memoryForm.kind === "photo" ? resolvedMediaId || undefined : undefined,
+        body: ["story", "document"].includes(memoryForm.kind) ? memoryForm.body : undefined,
+        mediaId: ["photo", "voice"].includes(memoryForm.kind) ? resolvedMediaId || undefined : undefined,
         dateOfEventText: memoryForm.dateOfEventText || undefined,
       }),
     });
@@ -274,7 +280,20 @@ export default function PersonPage({
     setSavingRel(false);
   }
 
-  // IntersectionObserver to track active decade as user scrolls
+  // Open lightbox for a list of memories at a given index
+  const openLightbox = useCallback((memories: Memory[], startIndex: number) => {
+    setLightboxMemories(memories.map((m) => ({
+      id: m.id,
+      kind: m.kind,
+      title: m.title,
+      body: m.body,
+      dateOfEventText: m.dateOfEventText,
+      mediaUrl: m.mediaUrl,
+    })));
+    setLightboxIndex(startIndex);
+  }, []);
+
+  // IntersectionObserver for decade sidebar
   const decadeSectionRefs = useRef<Map<string, HTMLElement>>(new Map());
   const registerDecadeSection = useCallback((decade: string, el: HTMLElement | null) => {
     if (el) decadeSectionRefs.current.set(decade, el);
@@ -294,7 +313,7 @@ export default function PersonPage({
           }
         }
       },
-      { threshold: 0.4, root: mainRef.current }
+      { threshold: 0.3, root: mainRef.current }
     );
     sections.forEach(([, el]) => observer.observe(el));
     return () => observer.disconnect();
@@ -316,7 +335,7 @@ export default function PersonPage({
 
   const otherPeople = allPeople.filter((p) => p.id !== personId);
 
-  // Compute decades from memories
+  // Decade grouping
   const decadeMap = new Map<string, Memory[]>();
   for (const m of person.memories) {
     const year = extractYear(m.dateOfEventText);
@@ -327,14 +346,8 @@ export default function PersonPage({
     }
   }
   const decades = Array.from(decadeMap.keys()).sort();
-
-  // No-date memories
-  const undatedMemories = person.memories.filter(
-    (m) => !extractYear(m.dateOfEventText)
-  );
-
+  const undatedMemories = person.memories.filter((m) => !extractYear(m.dateOfEventText));
   const storyMemories = person.memories.filter((m) => m.kind === "story");
-  const photoMemories = person.memories.filter((m) => m.kind === "photo");
 
   const dateRange =
     person.birthDateText && person.deathDateText
@@ -345,7 +358,26 @@ export default function PersonPage({
       ? `– ${person.deathDateText}`
       : null;
 
-  // ── RENDER ────────────────────────────────────────────────────────────────
+  // Per-decade stats for the "In this chapter" sidebar
+  const decadeStats = activeDecade
+    ? (() => {
+        const mems = decadeMap.get(activeDecade) ?? [];
+        return {
+          photos: mems.filter((m) => m.kind === "photo").length,
+          voice: mems.filter((m) => m.kind === "voice").length,
+          stories: mems.filter((m) => m.kind === "story").length,
+          documents: mems.filter((m) => m.kind === "document").length,
+          total: mems.length,
+        };
+      })()
+    : null;
+
+  const TABS: { id: Tab; label: string }[] = [
+    { id: "memories", label: `Memories${person.memories.length > 0 ? ` ${person.memories.length}` : ""}` },
+    { id: "stories", label: `Stories${storyMemories.length > 0 ? ` ${storyMemories.length}` : ""}` },
+    { id: "connections", label: `Connections${person.relationships.length > 0 ? ` ${person.relationships.length}` : ""}` },
+    { id: "about", label: "About" },
+  ];
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--paper)", display: "flex", flexDirection: "column" }}>
@@ -354,14 +386,23 @@ export default function PersonPage({
       <header style={{ padding: "16px 24px", borderBottom: "1px solid var(--rule)", display: "flex", alignItems: "center", gap: 16, background: "rgba(246,241,231,0.88)", backdropFilter: "blur(8px)", position: "sticky", top: 0, zIndex: 20 }}>
         <a
           href={`/trees/${treeId}`}
-          style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-faded)", textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}
+          style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-faded)", textDecoration: "none" }}
         >
-          ← The Constellation
+          ← Constellation
         </a>
         <span style={{ color: "var(--rule)" }}>·</span>
         <span style={{ fontFamily: "var(--font-display)", fontSize: 15, color: "var(--ink-soft)" }}>
           {person.displayName}
         </span>
+        <div style={{ flex: 1 }} />
+        {!editing && (
+          <button
+            onClick={() => startEditing(person)}
+            style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", background: "none", border: "1px solid var(--rule)", borderRadius: 20, padding: "5px 12px", cursor: "pointer" }}
+          >
+            Edit this page
+          </button>
+        )}
       </header>
 
       {/* Portrait header */}
@@ -375,17 +416,13 @@ export default function PersonPage({
         ) : (
           <div style={{ width: "100%", height: "100%", background: "linear-gradient(160deg, var(--paper-deep) 0%, var(--rule) 100%)" }} />
         )}
-
-        {/* Name overlay */}
         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "48px 40px 32px", background: "linear-gradient(to top, rgba(28,25,21,0.7) 0%, transparent 100%)" }}>
-          <div style={{ maxWidth: 800, margin: "0 auto" }}>
+          <div style={{ maxWidth: 960, margin: "0 auto" }}>
             <h1 style={{ fontFamily: "var(--font-display)", fontSize: 40, fontWeight: 400, color: "#F6F1E7", lineHeight: 1.1, margin: 0 }}>
               {person.displayName}
             </h1>
             {dateRange && (
-              <p style={{ fontFamily: "var(--font-ui)", fontSize: 14, color: "rgba(246,241,231,0.7)", marginTop: 6 }}>
-                {dateRange}
-              </p>
+              <p style={{ fontFamily: "var(--font-ui)", fontSize: 14, color: "rgba(246,241,231,0.7)", marginTop: 6 }}>{dateRange}</p>
             )}
             {person.essenceLine && (
               <p style={{ fontFamily: "var(--font-body)", fontSize: 16, fontStyle: "italic", color: "rgba(246,241,231,0.85)", marginTop: 8 }}>
@@ -394,8 +431,6 @@ export default function PersonPage({
             )}
           </div>
         </div>
-
-        {/* Portrait upload button */}
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={uploadingPortrait}
@@ -408,18 +443,16 @@ export default function PersonPage({
         />
       </div>
 
-      {/* Edit form (shown inline if editing) */}
+      {/* Edit form */}
       {editing && (
         <div style={{ background: "var(--paper-deep)", borderBottom: "1px solid var(--rule)", padding: "24px 40px" }}>
           <form onSubmit={saveEdit} style={{ maxWidth: 600, display: "flex", flexDirection: "column", gap: 12 }}>
             <input type="text" required value={editForm.displayName}
               onChange={(e) => setEditForm((f) => ({ ...f, displayName: e.target.value }))}
-              placeholder="Full name"
-              style={inputStyle} />
+              placeholder="Full name" style={inputStyle} />
             <input type="text" value={editForm.essenceLine}
               onChange={(e) => setEditForm((f) => ({ ...f, essenceLine: e.target.value }))}
-              placeholder="Essence line (one sentence)"
-              style={inputStyle} />
+              placeholder="Essence line (one sentence)" style={inputStyle} />
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <input type="text" value={editForm.birthDateText}
                 onChange={(e) => setEditForm((f) => ({ ...f, birthDateText: e.target.value }))}
@@ -450,23 +483,15 @@ export default function PersonPage({
 
       {/* Tabs */}
       <div style={{ borderBottom: "1px solid var(--rule)", background: "var(--paper)", position: "sticky", top: 53, zIndex: 19 }}>
-        <div style={{ maxWidth: 960, margin: "0 auto", padding: "0 40px", display: "flex", gap: 0 }}>
-          {([
-            { id: "memories", label: `Memories ${person.memories.length > 0 ? person.memories.length : ""}` },
-            { id: "stories", label: `Stories ${storyMemories.length > 0 ? storyMemories.length : ""}` },
-            { id: "about", label: "About" },
-          ] as const).map((tab) => (
+        <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 40px", display: "flex", gap: 0 }}>
+          {TABS.map((tab) => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
               style={{
-                fontFamily: "var(--font-ui)",
-                fontSize: 13,
+                fontFamily: "var(--font-ui)", fontSize: 13,
                 color: activeTab === tab.id ? "var(--ink)" : "var(--ink-faded)",
-                background: "none",
-                border: "none",
+                background: "none", border: "none",
                 borderBottom: activeTab === tab.id ? "2px solid var(--moss)" : "2px solid transparent",
-                padding: "14px 20px 12px",
-                cursor: "pointer",
-                transition: "color 200ms",
+                padding: "14px 20px 12px", cursor: "pointer", transition: "color 200ms",
               }}
             >
               {tab.label}
@@ -475,29 +500,27 @@ export default function PersonPage({
         </div>
       </div>
 
-      {/* Body: sidebar + content */}
-      <div style={{ flex: 1, display: "flex", maxWidth: 960, margin: "0 auto", width: "100%", padding: "0 40px", gap: 0 }}>
+      {/* Body */}
+      <div style={{ flex: 1, display: "flex", maxWidth: 1200, margin: "0 auto", width: "100%", padding: "0 40px" }}>
 
-        {/* Decade sidebar */}
-        <aside style={{ width: 120, flexShrink: 0, paddingTop: 40, position: "sticky", top: 100, alignSelf: "flex-start", display: decades.length > 0 && activeTab === "memories" ? "block" : "none" }}>
+        {/* Decade sidebar (memories tab) */}
+        <aside style={{
+          width: 110,
+          flexShrink: 0,
+          paddingTop: 40,
+          position: "sticky",
+          top: 100,
+          alignSelf: "flex-start",
+          display: decades.length > 0 && activeTab === "memories" ? "block" : "none",
+        }}>
           {decades.map((decade) => (
-            <button
-              key={decade}
+            <button key={decade}
               onClick={() => {
                 const el = decadeSectionRefs.current.get(decade);
                 if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
                 setActiveDecade(decade);
               }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                background: "none",
-                border: "none",
-                padding: "8px 0",
-                cursor: "pointer",
-                width: "100%",
-              }}
+              style={{ display: "flex", alignItems: "center", gap: 10, background: "none", border: "none", padding: "8px 0", cursor: "pointer", width: "100%" }}
             >
               <span style={{ width: 6, height: 6, borderRadius: "50%", background: activeDecade === decade ? "var(--moss)" : "var(--rule)", flexShrink: 0, transition: "background 200ms" }} />
               <span style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: activeDecade === decade ? "var(--ink)" : "var(--ink-faded)", transition: "color 200ms" }}>
@@ -508,8 +531,16 @@ export default function PersonPage({
         </aside>
 
         {/* Main content */}
-        <main ref={mainRef} style={{ flex: 1, paddingTop: 40, paddingBottom: 80, paddingLeft: decades.length > 0 && activeTab === "memories" ? 32 : 0 }}>
-
+        <main
+          ref={mainRef}
+          style={{
+            flex: 1,
+            paddingTop: 40,
+            paddingBottom: 80,
+            paddingLeft: decades.length > 0 && activeTab === "memories" ? 32 : 0,
+            paddingRight: activeTab === "memories" && activeDecade && decadeStats ? 32 : 0,
+          }}
+        >
           {/* ── Memories tab ── */}
           {activeTab === "memories" && (
             <div>
@@ -522,20 +553,37 @@ export default function PersonPage({
                 </button>
               </div>
 
-              {showMemoryForm && <MemoryForm memoryForm={memoryForm} setMemoryForm={setMemoryForm} memoryFile={memoryFile} setMemoryFile={setMemoryFile} savingMemory={savingMemory} saveMemory={saveMemory} />}
+              {showMemoryForm && (
+                <MemoryForm
+                  memoryForm={memoryForm}
+                  setMemoryForm={setMemoryForm}
+                  memoryFile={memoryFile}
+                  setMemoryFile={setMemoryFile}
+                  savingMemory={savingMemory}
+                  saveMemory={saveMemory}
+                />
+              )}
 
-              {/* Decades */}
-              {decades.map((decade) => (
-                <section key={decade} ref={(el) => registerDecadeSection(decade, el)} style={{ marginBottom: 48 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
-                    <span style={{ fontFamily: "var(--font-display)", fontSize: 18, color: "var(--ink-soft)", fontStyle: "italic" }}>{decade}</span>
-                    <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-                    {decadeMap.get(decade)!.map((m) => <MemoryCard key={m.id} memory={m} />)}
-                  </div>
-                </section>
-              ))}
+              {decades.map((decade) => {
+                const mems = decadeMap.get(decade)!;
+                return (
+                  <section key={decade} ref={(el) => registerDecadeSection(decade, el)} style={{ marginBottom: 48 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
+                      <span style={{ fontFamily: "var(--font-display)", fontSize: 18, color: "var(--ink-soft)", fontStyle: "italic" }}>{decade}</span>
+                      <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
+                      {mems.map((m, i) => (
+                        <MemoryCard
+                          key={m.id}
+                          memory={m}
+                          onClick={() => openLightbox(mems, i)}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                );
+              })}
 
               {undatedMemories.length > 0 && (
                 <section style={{ marginBottom: 48 }}>
@@ -543,8 +591,14 @@ export default function PersonPage({
                     <span style={{ fontFamily: "var(--font-display)", fontSize: 18, color: "var(--ink-soft)", fontStyle: "italic" }}>Undated</span>
                     <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-                    {undatedMemories.map((m) => <MemoryCard key={m.id} memory={m} />)}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
+                    {undatedMemories.map((m, i) => (
+                      <MemoryCard
+                        key={m.id}
+                        memory={m}
+                        onClick={() => openLightbox(undatedMemories, i)}
+                      />
+                    ))}
                   </div>
                 </section>
               )}
@@ -562,8 +616,10 @@ export default function PersonPage({
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
                 <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--ink)", margin: 0, fontWeight: 400 }}>Stories</h2>
-                <button onClick={() => { setShowMemoryForm(true); setMemoryForm((f) => ({ ...f, kind: "story" })); setActiveTab("memories"); }}
-                  style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--moss)", background: "none", border: "1px solid var(--moss)", borderRadius: 20, padding: "5px 14px", cursor: "pointer" }}>
+                <button
+                  onClick={() => { setShowMemoryForm(true); setMemoryForm((f) => ({ ...f, kind: "story" })); setActiveTab("memories"); }}
+                  style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--moss)", background: "none", border: "1px solid var(--moss)", borderRadius: 20, padding: "5px 14px", cursor: "pointer" }}
+                >
                   + Add story
                 </button>
               </div>
@@ -583,31 +639,91 @@ export default function PersonPage({
             </div>
           )}
 
-          {/* ── About tab ── */}
-          {activeTab === "about" && (
+          {/* ── Connections tab ── */}
+          {activeTab === "connections" && (
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-                <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--ink)", margin: 0, fontWeight: 400 }}>About</h2>
-                {!editing && (
-                  <button onClick={() => startEditing(person)} style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", background: "none", border: "1px solid var(--rule)", borderRadius: 20, padding: "5px 14px", cursor: "pointer" }}>
-                    Edit
+                <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--ink)", margin: 0, fontWeight: 400 }}>Connections</h2>
+                {otherPeople.length > 0 && (
+                  <button onClick={() => setShowRelForm((s) => !s)}
+                    style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--moss)", background: "none", border: "1px solid var(--moss)", borderRadius: 20, padding: "5px 14px", cursor: "pointer" }}>
+                    {showRelForm ? "Cancel" : "+ Add"}
                   </button>
                 )}
               </div>
 
+              {showRelForm && (
+                <form onSubmit={saveRelationship} style={{ background: "var(--paper-deep)", border: "1px solid var(--rule)", borderRadius: 8, padding: 16, marginBottom: 24, display: "flex", flexDirection: "column", gap: 12 }}>
+                  <select value={relForm.type} onChange={(e) => setRelForm((f) => ({ ...f, type: e.target.value as RelationshipType }))} style={inputStyle}>
+                    <option value="parent_child">Parent / Child</option>
+                    <option value="sibling">Sibling</option>
+                    <option value="spouse">Spouse / Partner</option>
+                  </select>
+                  {relForm.type === "parent_child" && (
+                    <select value={relForm.direction} onChange={(e) => setRelForm((f) => ({ ...f, direction: e.target.value as "from" | "to" }))} style={inputStyle}>
+                      <option value="from">{person.displayName} is the parent</option>
+                      <option value="to">{person.displayName} is the child</option>
+                    </select>
+                  )}
+                  <select required value={relForm.otherPersonId} onChange={(e) => setRelForm((f) => ({ ...f, otherPersonId: e.target.value }))} style={inputStyle}>
+                    <option value="">Select person…</option>
+                    {otherPeople.map((p) => <option key={p.id} value={p.id}>{p.displayName}</option>)}
+                  </select>
+                  <button type="submit" disabled={savingRel} style={primaryBtnStyle}>
+                    {savingRel ? "Saving…" : "Add relationship"}
+                  </button>
+                </form>
+              )}
+
+              {person.relationships.length === 0 ? (
+                <p style={{ fontFamily: "var(--font-ui)", fontSize: 14, color: "var(--ink-faded)" }}>No relationships recorded.</p>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
+                  {person.relationships.map((r) => {
+                    const other = r.fromPerson.id === personId ? r.toPerson : r.fromPerson;
+                    const label = relationshipLabel(r, personId);
+                    const initials = other.displayName.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+                    return (
+                      <a
+                        key={r.id}
+                        href={`/trees/${treeId}/people/${other.id}`}
+                        style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "20px 16px", background: "var(--paper-deep)", border: "1px solid var(--rule)", borderRadius: 8, textDecoration: "none", textAlign: "center" }}
+                      >
+                        <div style={{ width: 56, height: 56, borderRadius: "50%", background: "var(--paper)", border: "1.5px solid var(--rule)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+                          {other.portraitUrl ? (
+                            <img src={other.portraitUrl} alt={other.displayName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          ) : (
+                            <span style={{ fontFamily: "var(--font-display)", fontSize: 20, color: "var(--ink-faded)" }}>{initials}</span>
+                          )}
+                        </div>
+                        <div>
+                          <div style={{ fontFamily: "var(--font-display)", fontSize: 15, color: "var(--ink)", lineHeight: 1.3 }}>{other.displayName}</div>
+                          <div style={{ fontFamily: "var(--font-ui)", fontSize: 11, color: "var(--ink-faded)", marginTop: 3 }}>{label.split(" ")[0]}</div>
+                        </div>
+                      </a>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── About tab ── */}
+          {activeTab === "about" && (
+            <div>
+              <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--ink)", margin: "0 0 24px", fontWeight: 400 }}>About</h2>
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                {[
+                {([
                   ["Birth", person.birthDateText],
                   ["Birthplace", person.birthPlace],
                   ["Death", person.deathDateText],
                   ["Status", person.isLiving ? "Living" : "Deceased"],
-                ].filter(([, v]) => v).map(([label, value]) => (
+                ] as [string, string | null][]).filter(([, v]) => v).map(([label, value]) => (
                   <div key={label} style={{ display: "flex", gap: 24 }}>
                     <span style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", width: 80, flexShrink: 0 }}>{label}</span>
                     <span style={{ fontFamily: "var(--font-body)", fontSize: 15, color: "var(--ink)" }}>{value}</span>
                   </div>
                 ))}
-
                 {person.linkedUserId === session?.user.id && (
                   <div style={{ display: "flex", gap: 24 }}>
                     <span style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", width: 80 }}>Account</span>
@@ -615,67 +731,64 @@ export default function PersonPage({
                   </div>
                 )}
               </div>
-
-              {/* Relationships */}
-              <div style={{ marginTop: 40 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                  <h3 style={{ fontFamily: "var(--font-display)", fontSize: 18, color: "var(--ink)", margin: 0, fontWeight: 400 }}>Relationships</h3>
-                  {otherPeople.length > 0 && (
-                    <button onClick={() => setShowRelForm((s) => !s)}
-                      style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--moss)", background: "none", border: "1px solid var(--moss)", borderRadius: 20, padding: "5px 14px", cursor: "pointer" }}>
-                      {showRelForm ? "Cancel" : "+ Add"}
-                    </button>
-                  )}
-                </div>
-
-                {showRelForm && (
-                  <form onSubmit={saveRelationship} style={{ background: "var(--paper-deep)", border: "1px solid var(--rule)", borderRadius: 8, padding: 16, marginBottom: 20, display: "flex", flexDirection: "column", gap: 12 }}>
-                    <select value={relForm.type} onChange={(e) => setRelForm((f) => ({ ...f, type: e.target.value as RelationshipType }))} style={inputStyle}>
-                      <option value="parent_child">Parent / Child</option>
-                      <option value="sibling">Sibling</option>
-                      <option value="spouse">Spouse / Partner</option>
-                    </select>
-                    {relForm.type === "parent_child" && (
-                      <select value={relForm.direction} onChange={(e) => setRelForm((f) => ({ ...f, direction: e.target.value as "from" | "to" }))} style={inputStyle}>
-                        <option value="from">{person.displayName} is the parent</option>
-                        <option value="to">{person.displayName} is the child</option>
-                      </select>
-                    )}
-                    <select required value={relForm.otherPersonId} onChange={(e) => setRelForm((f) => ({ ...f, otherPersonId: e.target.value }))} style={inputStyle}>
-                      <option value="">Select person…</option>
-                      {otherPeople.map((p) => <option key={p.id} value={p.id}>{p.displayName}</option>)}
-                    </select>
-                    <button type="submit" disabled={savingRel} style={primaryBtnStyle}>
-                      {savingRel ? "Saving…" : "Add relationship"}
-                    </button>
-                  </form>
-                )}
-
-                {person.relationships.length === 0 ? (
-                  <p style={{ fontFamily: "var(--font-ui)", fontSize: 14, color: "var(--ink-faded)" }}>No relationships recorded.</p>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {person.relationships.map((r) => (
-                      <a key={r.id} href={`/trees/${treeId}/people/${r.fromPerson.id === personId ? r.toPerson.id : r.fromPerson.id}`}
-                        style={{ display: "flex", justifyContent: "space-between", padding: "10px 14px", background: "var(--paper-deep)", border: "1px solid var(--rule)", borderRadius: 6, textDecoration: "none" }}>
-                        <span style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink)" }}>
-                          {relationshipLabel(r, personId)}
-                        </span>
-                        <span style={{ fontFamily: "var(--font-ui)", fontSize: 11, color: "var(--ink-faded)" }}>→</span>
-                      </a>
-                    ))}
-                  </div>
-                )}
-              </div>
             </div>
           )}
         </main>
+
+        {/* "In this chapter" right sidebar — only on memories tab when a decade is active */}
+        {activeTab === "memories" && activeDecade && decadeStats && (
+          <aside style={{
+            width: 180,
+            flexShrink: 0,
+            paddingTop: 40,
+            position: "sticky",
+            top: 100,
+            alignSelf: "flex-start",
+          }}>
+            <div style={{
+              background: "var(--paper-deep)",
+              border: "1px solid var(--rule)",
+              borderRadius: 8,
+              padding: 16,
+            }}>
+              <div style={{ fontFamily: "var(--font-ui)", fontSize: 10, color: "var(--ink-faded)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>
+                In the {activeDecade}
+              </div>
+              {[
+                { label: "Photos", count: decadeStats.photos, icon: "◻" },
+                { label: "Stories", count: decadeStats.stories, icon: "✦" },
+                { label: "Voice memos", count: decadeStats.voice, icon: "🎙" },
+                { label: "Documents", count: decadeStats.documents, icon: "□" },
+              ].filter((s) => s.count > 0).map(({ label, count, icon }) => (
+                <div key={label} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <span style={{ fontSize: 13, opacity: 0.5, width: 16, textAlign: "center" }}>{icon}</span>
+                  <span style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-soft)", flex: 1 }}>{label}</span>
+                  <span style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)" }}>{count}</span>
+                </div>
+              ))}
+              {decadeStats.total === 0 && (
+                <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", margin: 0 }}>
+                  No memories
+                </p>
+              )}
+            </div>
+          </aside>
+        )}
       </div>
+
+      {/* Memory lightbox */}
+      {lightboxIndex !== null && (
+        <MemoryLightbox
+          memories={lightboxMemories}
+          initialIndex={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+        />
+      )}
     </div>
   );
 }
 
-// ── Shared sub-components ──────────────────────────────────────────────────
+// ── Shared styles ──────────────────────────────────────────────────────────
 
 const inputStyle: React.CSSProperties = {
   width: "100%",
@@ -712,19 +825,53 @@ const secondaryBtnStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
-function MemoryCard({ memory }: { memory: Memory }) {
+// ── Sub-components ─────────────────────────────────────────────────────────
+
+function MemoryCard({ memory, onClick }: { memory: { id: string; kind: MemoryKind; title: string; body: string | null; dateOfEventText: string | null; mediaUrl: string | null }; onClick?: () => void }) {
+  const kindIcon: Record<MemoryKind, string> = {
+    photo: "◻",
+    story: "✦",
+    voice: "🎙",
+    document: "□",
+    other: "·",
+  };
+
   return (
-    <article style={{ background: "var(--paper-deep)", border: "1px solid var(--rule)", borderRadius: 8, overflow: "hidden" }}>
+    <article
+      onClick={onClick}
+      style={{
+        background: "var(--paper-deep)",
+        border: "1px solid var(--rule)",
+        borderRadius: 8,
+        overflow: "hidden",
+        cursor: onClick ? "pointer" : "default",
+        transition: "box-shadow 200ms",
+      }}
+      onMouseEnter={(e) => { if (onClick) e.currentTarget.style.boxShadow = "0 4px 16px rgba(28,25,21,0.1)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "none"; }}
+    >
       {memory.mediaUrl && memory.kind === "photo" && (
-        <img src={memory.mediaUrl} alt={memory.title} style={{ width: "100%", maxHeight: 360, objectFit: "cover", display: "block" }} />
+        <img src={memory.mediaUrl} alt={memory.title} style={{ width: "100%", height: 160, objectFit: "cover", display: "block" }} />
       )}
-      <div style={{ padding: 20 }}>
-        <h3 style={{ fontFamily: "var(--font-display)", fontSize: 18, color: "var(--ink)", margin: "0 0 6px", fontWeight: 400 }}>{memory.title}</h3>
+      {memory.kind === "voice" && (
+        <div style={{ height: 60, background: "var(--ink)", display: "flex", alignItems: "center", justifyContent: "center", gap: 2 }}>
+          {Array.from({ length: 20 }, (_, i) => (
+            <div key={i} style={{ width: 3, height: 10 + Math.abs(Math.sin(i * 0.8) * 24), borderRadius: 2, background: "rgba(246,241,231,0.3)" }} />
+          ))}
+        </div>
+      )}
+      <div style={{ padding: "14px 16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+          <span style={{ fontSize: 11, opacity: 0.4 }}>{kindIcon[memory.kind]}</span>
+          <h3 style={{ fontFamily: "var(--font-display)", fontSize: 15, color: "var(--ink)", margin: 0, fontWeight: 400, lineHeight: 1.3 }}>{memory.title}</h3>
+        </div>
         {memory.dateOfEventText && (
-          <p style={{ fontFamily: "var(--font-ui)", fontSize: 11, color: "var(--ink-faded)", margin: "0 0 12px" }}>{memory.dateOfEventText}</p>
+          <p style={{ fontFamily: "var(--font-ui)", fontSize: 11, color: "var(--ink-faded)", margin: "0 0 8px" }}>{memory.dateOfEventText}</p>
         )}
-        {memory.body && (
-          <p style={{ fontFamily: "var(--font-body)", fontSize: 15, lineHeight: 1.8, color: "var(--ink-soft)", margin: 0, whiteSpace: "pre-wrap" }}>{memory.body}</p>
+        {memory.body && memory.kind !== "photo" && (
+          <p style={{ fontFamily: "var(--font-body)", fontSize: 13, lineHeight: 1.6, color: "var(--ink-soft)", margin: 0, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+            {memory.body}
+          </p>
         )}
       </div>
     </article>
@@ -739,37 +886,50 @@ function MemoryForm({
   savingMemory,
   saveMemory,
 }: {
-  memoryForm: { kind: "story" | "photo"; title: string; body: string; dateOfEventText: string; mediaId: string };
+  memoryForm: { kind: MemoryKind; title: string; body: string; dateOfEventText: string; mediaId: string };
   setMemoryForm: React.Dispatch<React.SetStateAction<typeof memoryForm>>;
   memoryFile: File | null;
   setMemoryFile: (f: File | null) => void;
   savingMemory: boolean;
   saveMemory: (e: React.FormEvent) => void;
 }) {
+  const KINDS: { id: MemoryKind; label: string }[] = [
+    { id: "story", label: "Story" },
+    { id: "photo", label: "Photo" },
+    { id: "voice", label: "Voice memo" },
+    { id: "document", label: "Document" },
+  ];
+
   return (
     <form onSubmit={saveMemory} style={{ background: "var(--paper-deep)", border: "1px solid var(--rule)", borderRadius: 8, padding: 20, marginBottom: 28, display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "flex", gap: 8 }}>
-        {(["story", "photo"] as const).map((k) => (
-          <button key={k} type="button" onClick={() => setMemoryForm((f) => ({ ...f, kind: k }))}
-            style={{ flex: 1, borderRadius: 6, padding: "8px", fontFamily: "var(--font-ui)", fontSize: 13, border: "1px solid", borderColor: memoryForm.kind === k ? "var(--moss)" : "var(--rule)", background: memoryForm.kind === k ? "var(--moss)" : "none", color: memoryForm.kind === k ? "var(--paper)" : "var(--ink-soft)", cursor: "pointer" }}>
-            {k === "story" ? "Story" : "Photo"}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {KINDS.map(({ id, label }) => (
+          <button key={id} type="button" onClick={() => setMemoryForm((f) => ({ ...f, kind: id }))}
+            style={{ borderRadius: 6, padding: "7px 14px", fontFamily: "var(--font-ui)", fontSize: 12, border: "1px solid", borderColor: memoryForm.kind === id ? "var(--moss)" : "var(--rule)", background: memoryForm.kind === id ? "var(--moss)" : "none", color: memoryForm.kind === id ? "var(--paper)" : "var(--ink-soft)", cursor: "pointer" }}>
+            {label}
           </button>
         ))}
       </div>
       <input type="text" required value={memoryForm.title}
         onChange={(e) => setMemoryForm((f) => ({ ...f, title: e.target.value }))}
         placeholder="Title" style={inputStyle} />
-      {memoryForm.kind === "story" && (
+      {["story", "document"].includes(memoryForm.kind) && (
         <textarea required rows={4} value={memoryForm.body}
           onChange={(e) => setMemoryForm((f) => ({ ...f, body: e.target.value }))}
           placeholder="Write the memory…"
           style={{ ...inputStyle, resize: "none" }} />
       )}
-      {memoryForm.kind === "photo" && (
+      {["photo"].includes(memoryForm.kind) && (
         <input type="file" accept="image/*" required
           onChange={(e) => setMemoryFile(e.target.files?.[0] ?? null)}
           style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-soft)" }} />
       )}
+      {["voice"].includes(memoryForm.kind) && (
+        <input type="file" accept="audio/*" required
+          onChange={(e) => setMemoryFile(e.target.files?.[0] ?? null)}
+          style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-soft)" }} />
+      )}
+      {memoryFile && <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", margin: 0 }}>{memoryFile.name}</p>}
       <input type="text" value={memoryForm.dateOfEventText}
         onChange={(e) => setMemoryForm((f) => ({ ...f, dateOfEventText: e.target.value }))}
         placeholder="Date of event (e.g. 1964, Summer 1972)"

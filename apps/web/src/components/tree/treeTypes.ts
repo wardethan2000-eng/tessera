@@ -8,37 +8,21 @@ export type PersonNodeData = {
   portraitUrl?: string | null;
   essenceLine?: string | null;
   isYou: boolean;
+  /** True when this person's cinematic overlay is open */
   isFocused: boolean;
-  isDimmed: boolean;
-};
-
-export type MemoryCardNodeData = {
-  memoryId: string;
-  personId: string;
-  kind: "photo" | "story";
-  title: string;
-  bodyPreview?: string;
-  mediaUrl?: string | null;
-  year?: number | null;
-  contributorName?: string | null;
-  isOverflow?: boolean;
-  overflowCount?: number;
 };
 
 export type PersonFlowNode = Node<PersonNodeData, "person">;
-export type MemoryCardFlowNode = Node<MemoryCardNodeData, "memoryCard">;
-export type TreeFlowNode = PersonFlowNode | MemoryCardFlowNode;
+export type TreeFlowNode = PersonFlowNode;
 
 /** @deprecated use PersonFlowNode */
 export type PersonNode = PersonFlowNode;
-/** @deprecated use MemoryCardFlowNode */
-export type MemoryCardNode = MemoryCardFlowNode;
-/** @deprecated use TreeFlowNode */
-export type TreeNode = TreeFlowNode;
+/** @deprecated use PersonFlowNode */
+export type TreeNode = PersonFlowNode;
 
 export type TreeEdge = Edge;
 
-/** Raw API person with relationships and memories */
+/** Raw API person as returned by the API */
 export interface ApiPerson {
   id: string;
   name: string;
@@ -69,5 +53,3 @@ export interface ApiMemory {
   /** Convenience: set by the fetching component to the owning person's id */
   personId?: string;
 }
-
-export type FocusLevel = 0 | 1 | 2;

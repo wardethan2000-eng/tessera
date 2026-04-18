@@ -29,7 +29,13 @@ export const relationshipTypeEnum = pgEnum("relationship_type", [
   "spouse",
 ]);
 
-export const memoryKindEnum = pgEnum("memory_kind", ["story", "photo"]);
+export const memoryKindEnum = pgEnum("memory_kind", [
+  "story",
+  "photo",
+  "voice",
+  "document",
+  "other",
+]);
 
 export const invitationStatusEnum = pgEnum("invitation_status", [
   "pending",

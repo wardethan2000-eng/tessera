@@ -5,10 +5,9 @@ import { useRouter, useParams } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
 import { AnimatePresence } from "framer-motion";
 import { TreeCanvas } from "@/components/tree/TreeCanvas";
-import { MemoryOverlay } from "@/components/tree/MemoryOverlay";
 import { DriftMode } from "@/components/tree/DriftMode";
 import { Shimmer } from "@/components/ui/Shimmer";
-import type { ApiPerson, ApiRelationship, ApiMemory } from "@/components/tree/treeTypes";
+import type { ApiPerson, ApiRelationship } from "@/components/tree/treeTypes";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -33,25 +32,17 @@ export default function TreePage() {
   const [people, setPeople] = useState<ApiPerson[]>([]);
   const [relationships, setRelationships] = useState<ApiRelationship[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Overlay state
-  const [overlayMemory, setOverlayMemory] = useState<ApiMemory | null>(null);
-  const [overlayPerson, setOverlayPerson] = useState<ApiPerson | null>(null);
-  const [overlayAllMemories, setOverlayAllMemories] = useState<ApiMemory[]>([]);
   const [driftOpen, setDriftOpen] = useState(false);
 
-  // Find the person node linked to the current user
   const currentUserPersonId =
     session?.user?.id && people.length > 0
       ? (people.find((p) => p.linkedUserId === session.user.id)?.id ?? null)
       : null;
 
-  // Auth guard
   useEffect(() => {
     if (!isPending && !session) router.replace("/auth/signin");
   }, [session, isPending, router]);
 
-  // Fetch tree data
   useEffect(() => {
     if (!session || !treeId) return;
     const fetchData = async () => {
@@ -66,7 +57,6 @@ export default function TreePage() {
         if (treeRes.ok) setTree(await treeRes.json());
         if (peopleRes.ok) {
           const data = await peopleRes.json();
-          // Normalize API shape → ApiPerson
           setPeople(
             (data as Array<Record<string, unknown>>).map((p) => ({
               id: p.id as string,
@@ -86,17 +76,6 @@ export default function TreePage() {
     };
     fetchData();
   }, [session, treeId]);
-
-  const handleMemoryClick = useCallback((memory: ApiMemory, person: ApiPerson) => {
-    setOverlayMemory(memory);
-    setOverlayPerson(person);
-    setOverlayAllMemories([memory]);
-  }, []);
-
-  const handleCloseOverlay = useCallback(() => {
-    setOverlayMemory(null);
-    setOverlayPerson(null);
-  }, []);
 
   const handlePersonDetail = useCallback(
     (personId: string) => {
@@ -147,30 +126,16 @@ export default function TreePage() {
 
   return (
     <main style={{ width: "100vw", height: "100vh", overflow: "hidden", background: "var(--paper)" }}>
-      {/* Tree canvas */}
       <TreeCanvas
         treeId={treeId}
         treeName={tree.name}
         people={people}
         relationships={relationships}
-        currentUserId={session?.user?.id ?? null}
         currentUserPersonId={currentUserPersonId}
-        onMemoryClick={handleMemoryClick}
         onDriftClick={() => setDriftOpen(true)}
         onPersonDetailClick={handlePersonDetail}
-        apiBase={API}
       />
 
-      {/* Memory overlay */}
-      <MemoryOverlay
-        memory={overlayMemory}
-        person={overlayPerson}
-        allMemories={overlayAllMemories}
-        onClose={handleCloseOverlay}
-        onPersonDetail={handlePersonDetail}
-      />
-
-      {/* Drift mode */}
       <AnimatePresence>
         {driftOpen && (
           <DriftMode
