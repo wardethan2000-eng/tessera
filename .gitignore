@@ -12,3 +12,4 @@ apps/*/node_modules/
 apps/*/.next/
 packages/*/node_modules/
 
+packages/database/tsconfig.tsbuildinfo
