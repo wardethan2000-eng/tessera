@@ -21,7 +21,7 @@ export default function Home() {
       .then((r) => r.json())
       .then((trees) => {
         if (Array.isArray(trees) && trees.length > 0) {
-          router.replace(`/trees/${trees[0].id}`);
+          router.replace(`/trees/${trees[0].id}/atrium`);
         } else {
           router.replace("/onboarding");
         }

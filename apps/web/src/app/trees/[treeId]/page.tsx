@@ -6,6 +6,8 @@ import { useSession } from "@/lib/auth-client";
 import { AnimatePresence } from "framer-motion";
 import { TreeCanvas } from "@/components/tree/TreeCanvas";
 import { DriftMode } from "@/components/tree/DriftMode";
+import { AddMemoryWizard } from "@/components/tree/AddMemoryWizard";
+import { SearchOverlay } from "@/components/tree/SearchOverlay";
 import { Shimmer } from "@/components/ui/Shimmer";
 import type { ApiPerson, ApiRelationship } from "@/components/tree/treeTypes";
 
@@ -22,6 +24,18 @@ interface Tree {
   name: string;
 }
 
+interface TreeMemory {
+  id: string;
+  kind: "story" | "photo" | "voice" | "document" | "other";
+  title: string;
+  body?: string | null;
+  dateOfEventText?: string | null;
+  mediaUrl?: string | null;
+  personName?: string | null;
+  primaryPersonId?: string | null;
+  personPortraitUrl?: string | null;
+}
+
 export default function TreePage() {
   const router = useRouter();
   const params = useParams<{ treeId: string }>();
@@ -31,13 +45,28 @@ export default function TreePage() {
   const [tree, setTree] = useState<Tree | null>(null);
   const [people, setPeople] = useState<ApiPerson[]>([]);
   const [relationships, setRelationships] = useState<ApiRelationship[]>([]);
+  const [memories, setMemories] = useState<TreeMemory[]>([]);
   const [loading, setLoading] = useState(true);
   const [driftOpen, setDriftOpen] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const currentUserPersonId =
     session?.user?.id && people.length > 0
       ? (people.find((p) => p.linkedUserId === session.user.id)?.id ?? null)
       : null;
+
+  // Global ⌘K handler
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   useEffect(() => {
     if (!isPending && !session) router.replace("/auth/signin");
@@ -48,10 +77,11 @@ export default function TreePage() {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const [treeRes, peopleRes, relsRes] = await Promise.all([
+        const [treeRes, peopleRes, relsRes, memoriesRes] = await Promise.all([
           fetch(`${API}/api/trees/${treeId}`, { credentials: "include" }),
           fetch(`${API}/api/trees/${treeId}/people`, { credentials: "include" }),
           fetch(`${API}/api/trees/${treeId}/relationships`, { credentials: "include" }),
+          fetch(`${API}/api/trees/${treeId}/memories`, { credentials: "include" }),
         ]);
 
         if (treeRes.ok) setTree(await treeRes.json());
@@ -70,6 +100,7 @@ export default function TreePage() {
           );
         }
         if (relsRes.ok) setRelationships(await relsRes.json());
+        if (memoriesRes.ok) setMemories(await memoriesRes.json());
       } finally {
         setLoading(false);
       }
@@ -83,6 +114,19 @@ export default function TreePage() {
     },
     [router, treeId]
   );
+
+  const refreshMemories = useCallback(async () => {
+    const res = await fetch(`${API}/api/trees/${treeId}/memories`, {
+      credentials: "include",
+    });
+    if (res.ok) setMemories(await res.json());
+  }, [treeId]);
+
+  const apiPeople = people.map((p) => ({
+    id: p.id,
+    name: p.name,
+    portraitUrl: p.portraitUrl,
+  }));
 
   if (isPending || loading) {
     return (
@@ -134,6 +178,8 @@ export default function TreePage() {
         currentUserPersonId={currentUserPersonId}
         onDriftClick={() => setDriftOpen(true)}
         onPersonDetailClick={handlePersonDetail}
+        onAddMemoryClick={() => setWizardOpen(true)}
+        onSearchClick={() => setSearchOpen(true)}
       />
 
       <AnimatePresence>
@@ -147,6 +193,31 @@ export default function TreePage() {
           />
         )}
       </AnimatePresence>
+
+      {wizardOpen && (
+        <AddMemoryWizard
+          treeId={treeId}
+          people={apiPeople}
+          apiBase={API}
+          onClose={() => setWizardOpen(false)}
+          onSuccess={refreshMemories}
+        />
+      )}
+
+      <SearchOverlay
+        treeId={treeId}
+        people={people.map((p) => ({
+          id: p.id,
+          name: p.name,
+          portraitUrl: p.portraitUrl,
+          essenceLine: p.essenceLine,
+          birthYear: p.birthYear,
+          deathYear: p.deathYear,
+        }))}
+        memories={memories}
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+      />
     </main>
   );
 }

@@ -52,6 +52,8 @@ interface TreeCanvasProps {
   currentUserPersonId: string | null;
   onDriftClick: () => void;
   onPersonDetailClick: (personId: string) => void;
+  onAddMemoryClick?: () => void;
+  onSearchClick?: () => void;
 }
 
 function TreeCanvasInner({
@@ -62,6 +64,8 @@ function TreeCanvasInner({
   currentUserPersonId,
   onDriftClick,
   onPersonDetailClick,
+  onAddMemoryClick,
+  onSearchClick,
 }: TreeCanvasProps) {
   const reactFlow = useReactFlow();
   const [nodes, setNodes, onNodesChange] = useNodesState<TreeFlowNode>([]);
@@ -223,6 +227,43 @@ function TreeCanvasInner({
 
         <div style={{ flex: 1 }} />
 
+        {onSearchClick && (
+          <button
+            onClick={onSearchClick}
+            style={{
+              fontFamily: "var(--font-ui)",
+              fontSize: 12,
+              color: "var(--ink-faded)",
+              background: "var(--paper-deep)",
+              border: "1px solid var(--rule)",
+              borderRadius: 6,
+              cursor: "pointer",
+              padding: "5px 10px",
+              display: "flex",
+              alignItems: "center",
+              gap: 5,
+            }}
+          >
+            <span>⌕</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+              Search
+              <kbd
+                style={{
+                  fontFamily: "var(--font-ui)",
+                  fontSize: 10,
+                  background: "var(--paper)",
+                  border: "1px solid var(--rule)",
+                  borderRadius: 3,
+                  padding: "1px 4px",
+                  color: "var(--ink-faded)",
+                }}
+              >
+                ⌘K
+              </kbd>
+            </span>
+          </button>
+        )}
+
         <button
           onClick={onDriftClick}
           style={{
@@ -238,6 +279,40 @@ function TreeCanvasInner({
         >
           Drift ›
         </button>
+
+        {onAddMemoryClick && (
+          <button
+            onClick={onAddMemoryClick}
+            style={{
+              fontFamily: "var(--font-ui)",
+              fontSize: 12,
+              fontWeight: 500,
+              color: "white",
+              background: "var(--moss)",
+              border: "none",
+              cursor: "pointer",
+              padding: "5px 14px",
+              borderRadius: 6,
+            }}
+          >
+            + Add
+          </button>
+        )}
+
+        <a
+          href={`/trees/${treeId}/atrium`}
+          style={{
+            fontFamily: "var(--font-ui)",
+            fontSize: 11,
+            color: "var(--ink-faded)",
+            textDecoration: "none",
+            padding: "4px 8px",
+            border: "1px solid var(--rule)",
+            borderRadius: 4,
+          }}
+        >
+          ⌂
+        </a>
 
         <a
           href={`/trees/${treeId}/settings`}

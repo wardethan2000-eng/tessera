@@ -116,4 +116,41 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
       );
     },
   );
+
+  /** GET /api/trees/:treeId/memories — all memories for a tree (Atrium + Search) */
+  app.get("/api/trees/:treeId/memories", async (request, reply) => {
+    const session = await getSession(request.headers);
+    if (!session) return reply.status(401).send({ error: "Unauthorized" });
+
+    const { treeId } = request.params as { treeId: string };
+
+    const membership = await db.query.treeMemberships.findFirst({
+      where: (t, { and, eq }) =>
+        and(eq(t.treeId, treeId), eq(t.userId, session.user.id)),
+    });
+    if (!membership) {
+      return reply.status(403).send({ error: "Not a member of this tree" });
+    }
+
+    const memories = await db.query.memories.findMany({
+      where: (m, { eq }) => eq(m.treeId, treeId),
+      with: {
+        media: true,
+        primaryPerson: { with: { portraitMedia: true } },
+      },
+      orderBy: (m, { desc }) => [desc(m.createdAt)],
+      limit: 200,
+    });
+
+    return reply.send(
+      memories.map((m) => ({
+        ...m,
+        mediaUrl: m.media ? mediaUrl(m.media.objectKey) : null,
+        personName: m.primaryPerson?.displayName ?? null,
+        personPortraitUrl: m.primaryPerson?.portraitMedia
+          ? mediaUrl(m.primaryPerson.portraitMedia.objectKey)
+          : null,
+      })),
+    );
+  });
 }
