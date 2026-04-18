@@ -12,6 +12,9 @@
     "build": "pnpm --filter @familytree/database build && pnpm --filter @familytree/api build && pnpm --filter @familytree/web build",
     "lint": "pnpm --filter @familytree/database lint && pnpm --filter @familytree/api lint && pnpm --filter @familytree/web lint",
     "typecheck": "pnpm --filter @familytree/database build && pnpm --filter @familytree/api typecheck && pnpm --filter @familytree/web typecheck",
-    "db:generate": "pnpm --filter @familytree/database db:generate"
+    "db:generate": "pnpm --filter @familytree/database db:generate",
+    "db:push": "pnpm --filter @familytree/database db:push",
+    "db:migrate": "pnpm --filter @familytree/database db:migrate",
+    "db:studio": "pnpm --filter @familytree/database db:studio"
   }
 }
