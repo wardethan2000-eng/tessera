@@ -1,0 +1,10 @@
+{
+  "name": "@familytree/typescript-config",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    "./base.json": "./base.json",
+    "./fastify.json": "./fastify.json",
+    "./nextjs.json": "./nextjs.json"
+  }
+}

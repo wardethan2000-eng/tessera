@@ -1,0 +1,17 @@
+{
+  "name": "familytree",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @familytree/api --filter @familytree/web dev",
+    "dev:api": "pnpm --filter @familytree/api dev",
+    "dev:web": "pnpm --filter @familytree/web dev",
+    "build": "pnpm --filter @familytree/database build && pnpm --filter @familytree/api build && pnpm --filter @familytree/web build",
+    "lint": "pnpm --filter @familytree/database lint && pnpm --filter @familytree/api lint && pnpm --filter @familytree/web lint",
+    "typecheck": "pnpm --filter @familytree/database build && pnpm --filter @familytree/api typecheck && pnpm --filter @familytree/web typecheck",
+    "db:generate": "pnpm --filter @familytree/database db:generate"
+  }
+}

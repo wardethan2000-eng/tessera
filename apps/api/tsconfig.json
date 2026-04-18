@@ -1,0 +1,11 @@
+{
+  "extends": "@familytree/typescript-config/fastify.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist"
+  },
+  "references": [
+    { "path": "../../packages/database" }
+  ],
+  "include": ["src/**/*.ts"]
+}
