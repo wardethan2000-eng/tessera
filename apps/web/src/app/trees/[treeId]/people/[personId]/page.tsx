@@ -5,11 +5,21 @@ import { useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
 import { MemoryLightbox, type LightboxMemory } from "@/components/tree/MemoryLightbox";
 import { PromptComposer } from "@/components/tree/PromptComposer";
+import { PlacePicker } from "@/components/tree/PlacePicker";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 type MemoryKind = "story" | "photo" | "voice" | "document" | "other";
 type RelationshipType = "parent_child" | "sibling" | "spouse";
+type ResolvedPlace = {
+  id: string;
+  label: string;
+  latitude: number;
+  longitude: number;
+  countryCode?: string | null;
+  adminRegion?: string | null;
+  locality?: string | null;
+};
 
 type Person = {
   id: string;
@@ -19,6 +29,10 @@ type Person = {
   deathDateText: string | null;
   birthPlace: string | null;
   deathPlace: string | null;
+  birthPlaceId?: string | null;
+  deathPlaceId?: string | null;
+  birthPlaceResolved?: ResolvedPlace | null;
+  deathPlaceResolved?: ResolvedPlace | null;
   isLiving: boolean;
   linkedUserId: string | null;
   portraitUrl: string | null;
@@ -31,8 +45,15 @@ type Memory = {
   kind: MemoryKind;
   title: string;
   body: string | null;
+  transcriptText?: string | null;
+  transcriptLanguage?: string | null;
+  transcriptStatus?: "none" | "queued" | "processing" | "completed" | "failed";
+  transcriptError?: string | null;
   dateOfEventText: string | null;
+  placeId?: string | null;
+  place?: ResolvedPlace | null;
   mediaUrl: string | null;
+  mimeType?: string | null;
   createdAt: string;
 };
 
@@ -67,6 +88,23 @@ function getDecade(year: number): string {
   return `${Math.floor(year / 10) * 10}s`;
 }
 
+function getVoiceTranscriptLabel(memory: Memory): string | null {
+  if (memory.kind !== "voice") return null;
+  if (memory.transcriptStatus === "completed" && memory.transcriptText) {
+    return memory.transcriptText;
+  }
+  if (memory.transcriptStatus === "completed") {
+    return "Transcript unavailable.";
+  }
+  if (memory.transcriptStatus === "failed") {
+    return memory.transcriptError ? `Transcription failed: ${memory.transcriptError}` : "Transcription failed.";
+  }
+  if (memory.transcriptStatus === "queued" || memory.transcriptStatus === "processing") {
+    return "Transcribing…";
+  }
+  return null;
+}
+
 type Tab = "memories" | "stories" | "connections" | "about" | "prompts";
 
 export default function PersonPage({
@@ -99,6 +137,8 @@ export default function PersonPage({
     deathDateText: "",
     birthPlace: "",
     deathPlace: "",
+    birthPlaceId: "",
+    deathPlaceId: "",
     isLiving: true,
   });
   const [savingEdit, setSavingEdit] = useState(false);
@@ -113,6 +153,7 @@ export default function PersonPage({
     title: "",
     body: "",
     dateOfEventText: "",
+    placeId: "",
     mediaId: "",
   });
   const [memoryFile, setMemoryFile] = useState<File | null>(null);
@@ -138,6 +179,19 @@ export default function PersonPage({
   }>>([]);
   const [promptComposerOpen, setPromptComposerOpen] = useState(false);
 
+  // Cross-tree linked people
+  const [crossTreeLinks, setCrossTreeLinks] = useState<Array<{
+    connectionId: string;
+    linkedPerson: {
+      id: string;
+      displayName: string;
+      treeId: string;
+      portraitUrl: string | null;
+      essenceLine?: string | null;
+    };
+    memories: Memory[];
+  }>>([]);
+
   useEffect(() => {
     if (!isPending && !session) router.replace("/auth/signin");
   }, [session, isPending, router]);
@@ -146,6 +200,7 @@ export default function PersonPage({
     if (session) {
       loadPerson();
       loadAllPeople();
+      loadCrossTreeLinks();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, treeId, personId]);
@@ -175,6 +230,14 @@ export default function PersonPage({
     if (res.ok) setAllPeople((await res.json()) as PersonSummary[]);
   }
 
+  async function loadCrossTreeLinks() {
+    const res = await fetch(
+      `${API}/api/trees/${treeId}/people/${personId}/cross-tree`,
+      { credentials: "include" },
+    );
+    if (res.ok) setCrossTreeLinks(await res.json());
+  }
+
   async function loadPersonPrompts() {
     const res = await fetch(`${API}/api/trees/${treeId}/prompts`, { credentials: "include" });
     if (res.ok) {
@@ -191,6 +254,8 @@ export default function PersonPage({
       deathDateText: p.deathDateText ?? "",
       birthPlace: p.birthPlace ?? "",
       deathPlace: p.deathPlace ?? "",
+      birthPlaceId: p.birthPlaceId ?? "",
+      deathPlaceId: p.deathPlaceId ?? "",
       isLiving: p.isLiving,
     });
     setEditing(true);
@@ -210,6 +275,8 @@ export default function PersonPage({
         deathDateText: editForm.deathDateText || null,
         birthPlace: editForm.birthPlace || null,
         deathPlace: editForm.deathPlace || null,
+        birthPlaceId: editForm.birthPlaceId || null,
+        deathPlaceId: editForm.deathPlaceId || null,
         isLiving: editForm.isLiving,
       }),
     });
@@ -245,7 +312,7 @@ export default function PersonPage({
     e.preventDefault();
     setSavingMemory(true);
     let resolvedMediaId = memoryForm.mediaId;
-    if ((memoryForm.kind === "photo" || memoryForm.kind === "voice") && memoryFile) {
+    if ((memoryForm.kind === "photo" || memoryForm.kind === "voice" || memoryForm.kind === "document") && memoryFile) {
       const presignRes = await fetch(`${API}/api/trees/${treeId}/media/presign`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -265,14 +332,15 @@ export default function PersonPage({
       body: JSON.stringify({
         kind: memoryForm.kind,
         title: memoryForm.title,
-        body: ["story", "document"].includes(memoryForm.kind) ? memoryForm.body : undefined,
-        mediaId: ["photo", "voice"].includes(memoryForm.kind) ? resolvedMediaId || undefined : undefined,
+        body: memoryForm.kind === "story" ? memoryForm.body : undefined,
+        mediaId: ["photo", "voice", "document"].includes(memoryForm.kind) ? resolvedMediaId || undefined : undefined,
         dateOfEventText: memoryForm.dateOfEventText || undefined,
+        placeId: memoryForm.placeId || undefined,
       }),
     });
     if (res.ok) {
       setShowMemoryForm(false);
-      setMemoryForm({ kind: "story", title: "", body: "", dateOfEventText: "", mediaId: "" });
+      setMemoryForm({ kind: "story", title: "", body: "", dateOfEventText: "", placeId: "", mediaId: "" });
       setMemoryFile(null);
       await loadPerson();
     }
@@ -307,8 +375,13 @@ export default function PersonPage({
       kind: m.kind,
       title: m.title,
       body: m.body,
+      transcriptText: m.transcriptText,
+      transcriptLanguage: m.transcriptLanguage,
+      transcriptStatus: m.transcriptStatus,
+      transcriptError: m.transcriptError,
       dateOfEventText: m.dateOfEventText,
       mediaUrl: m.mediaUrl,
+      mimeType: m.mimeType,
     })));
     setLightboxIndex(startIndex);
   }, []);
@@ -424,6 +497,12 @@ export default function PersonPage({
             Edit this page
           </button>
         )}
+        <a
+          href={`/trees/${treeId}/map?personId=${personId}`}
+          style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", background: "none", border: "1px solid var(--rule)", borderRadius: 20, padding: "5px 12px", cursor: "pointer", textDecoration: "none" }}
+        >
+          View on the map
+        </a>
         <button
           onClick={() => setPromptComposerOpen(true)}
           style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--moss)", background: "none", border: "1px solid var(--moss)", borderRadius: 20, padding: "5px 12px", cursor: "pointer", marginLeft: 8 }}
@@ -491,6 +570,25 @@ export default function PersonPage({
             <input type="text" value={editForm.birthPlace}
               onChange={(e) => setEditForm((f) => ({ ...f, birthPlace: e.target.value }))}
               placeholder="Birthplace" style={inputStyle} />
+            <PlacePicker
+              treeId={treeId}
+              apiBase={API}
+              value={editForm.birthPlaceId}
+              onChange={(birthPlaceId) => setEditForm((f) => ({ ...f, birthPlaceId }))}
+              label="Birthplace on the map"
+              emptyLabel="No mapped birthplace"
+            />
+            <input type="text" value={editForm.deathPlace}
+              onChange={(e) => setEditForm((f) => ({ ...f, deathPlace: e.target.value }))}
+              placeholder="Death place" style={inputStyle} />
+            <PlacePicker
+              treeId={treeId}
+              apiBase={API}
+              value={editForm.deathPlaceId}
+              onChange={(deathPlaceId) => setEditForm((f) => ({ ...f, deathPlaceId }))}
+              label="Death place on the map"
+              emptyLabel="No mapped death place"
+            />
             <label style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-soft)" }}>
               <input type="checkbox" checked={editForm.isLiving}
                 onChange={(e) => setEditForm((f) => ({ ...f, isLiving: e.target.checked }))} />
@@ -582,6 +680,7 @@ export default function PersonPage({
 
               {showMemoryForm && (
                 <MemoryForm
+                  treeId={treeId}
                   memoryForm={memoryForm}
                   setMemoryForm={setMemoryForm}
                   memoryFile={memoryFile}
@@ -743,7 +842,10 @@ export default function PersonPage({
                 {([
                   ["Birth", person.birthDateText],
                   ["Birthplace", person.birthPlace],
+                  ["Birthplace on the map", person.birthPlaceResolved?.label ?? null],
                   ["Death", person.deathDateText],
+                  ["Death place", person.deathPlace],
+                  ["Death place on the map", person.deathPlaceResolved?.label ?? null],
                   ["Status", person.isLiving ? "Living" : "Deceased"],
                 ] as [string, string | null][]).filter(([, v]) => v).map(([label, value]) => (
                   <div key={label} style={{ display: "flex", gap: 24 }}>
@@ -758,10 +860,65 @@ export default function PersonPage({
                   </div>
                 )}
               </div>
+
+              {/* ── Also appears in (cross-tree) ── */}
+              {crossTreeLinks.length > 0 && (
+                <div style={{ marginTop: 32 }}>
+                  <h3 style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", textTransform: "uppercase", letterSpacing: "0.06em", margin: "0 0 12px", fontWeight: 500 }}>
+                    Also appears in
+                  </h3>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                    {crossTreeLinks.map((link) => (
+                      <div key={link.connectionId} style={{ border: "1px solid var(--rule)", borderRadius: 10, padding: "16px 20px", background: "var(--paper-deep)" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: link.memories.length > 0 ? 14 : 0 }}>
+                          {link.linkedPerson.portraitUrl && (
+                            <img
+                              src={link.linkedPerson.portraitUrl}
+                              alt={link.linkedPerson.displayName}
+                              style={{ width: 36, height: 36, borderRadius: "50%", objectFit: "cover", border: "1px solid var(--rule)" }}
+                            />
+                          )}
+                          <div>
+                            <p style={{ fontFamily: "var(--font-ui)", fontSize: 14, color: "var(--ink)", margin: 0 }}>
+                              {link.linkedPerson.displayName}
+                            </p>
+                            {link.linkedPerson.essenceLine && (
+                              <p style={{ fontFamily: "var(--font-body)", fontSize: 12, color: "var(--ink-faded)", margin: "2px 0 0" }}>
+                                {link.linkedPerson.essenceLine}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        {link.memories.length > 0 && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            {link.memories.slice(0, 3).map((m) => (
+                              <div
+                                key={m.id}
+                                style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "var(--paper)", borderRadius: 6, border: "1px solid var(--rule)" }}
+                              >
+                                <span style={{ fontSize: 13, opacity: 0.4 }}>
+                                  {m.kind === "photo" ? "◻" : m.kind === "voice" ? "🎙" : m.kind === "document" ? "□" : "✦"}
+                                </span>
+                                <span style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-soft)", flex: 1 }}>{m.title}</span>
+                                {m.dateOfEventText && (
+                                  <span style={{ fontFamily: "var(--font-ui)", fontSize: 11, color: "var(--ink-faded)" }}>{m.dateOfEventText}</span>
+                                )}
+                              </div>
+                            ))}
+                            {link.memories.length > 3 && (
+                              <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", margin: "4px 0 0", textAlign: "right" }}>
+                                +{link.memories.length - 3} more
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
-
-          {/* ── Prompts / Questions tab ── */}
           {activeTab === "prompts" && (
             <div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
@@ -915,7 +1072,7 @@ const secondaryBtnStyle: React.CSSProperties = {
 
 // ── Sub-components ─────────────────────────────────────────────────────────
 
-function MemoryCard({ memory, onClick }: { memory: { id: string; kind: MemoryKind; title: string; body: string | null; dateOfEventText: string | null; mediaUrl: string | null }; onClick?: () => void }) {
+function MemoryCard({ memory, onClick }: { memory: Memory; onClick?: () => void }) {
   const kindIcon: Record<MemoryKind, string> = {
     photo: "◻",
     story: "✦",
@@ -961,12 +1118,18 @@ function MemoryCard({ memory, onClick }: { memory: { id: string; kind: MemoryKin
             {memory.body}
           </p>
         )}
+        {memory.kind === "voice" && (
+          <p style={{ fontFamily: "var(--font-body)", fontSize: 13, lineHeight: 1.6, color: "var(--ink-faded)", margin: 0, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+            {getVoiceTranscriptLabel(memory)}
+          </p>
+        )}
       </div>
     </article>
   );
 }
 
 function MemoryForm({
+  treeId,
   memoryForm,
   setMemoryForm,
   memoryFile,
@@ -974,7 +1137,8 @@ function MemoryForm({
   savingMemory,
   saveMemory,
 }: {
-  memoryForm: { kind: MemoryKind; title: string; body: string; dateOfEventText: string; mediaId: string };
+  treeId: string;
+  memoryForm: { kind: MemoryKind; title: string; body: string; dateOfEventText: string; placeId: string; mediaId: string };
   setMemoryForm: React.Dispatch<React.SetStateAction<typeof memoryForm>>;
   memoryFile: File | null;
   setMemoryFile: (f: File | null) => void;
@@ -1001,7 +1165,7 @@ function MemoryForm({
       <input type="text" required value={memoryForm.title}
         onChange={(e) => setMemoryForm((f) => ({ ...f, title: e.target.value }))}
         placeholder="Title" style={inputStyle} />
-      {["story", "document"].includes(memoryForm.kind) && (
+      {["story"].includes(memoryForm.kind) && (
         <textarea required rows={4} value={memoryForm.body}
           onChange={(e) => setMemoryForm((f) => ({ ...f, body: e.target.value }))}
           placeholder="Write the memory…"
@@ -1017,11 +1181,24 @@ function MemoryForm({
           onChange={(e) => setMemoryFile(e.target.files?.[0] ?? null)}
           style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-soft)" }} />
       )}
+      {["document"].includes(memoryForm.kind) && (
+        <input type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword" required
+          onChange={(e) => setMemoryFile(e.target.files?.[0] ?? null)}
+          style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-soft)" }} />
+      )}
       {memoryFile && <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", margin: 0 }}>{memoryFile.name}</p>}
       <input type="text" value={memoryForm.dateOfEventText}
         onChange={(e) => setMemoryForm((f) => ({ ...f, dateOfEventText: e.target.value }))}
         placeholder="Date of event (e.g. 1964, Summer 1972)"
         style={inputStyle} />
+      <PlacePicker
+        treeId={treeId}
+        apiBase={API}
+        value={memoryForm.placeId}
+        onChange={(placeId) => setMemoryForm((f) => ({ ...f, placeId }))}
+        label="Place on the map"
+        emptyLabel="No mapped place"
+      />
       <button type="submit" disabled={savingMemory} style={primaryBtnStyle}>
         {savingMemory ? "Saving…" : "Add memory"}
       </button>

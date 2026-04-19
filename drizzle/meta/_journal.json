@@ -36,6 +36,13 @@
       "when": 1776547800000,
       "tag": "0004_relationship_invariants",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1776560400000,
+      "tag": "0006_family_map_places",
+      "breakpoints": true
     }
   ]
 }

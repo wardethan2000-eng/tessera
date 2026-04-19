@@ -34,8 +34,12 @@ interface Memory {
   title: string;
   body?: string | null;
   transcriptText?: string | null;
+  transcriptLanguage?: string | null;
+  transcriptStatus?: "none" | "queued" | "processing" | "completed" | "failed";
+  transcriptError?: string | null;
   dateOfEventText?: string | null;
   mediaUrl?: string | null;
+  mimeType?: string | null;
   personName?: string | null;
   primaryPersonId?: string | null;
   personPortraitUrl?: string | null;
@@ -46,6 +50,23 @@ function extractYear(text?: string | null): number | null {
   if (!text) return null;
   const m = text.match(/\b(\d{4})\b/);
   return m ? parseInt(m[1]!, 10) : null;
+}
+
+function getVoiceTranscriptLabel(memory: Memory): string | null {
+  if (memory.kind !== "voice") return null;
+  if (memory.transcriptStatus === "completed" && memory.transcriptText) {
+    return memory.transcriptText;
+  }
+  if (memory.transcriptStatus === "completed") {
+    return "Transcript unavailable.";
+  }
+  if (memory.transcriptStatus === "failed") {
+    return memory.transcriptError ? `Transcription failed: ${memory.transcriptError}` : "Transcription failed.";
+  }
+  if (memory.transcriptStatus === "queued" || memory.transcriptStatus === "processing") {
+    return "Transcribing…";
+  }
+  return null;
 }
 
 function MemoryCard({ memory, onClick }: { memory: Memory; onClick: () => void }) {
@@ -129,6 +150,23 @@ function MemoryCard({ memory, onClick }: { memory: Memory; onClick: () => void }
           {memory.personName && memory.dateOfEventText ? " · " : ""}
           {memory.dateOfEventText ?? ""}
         </div>
+        {memory.kind === "voice" && (
+          <div
+            style={{
+              marginTop: 8,
+              fontFamily: "var(--font-body)",
+              fontSize: 13,
+              lineHeight: 1.55,
+              color: "var(--ink-faded)",
+              display: "-webkit-box",
+              WebkitLineClamp: 3,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+            }}
+          >
+            {getVoiceTranscriptLabel(memory)}
+          </div>
+        )}
       </div>
     </button>
   );
@@ -385,6 +423,24 @@ export default function AtriumPage() {
         </span>
 
         <div style={{ flex: 1 }} />
+
+        <a
+          href={`/trees/${treeId}/map`}
+          style={{
+            fontFamily: "var(--font-ui)",
+            fontSize: 12,
+            color: "var(--ink-faded)",
+            background: "var(--paper-deep)",
+            border: "1px solid var(--rule)",
+            borderRadius: 6,
+            padding: "5px 12px",
+            textDecoration: "none",
+            display: "flex",
+            alignItems: "center",
+          }}
+        >
+          Map
+        </a>
 
         {/* Inbox bell */}
         <a

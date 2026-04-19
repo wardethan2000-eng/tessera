@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { PlacePicker } from "@/components/tree/PlacePicker";
 
 type MemoryKind = "story" | "photo" | "voice" | "document" | "other";
 
@@ -36,6 +37,7 @@ interface Step2State {
 interface Step3State {
   personId: string;
   dateOfEventText: string;
+  placeId: string;
 }
 
 const KIND_OPTIONS: { id: MemoryKind; icon: string; label: string; description: string }[] = [
@@ -66,6 +68,7 @@ export function AddMemoryWizard({
   const [step3, setStep3] = useState<Step3State>({
     personId: defaultPersonId ?? (people[0]?.id ?? ""),
     dateOfEventText: "",
+    placeId: "",
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -131,6 +134,7 @@ export function AddMemoryWizard({
         kind: step1.kind,
         title: step2.title.trim(),
         dateOfEventText: step3.dateOfEventText.trim() || undefined,
+        placeId: step3.placeId || undefined,
       };
       if (step2.body.trim()) body.body = step2.body.trim();
       if (resolvedMediaId) body.mediaId = resolvedMediaId;
@@ -794,6 +798,18 @@ export function AddMemoryWizard({
               />
             </div>
 
+            <div style={{ marginBottom: 16 }}>
+              <PlacePicker
+                treeId={treeId}
+                apiBase={apiBase_}
+                value={step3.placeId}
+                onChange={(placeId) => setStep3((s) => ({ ...s, placeId }))}
+                label="Where did this happen? (optional)"
+                emptyLabel="No mapped place"
+                note="Add a mapped place once, then reuse it across the family archive."
+              />
+            </div>
+
             {/* Summary */}
             <div
               style={{
@@ -836,6 +852,9 @@ export function AddMemoryWizard({
                 )}
                 {step3.dateOfEventText && (
                   <> · <em>{step3.dateOfEventText}</em></>
+                )}
+                {step3.placeId && (
+                  <> · mapped place selected</>
                 )}
               </div>
             </div>

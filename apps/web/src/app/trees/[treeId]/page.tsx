@@ -197,6 +197,26 @@ export default function TreePage() {
 
   return (
     <main style={{ width: "100vw", height: "100vh", overflow: "hidden", background: "var(--paper)" }}>
+      <a
+        href={`/trees/${treeId}/map`}
+        style={{
+          position: "fixed",
+          top: 16,
+          right: 16,
+          zIndex: 30,
+          textDecoration: "none",
+          fontFamily: "var(--font-ui)",
+          fontSize: 12,
+          color: "var(--ink)",
+          background: "rgba(246,241,231,0.92)",
+          border: "1px solid var(--rule)",
+          borderRadius: 999,
+          padding: "8px 14px",
+          backdropFilter: "blur(8px)",
+        }}
+      >
+        Family map
+      </a>
       <TreeCanvas
         treeId={treeId}
         treeName={tree.name}

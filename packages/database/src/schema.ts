@@ -1,6 +1,7 @@
 import {
   bigint,
   boolean,
+  doublePrecision,
   index,
   integer,
   pgEnum,
@@ -83,6 +84,12 @@ export const promptReplyLinkStatusEnum = pgEnum("prompt_reply_link_status", [
   "used",
   "revoked",
   "expired",
+]);
+
+export const treeConnectionStatusEnum = pgEnum("tree_connection_status", [
+  "pending",
+  "active",
+  "ended",
 ]);
 
 // ── Better Auth core tables ────────────────────────────────────────────────────
@@ -216,6 +223,38 @@ export const media = pgTable(
   ],
 );
 
+export const places = pgTable(
+  "places",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    treeId: uuid("tree_id")
+      .notNull()
+      .references(() => trees.id, { onDelete: "cascade" }),
+    label: varchar("label", { length: 200 }).notNull(),
+    normalizedLabel: varchar("normalized_label", { length: 200 }).notNull(),
+    latitude: doublePrecision("latitude").notNull(),
+    longitude: doublePrecision("longitude").notNull(),
+    countryCode: varchar("country_code", { length: 2 }),
+    adminRegion: varchar("admin_region", { length: 120 }),
+    locality: varchar("locality", { length: 120 }),
+    geocodeProvider: varchar("geocode_provider", { length: 40 }).default("manual").notNull(),
+    geocodeConfidence: integer("geocode_confidence"),
+    createdByUserId: text("created_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("places_tree_normalized_label_unique_idx").on(
+      table.treeId,
+      table.normalizedLabel,
+    ),
+    index("places_tree_idx").on(table.treeId),
+    index("places_created_by_idx").on(table.createdByUserId),
+  ],
+);
+
 export const people = pgTable(
   "people",
   {
@@ -230,6 +269,12 @@ export const people = pgTable(
     deathDateText: varchar("death_date_text", { length: 100 }),
     birthPlace: varchar("birth_place", { length: 200 }),
     deathPlace: varchar("death_place", { length: 200 }),
+    birthPlaceId: uuid("birth_place_id").references(() => places.id, {
+      onDelete: "set null",
+    }),
+    deathPlaceId: uuid("death_place_id").references(() => places.id, {
+      onDelete: "set null",
+    }),
     isLiving: boolean("is_living").default(true).notNull(),
     portraitMediaId: uuid("portrait_media_id").references(() => media.id, {
       onDelete: "set null",
@@ -244,6 +289,8 @@ export const people = pgTable(
     index("people_tree_idx").on(table.treeId),
     index("people_linked_user_idx").on(table.linkedUserId),
     index("people_portrait_media_idx").on(table.portraitMediaId),
+    index("people_birth_place_idx").on(table.birthPlaceId),
+    index("people_death_place_idx").on(table.deathPlaceId),
   ],
 );
 
@@ -370,6 +417,8 @@ export const memories = pgTable(
     title: varchar("title", { length: 200 }).notNull(),
     body: text("body"),
     dateOfEventText: varchar("date_of_event_text", { length: 100 }),
+    placeId: uuid("place_id").references(() => places.id, { onDelete: "set null" }),
+    placeLabelOverride: varchar("place_label_override", { length: 200 }),
     transcriptText: text("transcript_text"),
     transcriptLanguage: varchar("transcript_language", { length: 32 }),
     transcriptStatus: transcriptionStatusEnum("transcript_status")
@@ -385,6 +434,7 @@ export const memories = pgTable(
     index("memories_primary_person_idx").on(table.primaryPersonId),
     index("memories_contributor_idx").on(table.contributorUserId),
     index("memories_media_idx").on(table.mediaId),
+    index("memories_place_idx").on(table.placeId),
     index("memories_transcript_status_idx").on(table.transcriptStatus),
   ],
 );
@@ -465,6 +515,81 @@ export const archiveExports = pgTable(
   ],
 );
 
+/**
+ * A bilateral connection between two family trees (e.g. in-law relationship).
+ * treeAId is always the lexicographically smaller UUID to prevent duplicates.
+ * Enforced in application code; a CHECK constraint mirrors this in the DB.
+ */
+export const treeConnections = pgTable(
+  "tree_connections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    treeAId: uuid("tree_a_id")
+      .notNull()
+      .references(() => trees.id, { onDelete: "cascade" }),
+    treeBId: uuid("tree_b_id")
+      .notNull()
+      .references(() => trees.id, { onDelete: "cascade" }),
+    status: treeConnectionStatusEnum("status").default("pending").notNull(),
+    initiatedByUserId: text("initiated_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    initiatedByTreeId: uuid("initiated_by_tree_id")
+      .notNull()
+      .references(() => trees.id, { onDelete: "cascade" }),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("tree_connections_pair_unique_idx").on(table.treeAId, table.treeBId),
+    index("tree_connections_tree_a_idx").on(table.treeAId),
+    index("tree_connections_tree_b_idx").on(table.treeBId),
+    index("tree_connections_status_idx").on(table.status),
+    index("tree_connections_initiated_by_user_idx").on(table.initiatedByUserId),
+  ],
+);
+
+/**
+ * Identifies that a person in tree A and a person in tree B are the same real person,
+ * within the context of a tree connection (e.g. an in-law who has their own family tree).
+ */
+export const crossTreePersonLinks = pgTable(
+  "cross_tree_person_links",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    connectionId: uuid("connection_id")
+      .notNull()
+      .references(() => treeConnections.id, { onDelete: "cascade" }),
+    personAId: uuid("person_a_id")
+      .notNull()
+      .references(() => people.id, { onDelete: "cascade" }),
+    personBId: uuid("person_b_id")
+      .notNull()
+      .references(() => people.id, { onDelete: "cascade" }),
+    linkedByUserId: text("linked_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // Each person in tree A can only be linked once per connection
+    uniqueIndex("cross_tree_person_links_person_a_conn_unique_idx").on(
+      table.connectionId,
+      table.personAId,
+    ),
+    // Each person in tree B can only be linked once per connection
+    uniqueIndex("cross_tree_person_links_person_b_conn_unique_idx").on(
+      table.connectionId,
+      table.personBId,
+    ),
+    index("cross_tree_person_links_connection_idx").on(table.connectionId),
+    index("cross_tree_person_links_person_a_idx").on(table.personAId),
+    index("cross_tree_person_links_person_b_idx").on(table.personBId),
+  ],
+);
+
 // ── Relations ──────────────────────────────────────────────────────────────────
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -496,6 +621,7 @@ export const treesRelations = relations(trees, ({ one, many }) => ({
   }),
   memberships: many(treeMemberships),
   mediaItems: many(media),
+  places: many(places),
   people: many(people),
   relationships: many(relationships),
   memories: many(memories),
@@ -504,6 +630,9 @@ export const treesRelations = relations(trees, ({ one, many }) => ({
   prompts: many(prompts),
   promptReplyLinks: many(promptReplyLinks),
   transcriptionJobs: many(transcriptionJobs),
+  treeConnectionsAsA: many(treeConnections, { relationName: "tree_connection_a" }),
+  treeConnectionsAsB: many(treeConnections, { relationName: "tree_connection_b" }),
+  treeConnectionsAsInitiator: many(treeConnections, { relationName: "tree_connection_initiator" }),
 }));
 
 export const treeMembershipsRelations = relations(treeMemberships, ({ one }) => ({
@@ -525,8 +654,29 @@ export const mediaRelations = relations(media, ({ one, many }) => ({
   memories: many(memories),
 }));
 
+export const placesRelations = relations(places, ({ one, many }) => ({
+  tree: one(trees, { fields: [places.treeId], references: [trees.id] }),
+  createdBy: one(users, {
+    fields: [places.createdByUserId],
+    references: [users.id],
+  }),
+  birthForPeople: many(people, { relationName: "person_birth_place" }),
+  deathForPeople: many(people, { relationName: "person_death_place" }),
+  memories: many(memories),
+}));
+
 export const peopleRelations = relations(people, ({ one, many }) => ({
   tree: one(trees, { fields: [people.treeId], references: [trees.id] }),
+  birthPlaceRef: one(places, {
+    fields: [people.birthPlaceId],
+    references: [places.id],
+    relationName: "person_birth_place",
+  }),
+  deathPlaceRef: one(places, {
+    fields: [people.deathPlaceId],
+    references: [places.id],
+    relationName: "person_death_place",
+  }),
   portraitMedia: one(media, {
     fields: [people.portraitMediaId],
     references: [media.id],
@@ -544,6 +694,8 @@ export const peopleRelations = relations(people, ({ one, many }) => ({
   memories: many(memories),
   invitations: many(invitations),
   promptsReceived: many(prompts),
+  crossTreeLinksAsA: many(crossTreePersonLinks, { relationName: "cross_tree_link_person_a" }),
+  crossTreeLinksAsB: many(crossTreePersonLinks, { relationName: "cross_tree_link_person_b" }),
 }));
 
 export const relationshipsRelations = relations(relationships, ({ one }) => ({
@@ -571,6 +723,7 @@ export const memoriesRelations = relations(memories, ({ one }) => ({
     references: [users.id],
   }),
   media: one(media, { fields: [memories.mediaId], references: [media.id] }),
+  place: one(places, { fields: [memories.placeId], references: [places.id] }),
   prompt: one(prompts, { fields: [memories.promptId], references: [prompts.id] }),
 }));
 
@@ -624,3 +777,47 @@ export const transcriptionJobsRelations = relations(
     }),
   }),
 );
+
+export const treeConnectionsRelations = relations(treeConnections, ({ one, many }) => ({
+  treeA: one(trees, {
+    fields: [treeConnections.treeAId],
+    references: [trees.id],
+    relationName: "tree_connection_a",
+  }),
+  treeB: one(trees, {
+    fields: [treeConnections.treeBId],
+    references: [trees.id],
+    relationName: "tree_connection_b",
+  }),
+  initiatedByUser: one(users, {
+    fields: [treeConnections.initiatedByUserId],
+    references: [users.id],
+  }),
+  initiatedByTree: one(trees, {
+    fields: [treeConnections.initiatedByTreeId],
+    references: [trees.id],
+    relationName: "tree_connection_initiator",
+  }),
+  personLinks: many(crossTreePersonLinks),
+}));
+
+export const crossTreePersonLinksRelations = relations(crossTreePersonLinks, ({ one }) => ({
+  connection: one(treeConnections, {
+    fields: [crossTreePersonLinks.connectionId],
+    references: [treeConnections.id],
+  }),
+  personA: one(people, {
+    fields: [crossTreePersonLinks.personAId],
+    references: [people.id],
+    relationName: "cross_tree_link_person_a",
+  }),
+  personB: one(people, {
+    fields: [crossTreePersonLinks.personBId],
+    references: [people.id],
+    relationName: "cross_tree_link_person_b",
+  }),
+  linkedBy: one(users, {
+    fields: [crossTreePersonLinks.linkedByUserId],
+    references: [users.id],
+  }),
+}));

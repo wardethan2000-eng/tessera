@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  BaseEdge,
   Background,
   MiniMap,
   useNodesState,
@@ -9,6 +10,7 @@ import {
   useReactFlow,
   ReactFlowProvider,
   ReactFlow as ReactFlowBase,
+  type EdgeProps,
   type EdgeMouseHandler,
   type NodeMouseHandler,
   type ReactFlowProps,
@@ -20,6 +22,7 @@ import { PersonNode as PersonNodeComponent } from "./PersonNode";
 import { CinematicPersonOverlay } from "./CinematicPersonOverlay";
 import type {
   ApiPerson,
+  ConstellationEdgeData,
   ApiRelationship,
   PersonFlowNode,
   TreeFlowNode,
@@ -29,8 +32,9 @@ import {
   computeLayout,
   buildPersonNodes,
   buildEdges,
-  NODE_WIDTH,
-  NODE_HEIGHT,
+  buildEditSlots,
+  getConstellationFocusBounds,
+  getConstellationFocusIds,
 } from "./treeLayout";
 
 // Cast to avoid React 19 JSX type incompatibility with @xyflow/react's React 18 types
@@ -39,6 +43,16 @@ const ReactFlow = ReactFlowBase as unknown as React.ComponentType<ReactFlowProps
 const NODE_TYPES = {
   person: PersonNodeComponent,
 };
+
+const EDGE_TYPES = {
+  constellationParent: ParentChildEdge,
+  constellationSpouse: SpouseEdge,
+};
+
+const CONTROL_SURFACE = "rgba(246,241,231,0.82)";
+const CONTROL_BORDER = "rgba(177,165,145,0.48)";
+const CANVAS_BACKGROUND =
+  "radial-gradient(circle at 20% 18%, rgba(255,255,255,0.72), transparent 32%), radial-gradient(circle at 82% 20%, rgba(226,214,194,0.38), transparent 28%), linear-gradient(180deg, #f7f2e9 0%, #f1eadf 100%)";
 
 interface HoverState {
   personId: string;
@@ -102,10 +116,9 @@ function TreeCanvasInner({
   const [showLegend, setShowLegend] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editInteraction, setEditInteraction] = useState<EditInteractionState>({ mode: "idle" });
-  const [selectedAnchor, setSelectedAnchor] = useState<{
-    x: number;
-    y: number;
-  } | null>(null);
+  const [projectedEditSlots, setProjectedEditSlots] = useState<
+    Array<{ kind: EditRelationKind; x: number; y: number; label: string }>
+  >([]);
   const [editingRelationshipType, setEditingRelationshipType] = useState<
     "parent_child" | "sibling" | "spouse"
   >("parent_child");
@@ -136,6 +149,11 @@ function TreeCanvasInner({
     () => computeLayout(people, relationships),
     [people, relationships]
   );
+  const focusPersonId = editMode ? selectedPersonId : (selectedPersonId ?? hoverState?.personId ?? null);
+  const focusPersonIds = useMemo(
+    () => getConstellationFocusIds(focusPersonId, relationships),
+    [focusPersonId, relationships],
+  );
 
   useEffect(() => {
     layoutRef.current = layout;
@@ -143,11 +161,26 @@ function TreeCanvasInner({
 
   // Rebuild nodes whenever people/layout/selected changes
   useEffect(() => {
-    const personNodes = buildPersonNodes(people, layout, selectedPersonId, currentUserPersonId);
-    const edgeList = buildEdges(relationships);
+    const personNodes = buildPersonNodes(
+      people,
+      layout,
+      selectedPersonId,
+      currentUserPersonId,
+      focusPersonIds,
+    );
+    const edgeList = buildEdges(relationships, layout, focusPersonIds);
     setNodes(personNodes);
     setEdges(edgeList);
-  }, [people, relationships, layout, selectedPersonId, currentUserPersonId, setNodes, setEdges]);
+  }, [
+    people,
+    relationships,
+    layout,
+    selectedPersonId,
+    currentUserPersonId,
+    focusPersonIds,
+    setNodes,
+    setEdges,
+  ]);
 
   // Initial fitView after nodes are set
   useEffect(() => {
@@ -162,12 +195,23 @@ function TreeCanvasInner({
   const selectPerson = useCallback(
     (personId: string, focusCamera = true) => {
       setSelectedPersonId(personId);
-      const pos = layoutRef.current.get(personId);
-      if (focusCamera && pos) {
-        reactFlow.setCenter(pos.x + 48, pos.y + 65, { duration: 600, zoom: 1.4 });
+      if (focusCamera) {
+        const bounds = getConstellationFocusBounds(
+          personId,
+          relationships,
+          layoutRef.current,
+        );
+        if (bounds) {
+          reactFlow.fitBounds(bounds, { duration: 650, padding: 0.16 });
+          return;
+        }
+        const pos = layoutRef.current.get(personId);
+        if (pos) {
+          reactFlow.setCenter(pos.x + 48, pos.y + 65, { duration: 600, zoom: 1.4 });
+        }
       }
     },
-    [reactFlow]
+    [reactFlow, relationships]
   );
 
   const resetRelationshipEditorDrafts = useCallback(() => {
@@ -263,11 +307,20 @@ function TreeCanvasInner({
 
   const handleLocateMe = useCallback(() => {
     if (!currentUserPersonId) return;
+    const bounds = getConstellationFocusBounds(
+      currentUserPersonId,
+      relationships,
+      layoutRef.current,
+    );
+    if (bounds) {
+      reactFlow.fitBounds(bounds, { duration: 650, padding: 0.18 });
+      return;
+    }
     const pos = layoutRef.current.get(currentUserPersonId);
     if (pos) {
       reactFlow.setCenter(pos.x + 48, pos.y + 65, { duration: 600, zoom: 1.2 });
     }
-  }, [currentUserPersonId, reactFlow]);
+  }, [currentUserPersonId, reactFlow, relationships]);
 
   const handleToggleEditMode = useCallback(() => {
     const next = !editMode;
@@ -282,6 +335,17 @@ function TreeCanvasInner({
       if (targetPersonId) {
         setSelectedPersonId(targetPersonId);
         setEditInteraction({ mode: "node-selected", personId: targetPersonId });
+        const bounds = getConstellationFocusBounds(
+          targetPersonId,
+          relationships,
+          layoutRef.current,
+        );
+        if (bounds) {
+          setTimeout(() => {
+            reactFlow.fitBounds(bounds, { duration: 500, padding: 0.2 });
+          }, 30);
+          return;
+        }
       }
       setTimeout(() => {
         reactFlow.fitView({ duration: 420, padding: 0.24 });
@@ -297,6 +361,7 @@ function TreeCanvasInner({
     editMode,
     people,
     reactFlow,
+    relationships,
     resetRelationshipEditorDrafts,
     selectedPersonId,
   ]);
@@ -328,30 +393,13 @@ function TreeCanvasInner({
     return relationships.find((r) => r.id === editInteraction.relationshipId) ?? null;
   }, [editInteraction, relationships]);
 
-  const selectedParentCount = useMemo(() => {
-    if (!selectedPersonId) return 0;
-    return relationships.filter(
-      (r) => r.type === "parent_child" && r.toPersonId === selectedPersonId,
-    ).length;
-  }, [relationships, selectedPersonId]);
-
-  const selectedPersonHasActiveSpouse = useMemo(() => {
-    if (!selectedPersonId) return false;
-    return relationships.some(
-      (r) =>
-        r.type === "spouse" &&
-        (r.spouseStatus ?? "active") === "active" &&
-        (r.fromPersonId === selectedPersonId || r.toPersonId === selectedPersonId),
-    );
-  }, [relationships, selectedPersonId]);
-
   useEffect(() => {
     if (!editMode) {
       setEditInteraction({ mode: "idle" });
       setCreateError(null);
       setShowAdvancedForm(false);
       resetRelationshipEditorDrafts();
-      setSelectedAnchor(null);
+      setProjectedEditSlots([]);
     }
   }, [editMode, resetRelationshipEditorDrafts]);
 
@@ -371,24 +419,30 @@ function TreeCanvasInner({
 
   const refreshSelectedCenter = useCallback(() => {
     if (!editMode || !selectedPersonId) {
-      setSelectedAnchor(null);
+      setProjectedEditSlots([]);
       return;
     }
-    const nodePos = layoutRef.current.get(selectedPersonId);
-    if (!nodePos || !rootRef.current) {
-      setSelectedAnchor(null);
+    if (!rootRef.current) {
+      setProjectedEditSlots([]);
       return;
     }
     const rootRect = rootRef.current.getBoundingClientRect();
-    const screenCenter = reactFlow.flowToScreenPosition({
-      x: nodePos.x + NODE_WIDTH / 2,
-      y: nodePos.y + NODE_HEIGHT / 2,
-    });
-    setSelectedAnchor({
-      x: screenCenter.x - rootRect.left,
-      y: screenCenter.y - rootRect.top,
-    });
-  }, [editMode, selectedPersonId, reactFlow]);
+    const slots = buildEditSlots(selectedPersonId, relationships, layoutRef.current).map(
+      (slot) => {
+        const screenCenter = reactFlow.flowToScreenPosition({
+          x: slot.flowX,
+          y: slot.flowY,
+        });
+        return {
+          kind: slot.kind,
+          x: screenCenter.x - rootRect.left,
+          y: screenCenter.y - rootRect.top,
+          label: slot.label,
+        };
+      },
+    );
+    setProjectedEditSlots(slots);
+  }, [editMode, selectedPersonId, reactFlow, relationships]);
 
   useEffect(() => {
     refreshSelectedCenter();
@@ -659,7 +713,18 @@ function TreeCanvasInner({
   }, [resetRelationshipEditorDrafts, selectedPersonId]);
 
   return (
-    <div ref={rootRef} style={{ width: "100%", height: "100%", position: "relative" }}>
+    <div ref={rootRef} style={{ width: "100%", height: "100%", position: "relative", background: CANVAS_BACKGROUND }}>
+      <div
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          backgroundImage:
+            "radial-gradient(circle at 8% 14%, rgba(177,165,145,0.22) 0 1px, transparent 1.5px), radial-gradient(circle at 22% 30%, rgba(177,165,145,0.18) 0 1px, transparent 1.5px), radial-gradient(circle at 39% 12%, rgba(177,165,145,0.16) 0 1px, transparent 1.5px), radial-gradient(circle at 61% 22%, rgba(177,165,145,0.2) 0 1px, transparent 1.5px), radial-gradient(circle at 74% 38%, rgba(177,165,145,0.14) 0 1px, transparent 1.5px), radial-gradient(circle at 90% 16%, rgba(177,165,145,0.18) 0 1px, transparent 1.5px), radial-gradient(circle at 14% 62%, rgba(177,165,145,0.16) 0 1px, transparent 1.5px), radial-gradient(circle at 31% 74%, rgba(177,165,145,0.14) 0 1px, transparent 1.5px), radial-gradient(circle at 53% 66%, rgba(177,165,145,0.18) 0 1px, transparent 1.5px), radial-gradient(circle at 79% 70%, rgba(177,165,145,0.15) 0 1px, transparent 1.5px)",
+          opacity: 0.75,
+        }}
+      />
       {/* Canvas header */}
       <div
         style={{
@@ -669,9 +734,9 @@ function TreeCanvasInner({
           right: 0,
           zIndex: 10,
           height: 52,
-          background: "rgba(246, 241, 231, 0.88)",
-          backdropFilter: "blur(8px)",
-          borderBottom: "1px solid var(--rule)",
+          background: CONTROL_SURFACE,
+          backdropFilter: "blur(10px)",
+          borderBottom: `1px solid ${CONTROL_BORDER}`,
           display: "flex",
           alignItems: "center",
           padding: "0 20px",
@@ -698,11 +763,11 @@ function TreeCanvasInner({
               fontFamily: "var(--font-ui)",
               fontSize: 12,
               color: "var(--ink-faded)",
-              background: "var(--paper-deep)",
-              border: "1px solid var(--rule)",
-              borderRadius: 6,
+              background: "rgba(255,255,255,0.28)",
+              border: `1px solid ${CONTROL_BORDER}`,
+              borderRadius: 999,
               cursor: "pointer",
-              padding: "5px 10px",
+              padding: "6px 11px",
               display: "flex",
               alignItems: "center",
               gap: 5,
@@ -735,11 +800,11 @@ function TreeCanvasInner({
             fontSize: 12,
             fontWeight: 500,
             color: editMode ? "white" : "var(--ink-faded)",
-            background: editMode ? "var(--ink)" : "var(--paper-deep)",
-            border: "1px solid var(--rule)",
+            background: editMode ? "var(--ink)" : "rgba(255,255,255,0.28)",
+            border: editMode ? "1px solid rgba(28,25,21,0.32)" : `1px solid ${CONTROL_BORDER}`,
             cursor: "pointer",
-            padding: "5px 10px",
-            borderRadius: 6,
+            padding: "6px 11px",
+            borderRadius: 999,
           }}
         >
           {editMode ? "Exit edit mode" : "Edit constellation"}
@@ -751,11 +816,11 @@ function TreeCanvasInner({
             fontFamily: "var(--font-ui)",
             fontSize: 13,
             color: "var(--moss)",
-            background: "none",
-            border: "1px solid var(--rule)",
+            background: "rgba(255,255,255,0.18)",
+            border: `1px solid ${CONTROL_BORDER}`,
             cursor: "pointer",
-            padding: "5px 12px",
-            borderRadius: 4,
+            padding: "6px 12px",
+            borderRadius: 999,
           }}
         >
           Drift ›
@@ -770,10 +835,10 @@ function TreeCanvasInner({
               fontWeight: 500,
               color: "white",
               background: "var(--moss)",
-              border: "none",
+              border: "1px solid rgba(78,93,66,0.26)",
               cursor: "pointer",
-              padding: "5px 14px",
-              borderRadius: 6,
+              padding: "6px 14px",
+              borderRadius: 999,
             }}
           >
             + Add
@@ -787,9 +852,10 @@ function TreeCanvasInner({
             fontSize: 11,
             color: "var(--ink-faded)",
             textDecoration: "none",
-            padding: "4px 8px",
-            border: "1px solid var(--rule)",
-            borderRadius: 4,
+            padding: "5px 9px",
+            border: `1px solid ${CONTROL_BORDER}`,
+            borderRadius: 999,
+            background: "rgba(255,255,255,0.2)",
           }}
         >
           ⌂
@@ -802,9 +868,10 @@ function TreeCanvasInner({
             fontSize: 13,
             color: "var(--ink-faded)",
             textDecoration: "none",
-            padding: "4px 8px",
-            border: "1px solid var(--rule)",
-            borderRadius: 4,
+            padding: "5px 9px",
+            border: `1px solid ${CONTROL_BORDER}`,
+            borderRadius: 999,
+            background: "rgba(255,255,255,0.2)",
           }}
           title="Inbox"
         >
@@ -818,7 +885,7 @@ function TreeCanvasInner({
             fontSize: 12,
             color: "var(--ink-faded)",
             textDecoration: "none",
-            padding: "4px 8px",
+            padding: "5px 6px",
           }}
         >
           ⚙
@@ -850,9 +917,9 @@ function TreeCanvasInner({
             style={{
               width: 32,
               height: 32,
-              background: "rgba(246,241,231,0.88)",
-              border: "1px solid var(--rule)",
-              borderRadius: 6,
+              background: CONTROL_SURFACE,
+              border: `1px solid ${CONTROL_BORDER}`,
+              borderRadius: 999,
               cursor: disabled ? "default" : "pointer",
               fontFamily: "var(--font-ui)",
               fontSize: label === "⊕" ? 14 : 18,
@@ -860,7 +927,8 @@ function TreeCanvasInner({
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              backdropFilter: "blur(8px)",
+              backdropFilter: "blur(10px)",
+              boxShadow: "0 10px 22px rgba(28,25,21,0.06)",
             }}
           >
             {label}
@@ -876,12 +944,13 @@ function TreeCanvasInner({
             fontFamily: "var(--font-ui)",
             fontSize: 11,
             color: "var(--ink-faded)",
-            background: "rgba(246,241,231,0.88)",
-            border: "1px solid var(--rule)",
-            borderRadius: 4,
-            padding: "4px 10px",
+            background: CONTROL_SURFACE,
+            border: `1px solid ${CONTROL_BORDER}`,
+            borderRadius: 999,
+            padding: "5px 11px",
             cursor: "pointer",
-            backdropFilter: "blur(8px)",
+            backdropFilter: "blur(10px)",
+            boxShadow: "0 10px 22px rgba(28,25,21,0.06)",
           }}
         >
           Legend
@@ -894,12 +963,12 @@ function TreeCanvasInner({
               position: "absolute",
               bottom: 36,
               left: 0,
-              background: "var(--paper)",
-              border: "1px solid var(--rule)",
-              borderRadius: 6,
+              background: "rgba(246,241,231,0.95)",
+              border: `1px solid ${CONTROL_BORDER}`,
+              borderRadius: 12,
               padding: "14px 16px",
               minWidth: 180,
-              boxShadow: "0 4px 20px rgba(28,25,21,0.12)",
+              boxShadow: "0 18px 32px rgba(28,25,21,0.1)",
             }}
           >
             <div
@@ -1014,11 +1083,11 @@ function TreeCanvasInner({
             left: hoverState.screenX + 14,
             top: hoverState.screenY - 16,
             zIndex: 15,
-            background: "var(--paper)",
-            border: "1px solid var(--rule)",
-            borderRadius: 6,
+            background: "rgba(246,241,231,0.96)",
+            border: `1px solid ${CONTROL_BORDER}`,
+            borderRadius: 10,
             padding: "10px 14px",
-            boxShadow: "0 4px 20px rgba(28,25,21,0.14)",
+            boxShadow: "0 18px 30px rgba(28,25,21,0.12)",
             pointerEvents: "none",
             minWidth: 140,
           }}
@@ -1073,64 +1142,49 @@ function TreeCanvasInner({
         onPaneClick={handlePaneClick}
         onMove={refreshSelectedCenter}
         nodeTypes={NODE_TYPES}
+        edgeTypes={EDGE_TYPES}
         panOnScroll={false}
         zoomOnScroll={true}
         minZoom={0.15}
         maxZoom={2.5}
-        style={{ background: "var(--paper)", paddingTop: 52 }}
+        style={{ background: "transparent", paddingTop: 52 }}
         proOptions={{ hideAttribution: true }}
       >
         <Background
-          style={{ background: "var(--paper)" }}
-          gap={32}
+          style={{ background: "transparent" }}
+          gap={44}
           size={1}
-          color="var(--rule)"
+          color="rgba(177,165,145,0.22)"
         />
         <MiniMap
           style={{
-            background: "rgba(246,241,231,0.92)",
-            border: "1px solid var(--rule)",
+            background: "rgba(246,241,231,0.8)",
+            border: `1px solid ${CONTROL_BORDER}`,
+            borderRadius: 14,
+            boxShadow: "0 18px 28px rgba(28,25,21,0.08)",
           }}
-          nodeColor="var(--ink-faded)"
-          maskColor="rgba(237,230,214,0.5)"
+          nodeColor="rgba(112,103,90,0.62)"
+          maskColor="rgba(237,230,214,0.66)"
           position="bottom-right"
         />
       </ReactFlow>
 
-      {/* Edit-mode relationship bubbles around selected person */}
+      {/* Edit-mode relationship ghosts aligned to family geometry */}
       {editMode &&
-        selectedAnchor &&
         selectedPerson &&
-        editInteraction.mode === "node-selected" && (
+        editInteraction.mode === "node-selected" &&
+        projectedEditSlots.length > 0 && (
         <>
-          <RelationSlot
-            centerX={selectedAnchor.x}
-            centerY={selectedAnchor.y - NODE_HEIGHT / 2 - 58}
-            kind="parent"
-            disabled={selectedParentCount >= 2}
-            disabledTitle="This person already has two parents"
-            onClick={() => openRelationForm("parent")}
-          />
-          <RelationSlot
-            centerX={selectedAnchor.x}
-            centerY={selectedAnchor.y + NODE_HEIGHT / 2 + 58}
-            kind="child"
-            onClick={() => openRelationForm("child")}
-          />
-          <RelationSlot
-            centerX={selectedAnchor.x - NODE_WIDTH / 2 - 58}
-            centerY={selectedAnchor.y}
-            kind="sibling"
-            onClick={() => openRelationForm("sibling")}
-          />
-          <RelationSlot
-            centerX={selectedAnchor.x + NODE_WIDTH / 2 + 58}
-            centerY={selectedAnchor.y}
-            kind="spouse"
-            disabled={selectedPersonHasActiveSpouse}
-            disabledTitle="This person already has an active spouse"
-            onClick={() => openRelationForm("spouse")}
-          />
+          {projectedEditSlots.map((slot) => (
+            <RelationGhost
+              key={`${slot.kind}-${slot.x}-${slot.y}`}
+              centerX={slot.x}
+              centerY={slot.y}
+              kind={slot.kind}
+              label={slot.label}
+              onClick={() => openRelationForm(slot.kind)}
+            />
+          ))}
         </>
       )}
 
@@ -1468,9 +1522,9 @@ function TreeCanvasInner({
           left: 0,
           right: 0,
           height: 36,
-          background: "rgba(246,241,231,0.88)",
-          backdropFilter: "blur(8px)",
-          borderTop: "1px solid var(--rule)",
+          background: CONTROL_SURFACE,
+          backdropFilter: "blur(10px)",
+          borderTop: `1px solid ${CONTROL_BORDER}`,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -1480,7 +1534,7 @@ function TreeCanvasInner({
         }}
       >
         {(editMode
-          ? ["Select a person, then use + or click a line", "Click background to reset"]
+          ? ["Select a person, then add a valid relation ghost or click a line", "Click background to reset"]
           : [
               "Scroll to zoom",
               "Double-click to open a person",
@@ -1517,6 +1571,78 @@ function TreeCanvasInner({
   );
 }
 
+function ParentChildEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  data,
+}: EdgeProps<TreeEdge>) {
+  const edgeData = data as ConstellationEdgeData | undefined;
+  const stroke = "rgba(177, 165, 145, 0.95)";
+  const opacity = edgeData?.opacity ?? 1;
+  const strokeWidth = edgeData?.strokeWidth ?? 1.3;
+
+  if (
+    edgeData?.unionX === undefined ||
+    edgeData?.unionY === undefined ||
+    Math.abs(edgeData.unionX - sourceX) < 2
+  ) {
+    const midY = sourceY + (targetY - sourceY) * 0.45;
+    const path = [
+      `M ${sourceX} ${sourceY}`,
+      `C ${sourceX} ${midY}, ${targetX} ${midY}, ${targetX} ${targetY}`,
+    ].join(" ");
+    return <BaseEdge id={id} path={path} style={{ stroke, opacity, strokeWidth }} />;
+  }
+
+  const unionX = edgeData.unionX;
+  const unionY = edgeData.unionY;
+  const descentY = Math.min(targetY - 20, unionY + 42);
+  const path = [
+    `M ${sourceX} ${sourceY}`,
+    `L ${sourceX} ${unionY}`,
+    `Q ${sourceX} ${unionY} ${unionX} ${unionY}`,
+    `L ${unionX} ${descentY}`,
+    `Q ${unionX} ${descentY} ${targetX} ${descentY}`,
+    `L ${targetX} ${targetY}`,
+  ].join(" ");
+
+  return <BaseEdge id={id} path={path} style={{ stroke, opacity, strokeWidth }} />;
+}
+
+function SpouseEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  data,
+}: EdgeProps<TreeEdge>) {
+  const edgeData = data as ConstellationEdgeData | undefined;
+  const stroke = "rgba(177, 165, 145, 0.95)";
+  const opacity = edgeData?.opacity ?? 1;
+  const strokeWidth = edgeData?.strokeWidth ?? 1.2;
+  const controlY = Math.min(sourceY, targetY) - 18;
+  const path = [
+    `M ${sourceX} ${sourceY}`,
+    `C ${sourceX} ${controlY}, ${targetX} ${controlY}, ${targetX} ${targetY}`,
+  ].join(" ");
+  return (
+    <BaseEdge
+      id={id}
+      path={path}
+      style={{
+        stroke,
+        opacity,
+        strokeWidth,
+        strokeDasharray: edgeData?.strokeDasharray,
+      }}
+    />
+  );
+}
+
 function relationLabel(kind: EditRelationKind): string {
   if (kind === "parent") return "Parent";
   if (kind === "child") return "Child";
@@ -1524,22 +1650,20 @@ function relationLabel(kind: EditRelationKind): string {
   return "Spouse";
 }
 
-function RelationSlot({
+function RelationGhost({
   centerX,
   centerY,
   kind,
+  label,
   onClick,
-  disabled = false,
-  disabledTitle,
 }: {
   centerX: number;
   centerY: number;
   kind: EditRelationKind;
+  label: string;
   onClick: () => void;
-  disabled?: boolean;
-  disabledTitle?: string;
 }) {
-  const size = 72;
+  const size = 64;
   return (
     <div
       style={{
@@ -1549,33 +1673,44 @@ function RelationSlot({
         zIndex: 19,
         display: "grid",
         justifyItems: "center",
+        gap: 8,
       }}
     >
       <button
-        onClick={() => {
-          if (!disabled) onClick();
-        }}
-        title={disabled ? disabledTitle ?? "Unavailable" : `Add ${relationLabel(kind)}`}
-        disabled={disabled}
+        onClick={onClick}
+        title={`Add ${relationLabel(kind)}`}
         style={{
           width: size,
           height: size,
           borderRadius: "50%",
-          border: disabled ? "1.5px dashed var(--rule)" : "1.5px dashed var(--moss)",
-          background: "rgba(246,241,231,0.92)",
-          color: disabled ? "var(--ink-faded)" : "var(--moss)",
+          border: "1px dashed rgba(78,93,66,0.45)",
+          background: "rgba(246,241,231,0.6)",
+          color: "var(--moss)",
           fontFamily: "var(--font-ui)",
-          fontSize: 26,
+          fontSize: 24,
           lineHeight: 1,
-          cursor: disabled ? "not-allowed" : "pointer",
-          boxShadow: disabled
-            ? "0 8px 16px rgba(28,25,21,0.08)"
-            : "0 10px 20px rgba(28,25,21,0.14)",
-          opacity: disabled ? 0.75 : 1,
+          cursor: "pointer",
+          boxShadow: "0 10px 20px rgba(28,25,21,0.08)",
+          backdropFilter: "blur(6px)",
         }}
       >
         +
       </button>
+      <div
+        style={{
+          fontFamily: "var(--font-ui)",
+          fontSize: 11,
+          color: "var(--ink-faded)",
+          background: "rgba(246,241,231,0.88)",
+          border: "1px solid rgba(177,165,145,0.5)",
+          borderRadius: 999,
+          padding: "3px 8px",
+          whiteSpace: "nowrap",
+          boxShadow: "0 6px 16px rgba(28,25,21,0.06)",
+        }}
+      >
+        {label}
+      </div>
     </div>
   );
 }
