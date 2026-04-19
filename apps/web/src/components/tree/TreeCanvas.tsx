@@ -507,43 +507,67 @@ function TreeCanvasInner({
       }
       const created = (await personRes.json()) as { id: string };
 
-      const relationshipPayload =
-        relationKind === "parent"
-          ? {
-              type: "parent_child",
-              fromPersonId: created.id,
-              toPersonId: relationAnchorPerson.id,
-            }
-          : relationKind === "child"
-            ? {
-                type: "parent_child",
-                fromPersonId: relationAnchorPerson.id,
-                toPersonId: created.id,
-              }
-            : relationKind === "sibling"
-              ? {
-                  type: "sibling",
-                  fromPersonId: relationAnchorPerson.id,
-                  toPersonId: created.id,
-                }
-              : {
-                  type: "spouse",
-                  fromPersonId: relationAnchorPerson.id,
-                  toPersonId: created.id,
-                  spouseStatus: "active",
-                  startDateText:
-                    createForm.relationshipStartDateText.trim() || undefined,
-                };
+      const anchorParentIds = relationships
+        .filter(
+          (relationship) =>
+            relationship.type === "parent_child" &&
+            relationship.toPersonId === relationAnchorPerson.id,
+        )
+        .map((relationship) => relationship.fromPersonId);
 
-      const relRes = await fetch(`${API}/api/trees/${treeId}/relationships`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(relationshipPayload),
-      });
-      if (!relRes.ok) {
-        const err = (await relRes.json()) as { error?: string };
-        throw new Error(err.error ?? "Person added but relationship failed");
+      const relationshipPayloads =
+        relationKind === "parent"
+          ? [
+              {
+                type: "parent_child" as const,
+                fromPersonId: created.id,
+                toPersonId: relationAnchorPerson.id,
+              },
+            ]
+          : relationKind === "child"
+            ? [
+                {
+                  type: "parent_child" as const,
+                  fromPersonId: relationAnchorPerson.id,
+                  toPersonId: created.id,
+                },
+              ]
+            : relationKind === "sibling"
+              ? anchorParentIds.length > 0
+                ? anchorParentIds.map((parentId) => ({
+                    type: "parent_child" as const,
+                    fromPersonId: parentId,
+                    toPersonId: created.id,
+                  }))
+                : [
+                    {
+                      type: "sibling" as const,
+                      fromPersonId: relationAnchorPerson.id,
+                      toPersonId: created.id,
+                    },
+                  ]
+              : [
+                  {
+                    type: "spouse" as const,
+                    fromPersonId: relationAnchorPerson.id,
+                    toPersonId: created.id,
+                    spouseStatus: "active" as const,
+                    startDateText:
+                      createForm.relationshipStartDateText.trim() || undefined,
+                  },
+                ];
+
+      for (const relationshipPayload of relationshipPayloads) {
+        const relRes = await fetch(`${API}/api/trees/${treeId}/relationships`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(relationshipPayload),
+        });
+        if (!relRes.ok) {
+          const err = (await relRes.json()) as { error?: string };
+          throw new Error(err.error ?? "Person added but relationship failed");
+        }
       }
 
       await onConstellationChanged?.();
@@ -571,6 +595,7 @@ function TreeCanvasInner({
     editInteraction,
     onConstellationChanged,
     editMode,
+    relationships,
     relationAnchorPerson,
     selectPerson,
     treeId,
