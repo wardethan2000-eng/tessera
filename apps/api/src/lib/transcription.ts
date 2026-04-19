@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
-import { and, asc, eq, lte } from "drizzle-orm";
+import { and, asc, eq, isNotNull, lte } from "drizzle-orm";
 import * as schema from "@familytree/database";
 import { db } from "./db.js";
 import { MEDIA_BUCKET, s3 } from "./storage.js";
@@ -9,6 +9,20 @@ import { MEDIA_BUCKET, s3 } from "./storage.js";
 const POLL_INTERVAL_MS = 15_000;
 const MAX_ATTEMPTS = 3;
 const BASE_RETRY_SECONDS = 60;
+const STALE_LOCK_THRESHOLD_MS = 10 * 60 * 1_000; // 10 minutes
+const MIME_EXTENSION_MAP: Record<string, string> = {
+  "audio/aac": "aac",
+  "audio/flac": "flac",
+  "audio/mp3": "mp3",
+  "audio/mpeg": "mp3",
+  "audio/mp4": "m4a",
+  "audio/ogg": "ogg",
+  "audio/opus": "opus",
+  "audio/wav": "wav",
+  "audio/webm": "webm",
+  "audio/x-m4a": "m4a",
+  "audio/x-wav": "wav",
+};
 
 type LoggerLike = {
   info: (obj: unknown, msg?: string) => void;
@@ -54,7 +68,42 @@ async function bodyToBuffer(body: unknown): Promise<Buffer> {
   throw new Error("Unsupported media stream response");
 }
 
-async function transcribeAudioObject(objectKey: string, mimeType: string) {
+function sanitizeFilenamePart(value: string): string {
+  const cleaned = value
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[.-]+|[.-]+$/g, "");
+  return cleaned.slice(0, 80) || "audio";
+}
+
+export function buildTranscriptionFilename(
+  originalFilename: string | null | undefined,
+  mimeType: string,
+): string {
+  const normalizedMimeType = mimeType.toLowerCase();
+  const fallbackExtension = MIME_EXTENSION_MAP[normalizedMimeType] ?? "audio";
+
+  const trimmedName = originalFilename?.trim();
+  if (!trimmedName) {
+    return `${randomUUID()}.${fallbackExtension}`;
+  }
+
+  const fileName = trimmedName.split(/[\\/]/).pop() ?? trimmedName;
+  const lastDot = fileName.lastIndexOf(".");
+  const baseName = lastDot > 0 ? fileName.slice(0, lastDot) : fileName;
+  const extension =
+    lastDot > 0 && lastDot < fileName.length - 1
+      ? fileName.slice(lastDot + 1).toLowerCase()
+      : fallbackExtension;
+
+  return `${sanitizeFilenamePart(baseName)}.${sanitizeFilenamePart(extension)}`;
+}
+
+async function transcribeAudioObject(
+  objectKey: string,
+  mimeType: string,
+  originalFilename?: string | null,
+) {
   const whisperUrl = process.env.WHISPER_API_URL;
   if (!whisperUrl) {
     throw new Error("WHISPER_API_URL is not configured");
@@ -78,7 +127,7 @@ async function transcribeAudioObject(objectKey: string, mimeType: string) {
     new Blob([fileBytes], {
       type: mimeType || "audio/mpeg",
     }),
-    `${randomUUID()}.audio`,
+    buildTranscriptionFilename(originalFilename, mimeType || "audio/mpeg"),
   );
   form.append("model", process.env.WHISPER_MODEL ?? "whisper-1");
 
@@ -168,6 +217,20 @@ export function startTranscriptionWorker(logger: LoggerLike): () => void {
 
     try {
       const now = new Date();
+
+      // Recover any jobs stuck in "processing" — e.g. server crashed mid-job.
+      const staleThreshold = new Date(now.getTime() - STALE_LOCK_THRESHOLD_MS);
+      await db
+        .update(schema.transcriptionJobs)
+        .set({ status: "queued", lockedAt: null, updatedAt: now })
+        .where(
+          and(
+            eq(schema.transcriptionJobs.status, "processing"),
+            isNotNull(schema.transcriptionJobs.lockedAt),
+            lte(schema.transcriptionJobs.lockedAt, staleThreshold),
+          ),
+        );
+
       const nextJob = await db.query.transcriptionJobs.findFirst({
         where: (j) =>
           and(eq(j.status, "queued"), lte(j.runAfter, now)),
@@ -221,6 +284,7 @@ export function startTranscriptionWorker(logger: LoggerLike): () => void {
         const result = await transcribeAudioObject(
           nextJob.memory.media.objectKey,
           nextJob.memory.media.mimeType,
+          nextJob.memory.media.originalFilename,
         );
         const completedAt = new Date();
 

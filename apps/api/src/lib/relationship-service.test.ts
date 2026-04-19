@@ -168,12 +168,16 @@ describe("createRelationship invariants", () => {
     });
     useMockTransaction(tx);
 
-    const created = await createRelationship({
+    const created = (await createRelationship({
       treeId: "tree-1",
       fromPersonId: "person-z",
       toPersonId: "person-a",
       type: "spouse",
-    });
+    })) as {
+      normalizedPersonAId: string;
+      normalizedPersonBId: string;
+      spouseStatus: "active" | "former" | "deceased_partner" | null;
+    };
 
     assert.equal(insertedValues.length, 1);
     assert.equal(insertedValues[0]?.normalizedPersonAId, "person-a");

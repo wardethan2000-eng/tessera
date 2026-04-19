@@ -20,6 +20,8 @@ interface SearchMemory {
   title: string;
   body?: string | null;
   transcriptText?: string | null;
+  transcriptStatus?: "none" | "queued" | "processing" | "completed" | "failed";
+  transcriptError?: string | null;
   dateOfEventText?: string | null;
   mediaUrl?: string | null;
   personName?: string | null;
@@ -49,6 +51,23 @@ const EASE = "cubic-bezier(0.22, 0.61, 0.36, 1)";
 
 function normalize(s: string) {
   return s.toLowerCase().replace(/['']/g, "'");
+}
+
+function getMemorySnippet(memory: SearchMemory): string | null {
+  if (memory.kind !== "voice") return null;
+  if (memory.transcriptStatus === "completed" && memory.transcriptText) {
+    return memory.transcriptText;
+  }
+  if (memory.transcriptStatus === "completed") {
+    return "Transcript unavailable.";
+  }
+  if (memory.transcriptStatus === "failed") {
+    return memory.transcriptError ? `Transcription failed: ${memory.transcriptError}` : "Transcription failed.";
+  }
+  if (memory.transcriptStatus === "queued" || memory.transcriptStatus === "processing") {
+    return "Transcribing…";
+  }
+  return memory.transcriptText ?? null;
 }
 
 export function SearchOverlay({ treeId, people, memories, open, onClose }: SearchOverlayProps) {
@@ -482,6 +501,25 @@ export function SearchOverlay({ treeId, people, memories, open, onClose }: Searc
                           {m.personName && ` · ${m.personName}`}
                           {m.dateOfEventText && ` · ${m.dateOfEventText}`}
                         </div>
+                        {(() => {
+                          const snippet = getMemorySnippet(m);
+                          return snippet ? (
+                            <div
+                              style={{
+                                marginTop: 4,
+                                fontFamily: "var(--font-body)",
+                                fontSize: 12,
+                                lineHeight: 1.45,
+                                color: "var(--ink-faded)",
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                              }}
+                            >
+                              {snippet}
+                            </div>
+                          ) : null;
+                        })()}
                       </div>
                       <span
                         style={{
