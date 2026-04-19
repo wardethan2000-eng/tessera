@@ -9,8 +9,13 @@ export interface LightboxMemory {
   kind: MemoryKind;
   title: string;
   body?: string | null;
+  transcriptText?: string | null;
+  transcriptLanguage?: string | null;
+  transcriptStatus?: "none" | "queued" | "processing" | "completed" | "failed";
+  transcriptError?: string | null;
   dateOfEventText?: string | null;
   mediaUrl?: string | null;
+  mimeType?: string | null;
 }
 
 interface MemoryLightboxProps {
@@ -64,9 +69,14 @@ export function MemoryLightbox({ memories, initialIndex, onClose }: MemoryLightb
 
   if (!memory) return null;
 
-  const isPhoto = memory.kind === "photo";
-  const isVoice = memory.kind === "voice";
+  const mime = memory.mimeType?.toLowerCase() ?? "";
+  const isPhoto = memory.kind === "photo" || mime.startsWith("image/");
+  const isVideo = mime.startsWith("video/");
+  const isPdf = mime === "application/pdf";
+  const isVoice = memory.kind === "voice" && !isVideo;
   const isStory = memory.kind === "story" || memory.kind === "document";
+  const transcriptText =
+    memory.transcriptStatus === "completed" ? memory.transcriptText?.trim() : null;
 
   const toggleAudio = () => {
     const audio = audioRef.current;
@@ -184,6 +194,58 @@ export function MemoryLightbox({ memories, initialIndex, onClose }: MemoryLightb
           />
         )}
 
+        {isVideo && memory.mediaUrl && (
+          // eslint-disable-next-line jsx-a11y/media-has-caption
+          <video
+            key={memory.id}
+            src={memory.mediaUrl}
+            controls
+            style={{
+              maxWidth: "calc(100vw - 160px)",
+              maxHeight: "calc(100vh - 220px)",
+              borderRadius: 6,
+              animation: "fadeIn 300ms cubic-bezier(0.22, 0.61, 0.36, 1) both",
+            }}
+          />
+        )}
+
+        {isPdf && memory.mediaUrl && (
+          <div
+            key={memory.id}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 16,
+              animation: "fadeIn 300ms cubic-bezier(0.22, 0.61, 0.36, 1) both",
+            }}
+          >
+            <iframe
+              src={memory.mediaUrl}
+              title={memory.title}
+              style={{
+                width: "min(760px, calc(100vw - 160px))",
+                height: "calc(100vh - 280px)",
+                border: "1px solid rgba(246,241,231,0.15)",
+                borderRadius: 6,
+                background: "#fff",
+              }}
+            />
+            <a
+              href={memory.mediaUrl}
+              download={memory.title}
+              style={{
+                fontFamily: "var(--font-ui)",
+                fontSize: 12,
+                color: "rgba(246,241,231,0.55)",
+                textDecoration: "none",
+              }}
+            >
+              ↓ Download PDF
+            </a>
+          </div>
+        )}
+
         {isVoice && (
           <div
             key={memory.id}
@@ -265,10 +327,62 @@ export function MemoryLightbox({ memories, initialIndex, onClose }: MemoryLightb
                 {memory.body}
               </p>
             )}
+            {memory.transcriptStatus && memory.transcriptStatus !== "none" && (
+              <div
+                style={{
+                  marginTop: 18,
+                  padding: "14px 16px",
+                  borderRadius: 8,
+                  border: "1px solid rgba(246,241,231,0.14)",
+                  background: "rgba(246,241,231,0.05)",
+                  textAlign: "left",
+                }}
+              >
+                <div
+                  style={{
+                    fontFamily: "var(--font-ui)",
+                    fontSize: 10,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    color: "rgba(246,241,231,0.45)",
+                    marginBottom: 8,
+                  }}
+                >
+                  Transcript
+                </div>
+                <div
+                  style={{
+                    fontFamily: "var(--font-body)",
+                    fontSize: 15,
+                    lineHeight: 1.85,
+                    color: "rgba(246,241,231,0.7)",
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  {memory.transcriptStatus === "completed"
+                    ? transcriptText ?? "Transcript unavailable."
+                    : memory.transcriptStatus === "failed"
+                    ? memory.transcriptError ?? "Transcription failed."
+                    : "Transcribing…"}
+                </div>
+                {memory.transcriptLanguage && transcriptText && (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      fontFamily: "var(--font-ui)",
+                      fontSize: 11,
+                      color: "rgba(246,241,231,0.4)",
+                    }}
+                  >
+                    Language: {memory.transcriptLanguage}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
-        {(isStory || (!isPhoto && !isVoice)) && (
+        {(isStory || (!isPhoto && !isVideo && !isPdf && !isVoice)) && (
           <div
             key={memory.id}
             style={{

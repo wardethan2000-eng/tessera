@@ -13,8 +13,32 @@ const CreateMemoryBody = z.object({
   body: z.string().optional(),
   mediaId: z.string().uuid().optional(),
   dateOfEventText: z.string().max(100).optional(),
+  placeId: z.string().uuid().optional(),
+  placeLabelOverride: z.string().max(200).optional(),
   promptId: z.string().uuid().optional(),
 });
+
+function serializePlace(place: {
+  id: string;
+  label: string;
+  latitude: number;
+  longitude: number;
+  countryCode: string | null;
+  adminRegion: string | null;
+  locality: string | null;
+} | null | undefined) {
+  return place
+    ? {
+        id: place.id,
+        label: place.label,
+        latitude: place.latitude,
+        longitude: place.longitude,
+        countryCode: place.countryCode,
+        adminRegion: place.adminRegion,
+        locality: place.locality,
+      }
+    : null;
+}
 
 export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
   app.post(
@@ -40,7 +64,16 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: "Invalid request body" });
       }
 
-      const { kind, title, body, mediaId, dateOfEventText, promptId } = parsed.data;
+      const {
+        kind,
+        title,
+        body,
+        mediaId,
+        dateOfEventText,
+        placeId,
+        placeLabelOverride,
+        promptId,
+      } = parsed.data;
 
       if (kind === "story" && !body) {
         return reply.status(400).send({ error: "Story memories require a body" });
@@ -71,6 +104,15 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
         }
       }
 
+      if (placeId) {
+        const place = await db.query.places.findFirst({
+          where: (p) => and(eq(p.id, placeId), eq(p.treeId, treeId)),
+        });
+        if (!place) {
+          return reply.status(400).send({ error: "Place not found in this tree" });
+        }
+      }
+
       if (promptId) {
         const prompt = await db.query.prompts.findFirst({
           where: (p) => and(eq(p.id, promptId), eq(p.treeId, treeId)),
@@ -97,6 +139,8 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
           mediaId: mediaId ?? null,
           promptId: promptId ?? null,
           dateOfEventText: dateOfEventText ?? null,
+          placeId: placeId ?? null,
+          placeLabelOverride: placeLabelOverride ?? null,
         })
         .returning();
 
@@ -111,12 +155,19 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
       // Fetch with media for the response
       const full = await db.query.memories.findFirst({
         where: (m, { eq }) => eq(m.id, memory.id),
-        with: { media: true },
+        with: { media: true, place: true },
       });
 
       const withUrl =
         full?.media
-          ? { ...full, mediaUrl: mediaUrl(full.media.objectKey) }
+          ? {
+              ...full,
+              mediaUrl: mediaUrl(full.media.objectKey),
+              mimeType: full.media.mimeType,
+              place: serializePlace(full.place),
+            }
+          : full
+            ? { ...full, place: serializePlace(full.place) }
           : full;
 
       return reply.status(201).send(withUrl);
@@ -151,7 +202,7 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
       const memories = await db.query.memories.findMany({
         where: (m) =>
           and(eq(m.primaryPersonId, personId), eq(m.treeId, treeId)),
-        with: { media: true },
+        with: { media: true, place: true },
         orderBy: (m, { desc }) => [desc(m.createdAt)],
       });
 
@@ -159,6 +210,8 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
         memories.map((m) => ({
           ...m,
           mediaUrl: m.media ? mediaUrl(m.media.objectKey) : null,
+          mimeType: m.media?.mimeType ?? null,
+          place: serializePlace(m.place),
         })),
       );
     },
@@ -182,6 +235,7 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
       where: (m) => eq(m.treeId, treeId),
       with: {
         media: true,
+        place: true,
         primaryPerson: { with: { portraitMedia: true } },
       },
       orderBy: (m, { desc }) => [desc(m.createdAt)],
@@ -192,10 +246,12 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
       memories.map((m) => ({
         ...m,
         mediaUrl: m.media ? mediaUrl(m.media.objectKey) : null,
+        mimeType: m.media?.mimeType ?? null,
         personName: m.primaryPerson?.displayName ?? null,
         personPortraitUrl: m.primaryPerson?.portraitMedia
           ? mediaUrl(m.primaryPerson.portraitMedia.objectKey)
           : null,
+        place: serializePlace(m.place),
       })),
     );
   });

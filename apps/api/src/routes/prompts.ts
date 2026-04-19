@@ -8,6 +8,7 @@ import { db } from "../lib/db.js";
 import { getSession } from "../lib/session.js";
 import {
   getPresignedUploadUrl,
+  isAllowedMimeType,
   mediaUrl,
 } from "../lib/storage.js";
 import { enqueueMemoryTranscription } from "../lib/transcription.js";
@@ -31,6 +32,8 @@ const ReplyBody = z.object({
   body: z.string().optional(),
   mediaId: z.string().uuid().optional(),
   dateOfEventText: z.string().max(100).optional(),
+  placeId: z.string().uuid().optional(),
+  placeLabelOverride: z.string().max(200).optional(),
 });
 
 const PublicReplyBody = ReplyBody.extend({
@@ -48,7 +51,7 @@ const CreateEmailReplyLinkBody = z.object({
 const PresignBody = z.object({
   filename: z.string().min(1).max(255),
   contentType: z.string().min(1).max(255),
-  sizeBytes: z.number().int().positive(),
+  sizeBytes: z.number().int().positive().max(200 * 1024 * 1024), // 200 MB cap
 });
 
 async function verifyMembership(treeId: string, userId: string) {
@@ -260,7 +263,7 @@ export async function promptsPlugin(app: FastifyInstance): Promise<void> {
       return reply.status(409).send({ error: "Prompt is not pending" });
     }
 
-    const { kind, title, body, mediaId, dateOfEventText } = parsed.data;
+    const { kind, title, body, mediaId, dateOfEventText, placeId, placeLabelOverride } = parsed.data;
     if (kind === "story" && !body) {
       return reply.status(400).send({ error: "Story memories require a body" });
     }
@@ -273,6 +276,14 @@ export async function promptsPlugin(app: FastifyInstance): Promise<void> {
       });
       if (!mediaRecord) {
         return reply.status(400).send({ error: "Media not found in this tree" });
+      }
+    }
+    if (placeId) {
+      const place = await db.query.places.findFirst({
+        where: (p) => and(eq(p.id, placeId), eq(p.treeId, treeId)),
+      });
+      if (!place) {
+        return reply.status(400).send({ error: "Place not found in this tree" });
       }
     }
 
@@ -288,6 +299,8 @@ export async function promptsPlugin(app: FastifyInstance): Promise<void> {
         mediaId: mediaId ?? null,
         promptId,
         dateOfEventText: dateOfEventText ?? null,
+        placeId: placeId ?? null,
+        placeLabelOverride: placeLabelOverride ?? null,
       })
       .returning();
     if (!memory) return reply.status(500).send({ error: "Failed to create reply memory" });
@@ -309,6 +322,7 @@ export async function promptsPlugin(app: FastifyInstance): Promise<void> {
     return reply.status(201).send({
       ...full,
       mediaUrl: full?.media ? mediaUrl(full.media.objectKey) : null,
+      mimeType: full?.media?.mimeType ?? null,
     });
   });
 
@@ -442,7 +456,12 @@ export async function promptsPlugin(app: FastifyInstance): Promise<void> {
     if (!parsed.success) return reply.status(400).send({ error: "Invalid request body" });
 
     const { filename, contentType, sizeBytes } = parsed.data;
-    const ext = filename.split(".").pop() ?? "bin";
+
+    if (!isAllowedMimeType(contentType)) {
+      return reply.status(415).send({ error: "Unsupported media type" });
+    }
+
+    const ext = filename.includes(".") ? filename.split(".").pop()! : "bin";
     const objectKey = `trees/${resolved.link.treeId}/reply-links/${resolved.link.id}/${randomUUID()}.${ext}`;
     const uploadUrl = await getPresignedUploadUrl(objectKey, contentType);
 
@@ -478,7 +497,7 @@ export async function promptsPlugin(app: FastifyInstance): Promise<void> {
     const parsed = PublicReplyBody.safeParse(request.body);
     if (!parsed.success) return reply.status(400).send({ error: "Invalid request body" });
 
-    const { kind, title, body, mediaId, dateOfEventText, submitterName } = parsed.data;
+    const { kind, title, body, mediaId, dateOfEventText, placeId, placeLabelOverride, submitterName } = parsed.data;
     if (kind === "story" && !body) {
       return reply.status(400).send({ error: "Story memories require a body" });
     }
@@ -492,6 +511,14 @@ export async function promptsPlugin(app: FastifyInstance): Promise<void> {
       });
       if (!mediaRecord) {
         return reply.status(400).send({ error: "Media not found in this tree" });
+      }
+    }
+    if (placeId) {
+      const place = await db.query.places.findFirst({
+        where: (p) => and(eq(p.id, placeId), eq(p.treeId, resolved.link.treeId)),
+      });
+      if (!place) {
+        return reply.status(400).send({ error: "Place not found in this tree" });
       }
     }
 
@@ -548,6 +575,8 @@ export async function promptsPlugin(app: FastifyInstance): Promise<void> {
             mediaId: mediaId ?? null,
             promptId: resolved.link.promptId,
             dateOfEventText: dateOfEventText ?? null,
+            placeId: placeId ?? null,
+            placeLabelOverride: placeLabelOverride ?? null,
           })
           .returning();
         if (!memory) {
@@ -590,6 +619,7 @@ export async function promptsPlugin(app: FastifyInstance): Promise<void> {
     return reply.status(201).send({
       ...full,
       mediaUrl: full?.media ? mediaUrl(full.media.objectKey) : null,
+      mimeType: full?.media?.mimeType ?? null,
     });
   });
 }
@@ -616,7 +646,7 @@ type PromptWithRelations = {
     id: string;
     kind: string;
     title: string;
-    media?: { objectKey: string } | null;
+    media?: { objectKey: string; mimeType: string } | null;
     [key: string]: unknown;
   }>;
 };
@@ -706,6 +736,7 @@ function enrichPromptWithReplies(p: PromptWithRelations) {
     replies: (p.replies ?? []).map((r) => ({
       ...r,
       mediaUrl: r.media ? mediaUrl(r.media.objectKey) : null,
+      mimeType: r.media?.mimeType ?? null,
     })),
   };
 }

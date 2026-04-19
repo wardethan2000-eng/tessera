@@ -10,6 +10,7 @@ export type PersonNodeData = {
   isYou: boolean;
   /** True when this person's cinematic overlay is open */
   isFocused: boolean;
+  isDimmed: boolean;
 };
 
 export type PersonFlowNode = Node<PersonNodeData, "person">;
@@ -20,7 +21,16 @@ export type PersonNode = PersonFlowNode;
 /** @deprecated use PersonFlowNode */
 export type TreeNode = PersonFlowNode;
 
-export type TreeEdge = Edge;
+export type ConstellationEdgeData = {
+  kind: "parent_child" | "spouse";
+  unionX?: number;
+  unionY?: number;
+  opacity?: number;
+  strokeWidth?: number;
+  strokeDasharray?: string;
+};
+
+export type TreeEdge = Edge<ConstellationEdgeData>;
 
 /** Raw API person as returned by the API */
 export interface ApiPerson {
@@ -54,8 +64,10 @@ export interface ApiMemory {
   transcriptText?: string | null;
   transcriptLanguage?: string | null;
   transcriptStatus?: "none" | "queued" | "processing" | "completed" | "failed";
+  transcriptError?: string | null;
   dateOfEventText?: string | null;
   mediaUrl?: string | null;
+  mimeType?: string | null;
   /** Convenience: set by the fetching component to the owning person's id */
   personId?: string;
 }

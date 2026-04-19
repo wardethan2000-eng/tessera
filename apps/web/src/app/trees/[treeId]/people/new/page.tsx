@@ -3,6 +3,7 @@
 import { use, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
+import { PlacePicker } from "@/components/tree/PlacePicker";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -21,6 +22,9 @@ export default function NewPersonPage({
     birthDateText: "",
     deathDateText: "",
     birthPlace: "",
+    birthPlaceId: "",
+    deathPlace: "",
+    deathPlaceId: "",
     isLiving: true,
   });
   const [saving, setSaving] = useState(false);
@@ -54,6 +58,9 @@ export default function NewPersonPage({
         birthDateText: form.birthDateText || undefined,
         deathDateText: form.deathDateText || undefined,
         birthPlace: form.birthPlace || undefined,
+        birthPlaceId: form.birthPlaceId || undefined,
+        deathPlace: form.deathPlace || undefined,
+        deathPlaceId: form.deathPlaceId || undefined,
         isLiving: form.isLiving,
       }),
     });
@@ -164,6 +171,45 @@ export default function NewPersonPage({
               className="w-full rounded-xl border border-stone-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400"
             />
           </div>
+
+          <PlacePicker
+            treeId={treeId}
+            apiBase={API}
+            value={form.birthPlaceId}
+            onChange={(birthPlaceId) =>
+              setForm((f) => ({ ...f, birthPlaceId }))
+            }
+            label="Birthplace on the map"
+            emptyLabel="No mapped birthplace"
+            note="Optional. Use this when you know the place well enough to pin it."
+          />
+
+          <div>
+            <label className="block text-sm font-medium text-stone-700 mb-1">
+              Death place
+            </label>
+            <input
+              type="text"
+              value={form.deathPlace}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, deathPlace: e.target.value }))
+              }
+              placeholder="City, country or region"
+              className="w-full rounded-xl border border-stone-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400"
+            />
+          </div>
+
+          <PlacePicker
+            treeId={treeId}
+            apiBase={API}
+            value={form.deathPlaceId}
+            onChange={(deathPlaceId) =>
+              setForm((f) => ({ ...f, deathPlaceId }))
+            }
+            label="Death place on the map"
+            emptyLabel="No mapped death place"
+            note="Optional. Leave blank if this person is still living or the place is unknown."
+          />
 
           <label className="flex items-center gap-3 cursor-pointer">
             <input

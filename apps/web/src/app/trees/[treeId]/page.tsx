@@ -200,6 +200,7 @@ export default function TreePage() {
       <TreeCanvas
         treeId={treeId}
         treeName={tree.name}
+        familyMapHref={`/trees/${treeId}/map`}
         people={people}
         relationships={relationships}
         currentUserPersonId={currentUserPersonId}

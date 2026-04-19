@@ -13,6 +13,7 @@ function PersonNodeComponent({ data }: NodeProps<PersonFlowNode>) {
     essenceLine,
     isYou,
     isFocused,
+    isDimmed,
   } = data;
 
   const initials = name
@@ -45,6 +46,8 @@ function PersonNodeComponent({ data }: NodeProps<PersonFlowNode>) {
         gap: "6px",
         width: 96,
         userSelect: "none",
+        opacity: isDimmed ? 0.24 : 1,
+        filter: isDimmed ? "saturate(0.75)" : "none",
       }}
     >
       {/* Portrait circle */}
@@ -62,6 +65,7 @@ function PersonNodeComponent({ data }: NodeProps<PersonFlowNode>) {
           ...ringStyle,
           transition:
             "box-shadow 150ms cubic-bezier(0.22, 0.61, 0.36, 1), border-color 500ms cubic-bezier(0.22, 0.61, 0.36, 1)",
+          boxShadow: isFocused ? "0 0 0 4px rgba(212,190,159,0.28)" : "none",
         }}
       >
         {portraitUrl ? (

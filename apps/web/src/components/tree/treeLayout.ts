@@ -1,7 +1,7 @@
-import Dagre from "@dagrejs/dagre";
 import type {
   ApiPerson,
   ApiRelationship,
+  ConstellationEdgeData,
   PersonFlowNode,
   TreeEdge,
 } from "./treeTypes";
@@ -14,13 +14,25 @@ export function extractYearFromText(text?: string | null): number | null {
 
 const NODE_WIDTH = 96;
 const NODE_HEIGHT = 130;
-const SPOUSE_GAP = 60;       // pixel gap between adjacent spouse node circles
-const SIBLING_GAP = 160;     // center-to-center distance between siblings in same generation
 const GENERATION_GAP = 240;  // vertical distance between generation rows
+const EDIT_SLOT_GAP = 90;
+const ROW_GAP = 84;
+const SPOUSE_ATTACH_GAP = 120;
 
 function sortedPair(leftId: string, rightId: string): [string, string] {
   return leftId <= rightId ? [leftId, rightId] : [rightId, leftId];
 }
+
+function average(numbers: number[]): number {
+  if (numbers.length === 0) return 0;
+  return numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
+}
+
+type RowToken = {
+  anchorId: string;
+  attachedSpouseIds: string[];
+  parentSignature: string;
+};
 
 /** Build layout from people + relationships */
 export function computeLayout(
@@ -41,232 +53,417 @@ export function computeLayout(
     return a.id.localeCompare(b.id);
   });
 
-  // ONLY parent_child edges go to Dagre — spouse/sibling are handled in post-processing
   const parentChildRels = sortedRelationships.filter((r) => r.type === "parent_child");
-
-  // Grid fallback: no parent_child relationships → single alphabetical row
-  if (parentChildRels.length === 0) {
-    const positions = new Map<string, { x: number; y: number }>();
-    const totalWidth = (sortedPeople.length - 1) * SIBLING_GAP;
-    const startX = -totalWidth / 2;
-    sortedPeople.forEach((person, index) => {
-      positions.set(person.id, {
-        x: startX + index * SIBLING_GAP - NODE_WIDTH / 2,
-        y: 0,
-      });
-    });
-    return positions;
-  }
-
-  const g = new Dagre.graphlib.Graph();
-  g.setGraph({
-    rankdir: "TB",
-    ranksep: GENERATION_GAP,
-    nodesep: SIBLING_GAP,
-    marginx: 80,
-    marginy: 80,
-  });
-  g.setDefaultEdgeLabel(() => ({}));
-
-  for (const p of sortedPeople) {
-    g.setNode(p.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
-  }
-
-  for (const r of parentChildRels) {
-    g.setEdge(r.fromPersonId, r.toPersonId);
-  }
-
-  Dagre.layout(g);
-
+  const generationLaneByPersonId = propagateSpouseLanes(
+    sortedPeople,
+    sortedRelationships,
+    buildGenerationLanes(sortedPeople, parentChildRels),
+  );
+  const parentIdsByChild = buildParentIdsByChild(sortedRelationships);
+  const childIdsByParent = buildChildIdsByParent(sortedRelationships);
+  const activeSpousesByPersonId = buildActiveSpouseMap(sortedRelationships);
+  const attachedAnchorByPersonId = buildAttachedSpouseMap(
+    sortedPeople,
+    generationLaneByPersonId,
+    parentIdsByChild,
+    childIdsByParent,
+    activeSpousesByPersonId,
+  );
+  const peopleById = new Map(sortedPeople.map((person) => [person.id, person]));
+  const laneValues = [...generationLaneByPersonId.values()];
+  const maxLane = laneValues.length > 0 ? Math.max(...laneValues) : 0;
   const positions = new Map<string, { x: number; y: number }>();
-  for (const nodeId of g.nodes()) {
-    const node = g.node(nodeId);
-    if (node) {
-      positions.set(nodeId, {
-        x: node.x - NODE_WIDTH / 2,
-        y: node.y - NODE_HEIGHT / 2,
+
+  for (let lane = 0; lane <= maxLane; lane += 1) {
+    const rowPositions = computeLanePositions(
+      lane,
+      sortedPeople,
+      generationLaneByPersonId,
+      parentIdsByChild,
+      attachedAnchorByPersonId,
+      activeSpousesByPersonId,
+      peopleById,
+    );
+
+    for (const [personId, x] of rowPositions.entries()) {
+      positions.set(personId, {
+        x: x - NODE_WIDTH / 2,
+        y: lane * GENERATION_GAP - NODE_HEIGHT / 2,
       });
     }
   }
 
-  const generationLaneByPersonId = buildGenerationLanes(
-    sortedPeople,
-    parentChildRels,
-    positions,
-  );
-  stabilizeFamilyUnits(
-    positions,
-    sortedPeople,
+  alignParentsOverChildren(
     sortedRelationships,
-    generationLaneByPersonId,
+    activeSpousesByPersonId,
+    attachedAnchorByPersonId,
+    positions,
   );
+
   return positions;
 }
 
-function stabilizeFamilyUnits(
-  positions: Map<string, { x: number; y: number }>,
+function buildParentIdsByChild(relationships: ApiRelationship[]) {
+  const parentIdsByChild = new Map<string, string[]>();
+  for (const relationship of relationships) {
+    if (relationship.type !== "parent_child") continue;
+    const existing = parentIdsByChild.get(relationship.toPersonId) ?? [];
+    existing.push(relationship.fromPersonId);
+    parentIdsByChild.set(relationship.toPersonId, existing);
+  }
+  for (const [childId, parentIds] of parentIdsByChild.entries()) {
+    parentIdsByChild.set(childId, [...new Set(parentIds)].sort());
+  }
+  return parentIdsByChild;
+}
+
+function buildChildIdsByParent(relationships: ApiRelationship[]) {
+  const childIdsByParent = new Map<string, string[]>();
+  for (const relationship of relationships) {
+    if (relationship.type !== "parent_child") continue;
+    const existing = childIdsByParent.get(relationship.fromPersonId) ?? [];
+    existing.push(relationship.toPersonId);
+    childIdsByParent.set(relationship.fromPersonId, existing);
+  }
+  for (const [parentId, childIds] of childIdsByParent.entries()) {
+    childIdsByParent.set(parentId, [...new Set(childIds)].sort());
+  }
+  return childIdsByParent;
+}
+
+function buildActiveSpouseMap(relationships: ApiRelationship[]) {
+  const activeSpousesByPersonId = new Map<string, string[]>();
+  for (const relationship of relationships) {
+    if (
+      relationship.type !== "spouse" ||
+      (relationship.spouseStatus ?? "active") !== "active"
+    ) {
+      continue;
+    }
+    const fromList = activeSpousesByPersonId.get(relationship.fromPersonId) ?? [];
+    fromList.push(relationship.toPersonId);
+    activeSpousesByPersonId.set(relationship.fromPersonId, fromList);
+
+    const toList = activeSpousesByPersonId.get(relationship.toPersonId) ?? [];
+    toList.push(relationship.fromPersonId);
+    activeSpousesByPersonId.set(relationship.toPersonId, toList);
+  }
+
+  for (const [personId, spouseIds] of activeSpousesByPersonId.entries()) {
+    activeSpousesByPersonId.set(personId, [...new Set(spouseIds)].sort());
+  }
+
+  return activeSpousesByPersonId;
+}
+
+function propagateSpouseLanes(
   people: ApiPerson[],
   relationships: ApiRelationship[],
   generationLaneByPersonId: Map<string, number>,
 ) {
-  if (positions.size === 0) return;
-  const minY = Math.min(...[...positions.values()].map((p) => p.y));
-  const peopleById = new Map(people.map((person) => [person.id, person]));
+  const laneByPersonId = new Map(generationLaneByPersonId);
+  const structuralDegreeByPersonId = new Map<string, number>(
+    people.map((person) => [person.id, 0]),
+  );
 
-  // Snap everyone to their generation lane derived from parent/child lineage.
-  for (const [personId, position] of positions.entries()) {
-    const lane = generationLaneByPersonId.get(personId) ?? 0;
-    positions.set(personId, {
-      x: position.x,
-      y: minY + lane * GENERATION_GAP,
-    });
-  }
-
-  // Place active spouse pairs as horizontal units with SPOUSE_GAP between them.
-  const activeSpouseRelationships = relationships
-    .filter(
-      (rel) => rel.type === "spouse" && (rel.spouseStatus ?? "active") === "active",
-    )
-    .sort((a, b) => {
-      const [aLeft, aRight] = sortedPair(a.fromPersonId, a.toPersonId);
-      const [bLeft, bRight] = sortedPair(b.fromPersonId, b.toPersonId);
-      return `${aLeft}|${aRight}`.localeCompare(`${bLeft}|${bRight}`);
-    });
-
-  const activeSpouseCountByPersonId = new Map<string, number>();
-  for (const rel of activeSpouseRelationships) {
-    activeSpouseCountByPersonId.set(
-      rel.fromPersonId,
-      (activeSpouseCountByPersonId.get(rel.fromPersonId) ?? 0) + 1,
+  for (const relationship of relationships) {
+    if (relationship.type !== "parent_child") continue;
+    structuralDegreeByPersonId.set(
+      relationship.fromPersonId,
+      (structuralDegreeByPersonId.get(relationship.fromPersonId) ?? 0) + 1,
     );
-    activeSpouseCountByPersonId.set(
-      rel.toPersonId,
-      (activeSpouseCountByPersonId.get(rel.toPersonId) ?? 0) + 1,
+    structuralDegreeByPersonId.set(
+      relationship.toPersonId,
+      (structuralDegreeByPersonId.get(relationship.toPersonId) ?? 0) + 1,
     );
   }
 
-  for (const rel of activeSpouseRelationships) {
-    if (rel.type !== "spouse") continue;
-    // Skip if corrupted data gives a person multiple active spouses
-    if ((activeSpouseCountByPersonId.get(rel.fromPersonId) ?? 0) !== 1) continue;
-    if ((activeSpouseCountByPersonId.get(rel.toPersonId) ?? 0) !== 1) continue;
+  const activeSpouseRelationships = relationships.filter(
+    (relationship) =>
+      relationship.type === "spouse" &&
+      (relationship.spouseStatus ?? "active") === "active",
+  );
 
-    const [leftPersonId, rightPersonId] = sortedPair(
-      rel.fromPersonId,
-      rel.toPersonId,
-    );
-    const left = positions.get(leftPersonId);
-    const right = positions.get(rightPersonId);
-    if (!left || !right) continue;
+  for (let pass = 0; pass < 3; pass += 1) {
+    let changed = false;
+    for (const relationship of activeSpouseRelationships) {
+      const fromDegree = structuralDegreeByPersonId.get(relationship.fromPersonId) ?? 0;
+      const toDegree = structuralDegreeByPersonId.get(relationship.toPersonId) ?? 0;
+      const fromLane = laneByPersonId.get(relationship.fromPersonId) ?? 0;
+      const toLane = laneByPersonId.get(relationship.toPersonId) ?? 0;
 
-    // Unit center = midpoint between the two nodes' centers
-    const unitCenterX =
-      (left.x + NODE_WIDTH / 2 + right.x + NODE_WIDTH / 2) / 2;
-    const lane = Math.min(
-      generationLaneByPersonId.get(leftPersonId) ?? 0,
-      generationLaneByPersonId.get(rightPersonId) ?? 0,
-    );
-    const targetY = minY + lane * GENERATION_GAP;
-
-    // half-unit = distance from unit center to each node's center
-    // = (NODE_WIDTH + SPOUSE_GAP) / 2 = (96 + 60) / 2 = 78
-    const halfUnit = (NODE_WIDTH + SPOUSE_GAP) / 2;
-
-    positions.set(leftPersonId, {
-      x: unitCenterX - halfUnit - NODE_WIDTH / 2,
-      y: targetY,
-    });
-    positions.set(rightPersonId, {
-      x: unitCenterX + halfUnit - NODE_WIDTH / 2,
-      y: targetY,
-    });
+      if (fromDegree === 0 && toDegree > 0 && fromLane !== toLane) {
+        laneByPersonId.set(relationship.fromPersonId, toLane);
+        changed = true;
+      } else if (toDegree === 0 && fromDegree > 0 && toLane !== fromLane) {
+        laneByPersonId.set(relationship.toPersonId, fromLane);
+        changed = true;
+      }
+    }
+    if (!changed) break;
   }
 
-  // Cluster siblings (shared parent signatures) into stable horizontal rows.
-  const parentIdsByChild = new Map<string, Set<string>>();
-  for (const rel of relationships) {
-    if (rel.type !== "parent_child") continue;
-    const current = parentIdsByChild.get(rel.toPersonId) ?? new Set<string>();
-    current.add(rel.fromPersonId);
-    parentIdsByChild.set(rel.toPersonId, current);
-  }
+  return laneByPersonId;
+}
 
-  const childrenByParentSignature = new Map<
-    string,
-    { parentIds: string[]; childIds: string[] }
-  >();
+function buildAttachedSpouseMap(
+  people: ApiPerson[],
+  generationLaneByPersonId: Map<string, number>,
+  parentIdsByChild: Map<string, string[]>,
+  childIdsByParent: Map<string, string[]>,
+  activeSpousesByPersonId: Map<string, string[]>,
+) {
+  const attachedAnchorByPersonId = new Map<string, string>();
+  const structuralDegreeByPersonId = new Map<string, number>(
+    people.map((person) => [
+      person.id,
+      (parentIdsByChild.get(person.id)?.length ?? 0) +
+        (childIdsByParent.get(person.id)?.length ?? 0),
+    ]),
+  );
 
-  for (const [childId, parentIdsRaw] of parentIdsByChild.entries()) {
-    const parentIds = [...parentIdsRaw].sort();
-    const signature = parentIds.join("|");
-    const existing = childrenByParentSignature.get(signature);
-    if (existing) {
-      existing.childIds.push(childId);
+  for (const person of people) {
+    const spouseIds = activeSpousesByPersonId.get(person.id) ?? [];
+    if (spouseIds.length !== 1) continue;
+    if ((structuralDegreeByPersonId.get(person.id) ?? 0) > 0) continue;
+
+    const spouseId = spouseIds[0]!;
+    const spouseSpouses = activeSpousesByPersonId.get(spouseId) ?? [];
+    if (spouseSpouses.length !== 1) continue;
+    if ((generationLaneByPersonId.get(person.id) ?? 0) !== (generationLaneByPersonId.get(spouseId) ?? 0)) {
       continue;
     }
-    childrenByParentSignature.set(signature, { parentIds, childIds: [childId] });
+
+    const spouseStructuralDegree = structuralDegreeByPersonId.get(spouseId) ?? 0;
+    if (spouseStructuralDegree === 0 && person.id < spouseId) continue;
+
+    attachedAnchorByPersonId.set(person.id, spouseId);
   }
 
-  for (const group of childrenByParentSignature.values()) {
-    if (group.childIds.length <= 1) continue;
+  return attachedAnchorByPersonId;
+}
 
-    const parentPositions = group.parentIds
-      .map((id) => positions.get(id))
-      .filter((p): p is { x: number; y: number } => Boolean(p));
-    const childPositions = group.childIds
-      .map((id) => positions.get(id))
-      .filter((p): p is { x: number; y: number } => Boolean(p));
-    if (childPositions.length === 0) continue;
+function computeLanePositions(
+  lane: number,
+  people: ApiPerson[],
+  generationLaneByPersonId: Map<string, number>,
+  parentIdsByChild: Map<string, string[]>,
+  attachedAnchorByPersonId: Map<string, string>,
+  activeSpousesByPersonId: Map<string, string[]>,
+  peopleById: Map<string, ApiPerson>,
+) {
+  const lanePeople = people.filter(
+    (person) =>
+      (generationLaneByPersonId.get(person.id) ?? 0) === lane &&
+      !attachedAnchorByPersonId.has(person.id),
+  );
+  const tokens = buildLaneTokens(
+    lanePeople,
+    parentIdsByChild,
+    attachedAnchorByPersonId,
+    activeSpousesByPersonId,
+    peopleById,
+  );
 
-    const defaultCenterX =
-      childPositions.reduce((sum, p) => sum + p.x + NODE_WIDTH / 2, 0) /
-      childPositions.length;
-    const parentCenterX =
-      parentPositions.length > 0
-        ? parentPositions.reduce((sum, p) => sum + p.x + NODE_WIDTH / 2, 0) /
-          parentPositions.length
-        : defaultCenterX;
-    const parentY =
-      parentPositions.length > 0
-        ? Math.max(...parentPositions.map((p) => p.y))
-        : Math.min(...childPositions.map((p) => p.y)) - GENERATION_GAP;
-    const targetLane = Math.max(
-      ...group.childIds.map((childId) => generationLaneByPersonId.get(childId) ?? 0),
-    );
-    const targetY = Math.max(minY + targetLane * GENERATION_GAP, parentY + GENERATION_GAP);
+  const positions = new Map<string, number>();
+  if (tokens.length === 0) return positions;
 
-    const sortedChildren = [...group.childIds].sort((aChildId, bChildId) => {
-      const aPerson = peopleById.get(aChildId);
-      const bPerson = peopleById.get(bChildId);
-      const aBirthYear = aPerson?.birthYear ?? Number.POSITIVE_INFINITY;
-      const bBirthYear = bPerson?.birthYear ?? Number.POSITIVE_INFINITY;
-      if (aBirthYear !== bBirthYear) return aBirthYear - bBirthYear;
+  const tokenWidths = tokens.map(
+    (token) => NODE_WIDTH + token.attachedSpouseIds.length * SPOUSE_ATTACH_GAP,
+  );
+  const totalWidth =
+    tokenWidths.reduce((sum, width) => sum + width, 0) +
+    Math.max(0, tokens.length - 1) * ROW_GAP;
+  let cursorX = -totalWidth / 2;
 
-      const aPos = positions.get(aChildId);
-      const bPos = positions.get(bChildId);
-      if (aPos && bPos && aPos.x !== bPos.x) {
-        return aPos.x - bPos.x;
-      }
-      return aChildId.localeCompare(bChildId);
+  tokens.forEach((token, index) => {
+    const tokenWidth = tokenWidths[index] ?? NODE_WIDTH;
+    const anchorCenterX = cursorX + NODE_WIDTH / 2;
+    positions.set(token.anchorId, anchorCenterX);
+
+    token.attachedSpouseIds.forEach((spouseId, spouseIndex) => {
+      positions.set(
+        spouseId,
+        anchorCenterX + (spouseIndex + 1) * SPOUSE_ATTACH_GAP,
+      );
     });
 
-    const totalWidth = (sortedChildren.length - 1) * SIBLING_GAP;
-    const startCenterX = parentCenterX - totalWidth / 2;
+    cursorX += tokenWidth + ROW_GAP;
+  });
 
-    sortedChildren.forEach((childId, index) => {
-      const centerX = startCenterX + index * SIBLING_GAP;
-      positions.set(childId, {
-        x: centerX - NODE_WIDTH / 2,
-        y: targetY,
+  return positions;
+}
+
+function buildLaneTokens(
+  lanePeople: ApiPerson[],
+  parentIdsByChild: Map<string, string[]>,
+  attachedAnchorByPersonId: Map<string, string>,
+  activeSpousesByPersonId: Map<string, string[]>,
+  peopleById: Map<string, ApiPerson>,
+) {
+  const attachedSpousesByAnchorId = new Map<string, string[]>();
+  for (const [personId, anchorId] of attachedAnchorByPersonId.entries()) {
+    const existing = attachedSpousesByAnchorId.get(anchorId) ?? [];
+    existing.push(personId);
+    attachedSpousesByAnchorId.set(anchorId, existing);
+  }
+
+  const bySignature = new Map<string, ApiPerson[]>();
+  for (const person of lanePeople) {
+    const parentSignature = (parentIdsByChild.get(person.id) ?? []).join("|");
+    const group = bySignature.get(parentSignature) ?? [];
+    group.push(person);
+    bySignature.set(parentSignature, group);
+  }
+
+  const signatureOrder = [...bySignature.entries()]
+    .sort(([leftSignature, leftPeople], [rightSignature, rightPeople]) => {
+      const leftHasParents = leftSignature.length > 0;
+      const rightHasParents = rightSignature.length > 0;
+      if (leftHasParents !== rightHasParents) return leftHasParents ? 1 : -1;
+
+      const leftBirthYear = Math.min(
+        ...leftPeople.map((person) => person.birthYear ?? Number.POSITIVE_INFINITY),
+      );
+      const rightBirthYear = Math.min(
+        ...rightPeople.map((person) => person.birthYear ?? Number.POSITIVE_INFINITY),
+      );
+      if (leftBirthYear !== rightBirthYear) return leftBirthYear - rightBirthYear;
+      return leftSignature.localeCompare(rightSignature);
+    })
+    .map(([signature]) => signature);
+
+  const tokens: RowToken[] = [];
+  for (const signature of signatureOrder) {
+    const group = [...(bySignature.get(signature) ?? [])].sort((left, right) => {
+      if ((left.birthYear ?? Number.POSITIVE_INFINITY) !== (right.birthYear ?? Number.POSITIVE_INFINITY)) {
+        return (left.birthYear ?? Number.POSITIVE_INFINITY) - (right.birthYear ?? Number.POSITIVE_INFINITY);
+      }
+      return left.id.localeCompare(right.id);
+    });
+
+    group.forEach((person, index) => {
+      const attachedSpouseIds = [...(attachedSpousesByAnchorId.get(person.id) ?? [])].sort(
+        (leftId, rightId) => {
+          const left = peopleById.get(leftId);
+          const right = peopleById.get(rightId);
+          if ((left?.birthYear ?? Number.POSITIVE_INFINITY) !== (right?.birthYear ?? Number.POSITIVE_INFINITY)) {
+            return (left?.birthYear ?? Number.POSITIVE_INFINITY) - (right?.birthYear ?? Number.POSITIVE_INFINITY);
+          }
+          return leftId.localeCompare(rightId);
+        },
+      );
+      tokens.push({
+        anchorId: person.id,
+        attachedSpouseIds,
+        parentSignature: signature || `root:${index}:${person.id}`,
       });
     });
+
+    if (tokens.length > 0 && signature !== signatureOrder[signatureOrder.length - 1]) {
+      const lastToken = tokens[tokens.length - 1];
+      if (lastToken) {
+        lastToken.attachedSpouseIds.push(...[]);
+      }
+    }
+  }
+
+  return addSiblingSpacing(tokens);
+}
+
+function addSiblingSpacing(tokens: RowToken[]) {
+  if (tokens.length <= 1) return tokens;
+  const spaced: RowToken[] = [];
+  tokens.forEach((token, index) => {
+    spaced.push(token);
+    const next = tokens[index + 1];
+    if (!next) return;
+    if (token.parentSignature === next.parentSignature) return;
+    spaced.push({
+      anchorId: `gap:${token.anchorId}:${next.anchorId}`,
+      attachedSpouseIds: [],
+      parentSignature: `gap:${index}`,
+    });
+  });
+  return spaced.filter((token) => !token.anchorId.startsWith("gap:"));
+}
+
+function alignParentsOverChildren(
+  relationships: ApiRelationship[],
+  activeSpousesByPersonId: Map<string, string[]>,
+  attachedAnchorByPersonId: Map<string, string>,
+  positions: Map<string, { x: number; y: number }>,
+) {
+  const parentIdsByChild = buildParentIdsByChild(relationships);
+  const childGroups = new Map<string, string[]>();
+
+  for (const [childId, parentIds] of parentIdsByChild.entries()) {
+    const signature = parentIds.join("|");
+    const group = childGroups.get(signature) ?? [];
+    group.push(childId);
+    childGroups.set(signature, group);
+  }
+
+  for (let pass = 0; pass < 2; pass += 1) {
+    for (const [signature, childIds] of childGroups.entries()) {
+      const parentIds = signature.split("|").filter(Boolean);
+      const childCenters = childIds
+        .map((childId) => getNodeCenter(childId, positions))
+        .filter((value): value is { x: number; y: number } => Boolean(value));
+      const parentCenters = parentIds
+        .map((parentId) => getNodeCenter(parentId, positions))
+        .filter((value): value is { x: number; y: number } => Boolean(value));
+      if (childCenters.length === 0 || parentCenters.length === 0) continue;
+
+      const targetCenterX = average(childCenters.map((entry) => entry.x));
+
+      if (parentIds.length === 1) {
+        shiftCluster(parentIds[0]!, targetCenterX - parentCenters[0]!.x, activeSpousesByPersonId, attachedAnchorByPersonId, positions);
+        continue;
+      }
+
+      const currentParentCenterX = average(parentCenters.map((entry) => entry.x));
+      const delta = targetCenterX - currentParentCenterX;
+      for (const parentId of parentIds) {
+        shiftCluster(parentId, delta, activeSpousesByPersonId, attachedAnchorByPersonId, positions);
+      }
+    }
+  }
+}
+
+function shiftCluster(
+  personId: string,
+  deltaX: number,
+  activeSpousesByPersonId: Map<string, string[]>,
+  attachedAnchorByPersonId: Map<string, string>,
+  positions: Map<string, { x: number; y: number }>,
+) {
+  if (Math.abs(deltaX) < 1) return;
+  const person = positions.get(personId);
+  if (person) {
+    positions.set(personId, { ...person, x: person.x + deltaX });
+  }
+
+  for (const [attachedId, anchorId] of attachedAnchorByPersonId.entries()) {
+    if (anchorId !== personId) continue;
+    const attached = positions.get(attachedId);
+    if (!attached) continue;
+    positions.set(attachedId, { ...attached, x: attached.x + deltaX });
+  }
+
+  const spouseIds = activeSpousesByPersonId.get(personId) ?? [];
+  for (const spouseId of spouseIds) {
+    if (attachedAnchorByPersonId.get(spouseId) === personId) continue;
+    if (attachedAnchorByPersonId.has(personId)) continue;
+    const spouse = positions.get(spouseId);
+    if (!spouse) continue;
+    positions.set(spouseId, { ...spouse, x: spouse.x + deltaX });
   }
 }
 
 function buildGenerationLanes(
   people: ApiPerson[],
   parentChildRelationships: ApiRelationship[],
-  positions: Map<string, { x: number; y: number }>,
 ): Map<string, number> {
   const personIds = people.map((person) => person.id);
   const personIdSet = new Set(personIds);
@@ -294,10 +491,9 @@ function buildGenerationLanes(
   }
 
   const ranking = [...people].sort((a, b) => {
-    const aPos = positions.get(a.id);
-    const bPos = positions.get(b.id);
-    if (aPos && bPos && aPos.y !== bPos.y) return aPos.y - bPos.y;
-    if (aPos && bPos && aPos.x !== bPos.x) return aPos.x - bPos.x;
+    if ((a.birthYear ?? Number.POSITIVE_INFINITY) !== (b.birthYear ?? Number.POSITIVE_INFINITY)) {
+      return (a.birthYear ?? Number.POSITIVE_INFINITY) - (b.birthYear ?? Number.POSITIVE_INFINITY);
+    }
     return a.id.localeCompare(b.id);
   });
   const rankByPersonId = new Map<string, number>(
@@ -339,7 +535,6 @@ function buildGenerationLanes(
     }
   }
 
-  const minY = Math.min(...[...positions.values()].map((position) => position.y));
   const unresolvedIds = ranking
     .map((person) => person.id)
     .filter((personId) => !processed.has(personId));
@@ -353,15 +548,7 @@ function buildGenerationLanes(
       continue;
     }
 
-    const pos = positions.get(personId);
-    if (!pos) {
-      laneByPersonId.set(personId, 0);
-      continue;
-    }
-    laneByPersonId.set(
-      personId,
-      Math.max(0, Math.round((pos.y - minY) / GENERATION_GAP)),
-    );
+    laneByPersonId.set(personId, 0);
   }
 
   return laneByPersonId;
@@ -372,7 +559,8 @@ export function buildPersonNodes(
   people: ApiPerson[],
   positions: Map<string, { x: number; y: number }>,
   selectedPersonId: string | null,
-  currentUserId: string | null
+  currentUserId: string | null,
+  focusPersonIds: Set<string> | null = null,
 ): PersonFlowNode[] {
   return people.map((person) => {
     const pos = positions.get(person.id) ?? { x: 0, y: 0 };
@@ -390,6 +578,7 @@ export function buildPersonNodes(
         essenceLine: person.essenceLine,
         isYou: person.id === currentUserId,
         isFocused: person.id === selectedPersonId,
+        isDimmed: focusPersonIds ? !focusPersonIds.has(person.id) : false,
       },
       draggable: false,
     };
@@ -397,16 +586,71 @@ export function buildPersonNodes(
 }
 
 /** Build visual ReactFlow edges */
-export function buildEdges(relationships: ApiRelationship[]): TreeEdge[] {
+export function buildEdges(
+  relationships: ApiRelationship[],
+  positions: Map<string, { x: number; y: number }>,
+  focusPersonIds: Set<string> | null = null,
+): TreeEdge[] {
+  const parentIdsByChild = new Map<string, string[]>();
+  const activeSpousePairs = new Set<string>();
+  for (const relationship of relationships) {
+    if (relationship.type === "parent_child") {
+      const existing = parentIdsByChild.get(relationship.toPersonId) ?? [];
+      existing.push(relationship.fromPersonId);
+      parentIdsByChild.set(relationship.toPersonId, existing);
+    }
+    if (
+      relationship.type === "spouse" &&
+      (relationship.spouseStatus ?? "active") === "active"
+    ) {
+      const [leftId, rightId] = sortedPair(
+        relationship.fromPersonId,
+        relationship.toPersonId,
+      );
+      activeSpousePairs.add(`${leftId}|${rightId}`);
+    }
+  }
+
   return relationships.flatMap((r) => {
+    const isLocal = focusPersonIds
+      ? focusPersonIds.has(r.fromPersonId) && focusPersonIds.has(r.toPersonId)
+      : true;
+    const baseOpacity = isLocal ? 0.95 : 0.1;
     if (r.type === "parent_child") {
+      const parentIds = [...(parentIdsByChild.get(r.toPersonId) ?? [])].sort();
+      const hasFamilyUnion =
+        parentIds.length === 2 &&
+        activeSpousePairs.has(`${parentIds[0]}|${parentIds[1]}`);
+      const sourceCenter = getNodeCenter(r.fromPersonId, positions);
+      const targetCenter = getNodeCenter(r.toPersonId, positions);
+      const allParentCenters = parentIds
+        .map((parentId) => getNodeCenter(parentId, positions))
+        .filter((value): value is { x: number; y: number } => Boolean(value));
+      const unionX =
+        hasFamilyUnion && allParentCenters.length > 0
+          ? allParentCenters.reduce((sum, center) => sum + center.x, 0) /
+            allParentCenters.length
+          : sourceCenter?.x;
+      const unionY =
+        hasFamilyUnion && allParentCenters.length > 0 && targetCenter
+          ? Math.min(
+              Math.max(...allParentCenters.map((center) => center.y)) + 26,
+              targetCenter.y - NODE_HEIGHT / 2 - 34,
+            )
+          : undefined;
       return [
         {
           id: `edge-${r.id}`,
           source: r.fromPersonId,
           target: r.toPersonId,
-          type: "smoothstep",
-          style: { stroke: "var(--rule)", strokeWidth: 1.5 },
+          type: "constellationParent",
+          data: {
+            kind: "parent_child",
+            unionX,
+            unionY,
+            opacity: baseOpacity,
+            strokeWidth: isLocal ? 1.35 : 1,
+          } satisfies ConstellationEdgeData,
           animated: false,
         } as TreeEdge,
       ];
@@ -415,43 +659,218 @@ export function buildEdges(relationships: ApiRelationship[]): TreeEdge[] {
       const spouseStatus = r.spouseStatus ?? "active";
       const spouseStyle =
         spouseStatus === "active"
-          ? { strokeDasharray: "5 4", opacity: 1, strokeWidth: 1.2 }
+          ? { strokeDasharray: "5 4", strokeWidth: 1.2 }
           : spouseStatus === "deceased_partner"
-            ? { strokeDasharray: "1 5", opacity: 0.85, strokeWidth: 1 }
-            : { strokeDasharray: "2 6", opacity: 0.65, strokeWidth: 1 };
+            ? { strokeDasharray: "1 5", strokeWidth: 1 }
+            : { strokeDasharray: "2 6", strokeWidth: 1 };
       return [
         {
           id: `edge-${r.id}`,
           source: r.fromPersonId,
           target: r.toPersonId,
-          type: "straight",
-          style: {
-            stroke: "var(--rule)",
-            ...spouseStyle,
-          },
+          type: "constellationSpouse",
+          data: {
+            kind: "spouse",
+            opacity:
+              spouseStatus === "active"
+                ? baseOpacity
+                : spouseStatus === "deceased_partner"
+                  ? baseOpacity * 0.85
+                  : baseOpacity * 0.65,
+            strokeWidth: spouseStyle.strokeWidth,
+            strokeDasharray: spouseStyle.strokeDasharray,
+          } satisfies ConstellationEdgeData,
           animated: false,
         } as TreeEdge,
       ];
     }
     if (r.type === "sibling") {
-      return [
-        {
-          id: `edge-${r.id}`,
-          source: r.fromPersonId,
-          target: r.toPersonId,
-          type: "straight",
-          style: {
-            stroke: "var(--rule)",
-            strokeWidth: 1,
-            strokeDasharray: "2 4",
-            opacity: 0.5,
-          },
-          animated: false,
-        } as TreeEdge,
-      ];
+      return [];
     }
     return [];
   });
+}
+
+export function getConstellationFocusIds(
+  personId: string | null,
+  relationships: ApiRelationship[],
+): Set<string> | null {
+  if (!personId) return null;
+  const focused = new Set<string>([personId]);
+  const queue = [{ id: personId, depth: 0 }];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) continue;
+
+    for (const relationship of relationships) {
+      let neighborId: string | null = null;
+      if (relationship.fromPersonId === current.id) neighborId = relationship.toPersonId;
+      if (relationship.toPersonId === current.id) neighborId = relationship.fromPersonId;
+      if (!neighborId || focused.has(neighborId)) continue;
+
+      const maxDepth = relationship.type === "parent_child" ? 2 : 1;
+      if (current.depth >= maxDepth) continue;
+
+      focused.add(neighborId);
+      queue.push({ id: neighborId, depth: current.depth + 1 });
+    }
+  }
+
+  return focused;
+}
+
+export function getConstellationFocusBounds(
+  personId: string | null,
+  relationships: ApiRelationship[],
+  positions: Map<string, { x: number; y: number }>,
+) {
+  const focusIds = getConstellationFocusIds(personId, relationships);
+  if (!focusIds || focusIds.size === 0) return null;
+
+  const memberPositions = [...focusIds]
+    .map((focusId) => positions.get(focusId))
+    .filter((value): value is { x: number; y: number } => Boolean(value));
+  if (memberPositions.length === 0) return null;
+
+  const minX = Math.min(...memberPositions.map((position) => position.x));
+  const maxX = Math.max(...memberPositions.map((position) => position.x + NODE_WIDTH));
+  const minY = Math.min(...memberPositions.map((position) => position.y));
+  const maxY = Math.max(...memberPositions.map((position) => position.y + NODE_HEIGHT));
+
+  return {
+    x: minX - 72,
+    y: minY - 72,
+    width: Math.max(220, maxX - minX + 144),
+    height: Math.max(220, maxY - minY + 144),
+  };
+}
+
+export type EditSlotKind = "parent" | "child" | "sibling" | "spouse";
+
+export interface EditSlot {
+  kind: EditSlotKind;
+  flowX: number;
+  flowY: number;
+  label: string;
+  disabled?: boolean;
+  disabledTitle?: string;
+}
+
+function getNodeCenter(
+  personId: string,
+  positions: Map<string, { x: number; y: number }>,
+) {
+  const pos = positions.get(personId);
+  if (!pos) return null;
+  return {
+    x: pos.x + NODE_WIDTH / 2,
+    y: pos.y + NODE_HEIGHT / 2,
+  };
+}
+
+export function buildEditSlots(
+  personId: string | null,
+  relationships: ApiRelationship[],
+  positions: Map<string, { x: number; y: number }>,
+): EditSlot[] {
+  if (!personId) return [];
+  const center = getNodeCenter(personId, positions);
+  if (!center) return [];
+
+  const parentIds = relationships
+    .filter((relationship) => relationship.type === "parent_child" && relationship.toPersonId === personId)
+    .map((relationship) => relationship.fromPersonId);
+  const childIds = relationships
+    .filter((relationship) => relationship.type === "parent_child" && relationship.fromPersonId === personId)
+    .map((relationship) => relationship.toPersonId);
+  const siblingIds = new Set<string>();
+  for (const relationship of relationships) {
+    if (relationship.type === "sibling") {
+      if (relationship.fromPersonId === personId) siblingIds.add(relationship.toPersonId);
+      if (relationship.toPersonId === personId) siblingIds.add(relationship.fromPersonId);
+    }
+    if (relationship.type === "parent_child" && parentIds.includes(relationship.fromPersonId) && relationship.toPersonId !== personId) {
+      siblingIds.add(relationship.toPersonId);
+    }
+  }
+
+  const activeSpouseRelationship =
+    relationships.find(
+      (relationship) =>
+        relationship.type === "spouse" &&
+        (relationship.spouseStatus ?? "active") === "active" &&
+        (relationship.fromPersonId === personId || relationship.toPersonId === personId),
+    ) ?? null;
+  const spouseId = activeSpouseRelationship
+    ? activeSpouseRelationship.fromPersonId === personId
+      ? activeSpouseRelationship.toPersonId
+      : activeSpouseRelationship.fromPersonId
+    : null;
+  const spouseCenter = spouseId ? getNodeCenter(spouseId, positions) : null;
+  const unionCenterX = spouseCenter ? (center.x + spouseCenter.x) / 2 : center.x;
+
+  const parentCenters = parentIds
+    .map((parentId) => getNodeCenter(parentId, positions))
+    .filter((value): value is { x: number; y: number } => Boolean(value));
+  const childCenters = childIds
+    .map((childId) => getNodeCenter(childId, positions))
+    .filter((value): value is { x: number; y: number } => Boolean(value));
+  const siblingCenters = [...siblingIds]
+    .map((siblingId) => getNodeCenter(siblingId, positions))
+    .filter((value): value is { x: number; y: number } => Boolean(value));
+
+  const parentSlotY =
+    parentCenters.length > 0
+      ? Math.min(...parentCenters.map((entry) => entry.y)) - EDIT_SLOT_GAP
+      : center.y - NODE_HEIGHT / 2 - EDIT_SLOT_GAP;
+  const siblingSlotY = siblingCenters.length > 0 ? siblingCenters[0]!.y : center.y;
+  const childSlotY =
+    childCenters.length > 0
+      ? Math.max(...childCenters.map((entry) => entry.y)) + EDIT_SLOT_GAP
+      : center.y + NODE_HEIGHT / 2 + EDIT_SLOT_GAP;
+  const siblingSlotX =
+    siblingCenters.length > 0
+      ? Math.min(...siblingCenters.map((entry) => entry.x)) - EDIT_SLOT_GAP
+      : center.x - NODE_WIDTH / 2 - EDIT_SLOT_GAP;
+  const spouseSlotX = spouseCenter
+    ? Math.max(center.x, spouseCenter.x) + EDIT_SLOT_GAP
+    : center.x + NODE_WIDTH / 2 + EDIT_SLOT_GAP;
+
+  const slots: EditSlot[] = [
+    {
+      kind: "parent",
+      label: "Add parent",
+      flowX: parentCenters.length > 0
+        ? parentCenters.reduce((sum, entry) => sum + entry.x, 0) / parentCenters.length
+        : center.x,
+      flowY: parentSlotY,
+      disabled: parentIds.length >= 2,
+      disabledTitle: "This person already has two parents",
+    },
+    {
+      kind: "sibling",
+      label: "Add sibling",
+      flowX: siblingSlotX,
+      flowY: siblingSlotY,
+    },
+    {
+      kind: "child",
+      label: spouseCenter ? "Add child to this family" : "Add child",
+      flowX: unionCenterX,
+      flowY: childSlotY,
+    },
+    {
+      kind: "spouse",
+      label: "Add spouse",
+      flowX: spouseSlotX,
+      flowY: center.y,
+      disabled: Boolean(activeSpouseRelationship),
+      disabledTitle: "This person already has an active spouse",
+    },
+  ];
+
+  return slots.filter((slot) => !slot.disabled);
 }
 
 /**

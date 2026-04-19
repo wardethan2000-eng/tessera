@@ -4,6 +4,8 @@ A private family archive — a living memorial where a family records who its pe
 
 See [SPEC.md](./SPEC.md) for the full product vision.
 
+Operational access notes for the Proxmox host and VMs live in [infra/proxmox-access.md](./infra/proxmox-access.md).
+
 ---
 
 ## Monorepo layout
