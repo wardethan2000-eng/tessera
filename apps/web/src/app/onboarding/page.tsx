@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
+import { readOnboardingSession, writeOnboardingSession } from "@/lib/onboarding-session";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -16,6 +17,14 @@ export default function OnboardingPage() {
   useEffect(() => {
     if (!isPending && !session) {
       router.replace("/auth/signin");
+      return;
+    }
+    // Guard: if tree was already created in this session, skip ahead
+    if (!isPending && session) {
+      const saved = readOnboardingSession();
+      if (saved.treeId) {
+        router.replace(`/onboarding/person?treeId=${saved.treeId}`);
+      }
     }
   }, [session, isPending, router]);
 
@@ -36,6 +45,7 @@ export default function OnboardingPage() {
         return;
       }
       const tree = (await res.json()) as { id: string };
+      writeOnboardingSession({ treeId: tree.id });
       router.push(`/onboarding/person?treeId=${tree.id}`);
     } catch {
       setError("Network error — please check your connection and try again.");

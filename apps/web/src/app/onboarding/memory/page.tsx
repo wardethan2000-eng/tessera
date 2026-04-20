@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
+import { readOnboardingSession, writeOnboardingSession } from "@/lib/onboarding-session";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -20,6 +21,13 @@ function OnboardingMemoryForm() {
   useEffect(() => {
     if (!isPending && !session) router.replace("/auth/signin");
     if (!isPending && (!treeId || !selfPersonId)) router.replace("/onboarding");
+    if (!isPending && session) {
+      const saved = readOnboardingSession();
+      // Guard: if memory was already saved, send them to the archive
+      if (saved.memoryAdded && treeId) {
+        router.replace(`/trees/${treeId}/atrium`);
+      }
+    }
   }, [session, isPending, treeId, selfPersonId, router]);
 
   function atriumUrl() {
@@ -66,6 +74,7 @@ function OnboardingMemoryForm() {
         return;
       }
 
+      writeOnboardingSession({ memoryAdded: true });
       router.push(atriumUrl());
     } catch {
       setError("Network error — please check your connection and try again.");
@@ -119,10 +128,20 @@ function OnboardingMemoryForm() {
 
         <button
           type="button"
-          onClick={() => router.push(atriumUrl())}
+          onClick={() => {
+            writeOnboardingSession({ memoryAdded: true });
+            router.push(atriumUrl());
+          }}
           className="w-full text-center text-sm text-stone-400 hover:text-stone-600 transition-colors py-1"
         >
           Skip — go to archive →
+        </button>
+        <button
+          type="button"
+          onClick={() => router.push(`/onboarding/relative?treeId=${treeId}&selfPersonId=${selfPersonId}`)}
+          className="w-full text-center text-sm text-stone-400 hover:text-stone-600 transition-colors py-1"
+        >
+          ← Back
         </button>
       </div>
     </div>

@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
+import { readOnboardingSession, writeOnboardingSession } from "@/lib/onboarding-session";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -17,10 +18,18 @@ function OnboardingPersonForm() {
   const [essenceLine, setEssenceLine] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // Re-entry guard: true if self was already created this session
+  const [alreadyDone, setAlreadyDone] = useState(false);
 
   useEffect(() => {
     if (!isPending && !session) router.replace("/auth/signin");
     if (!isPending && !treeId) router.replace("/onboarding");
+    if (!isPending && session) {
+      const saved = readOnboardingSession();
+      if (saved.selfPersonId && treeId) {
+        setAlreadyDone(true);
+      }
+    }
   }, [session, isPending, treeId, router]);
 
   async function handleCreate(e: React.FormEvent) {
@@ -49,6 +58,7 @@ function OnboardingPersonForm() {
         setError("Unexpected response — please try again.");
         return;
       }
+      writeOnboardingSession({ selfPersonId: person.id });
       router.push(`/onboarding/relative?treeId=${treeId}&selfPersonId=${person.id}`);
     } catch {
       setError("Network error — please check your connection and try again.");
@@ -59,6 +69,28 @@ function OnboardingPersonForm() {
 
   if (isPending || !session) {
     return <p className="text-sm text-stone-400">Loading…</p>;
+  }
+
+  // Re-entry: person was already created this session
+  if (alreadyDone) {
+    const saved = readOnboardingSession();
+    return (
+      <div className="w-full max-w-sm space-y-8">
+        <div className="text-center space-y-2">
+          <p className="text-xs uppercase tracking-widest text-stone-400">Step 2 of 4</p>
+          <h1 className="text-2xl font-semibold text-stone-900">You&apos;re in the tree</h1>
+          <p className="text-sm text-stone-500">You already added yourself. Continue to the next step.</p>
+        </div>
+        <div className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
+          <button
+            onClick={() => router.push(`/onboarding/relative?treeId=${treeId}&selfPersonId=${saved.selfPersonId}`)}
+            className="w-full rounded-xl bg-stone-900 py-2.5 text-sm font-medium text-white hover:bg-stone-800 transition-colors"
+          >
+            Continue →
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (

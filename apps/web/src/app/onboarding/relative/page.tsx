@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
+import { readOnboardingSession, writeOnboardingSession } from "@/lib/onboarding-session";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -35,10 +36,16 @@ function OnboardingRelativeForm() {
   const [relationshipIdx, setRelationshipIdx] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // Re-entry guard: true if a relative was already added this session
+  const [alreadyDone, setAlreadyDone] = useState(false);
 
   useEffect(() => {
     if (!isPending && !session) router.replace("/auth/signin");
     if (!isPending && (!treeId || !selfPersonId)) router.replace("/onboarding");
+    if (!isPending && session) {
+      const saved = readOnboardingSession();
+      if (saved.relativeAdded) setAlreadyDone(true);
+    }
   }, [session, isPending, treeId, selfPersonId, router]);
 
   function nextUrl() {
@@ -93,6 +100,7 @@ function OnboardingRelativeForm() {
       }
 
       router.push(nextUrl());
+      writeOnboardingSession({ relativeAdded: true });
     } catch {
       setError("Network error — please check your connection and try again.");
     } finally {
@@ -102,6 +110,34 @@ function OnboardingRelativeForm() {
 
   if (isPending || !session) {
     return <p className="text-sm text-stone-400">Loading…</p>;
+  }
+
+  // Re-entry: relative was already added this session
+  if (alreadyDone) {
+    return (
+      <div className="w-full max-w-sm space-y-8">
+        <div className="text-center space-y-2">
+          <p className="text-xs uppercase tracking-widest text-stone-400">Step 3 of 4</p>
+          <h1 className="text-2xl font-semibold text-stone-900">Relative added</h1>
+          <p className="text-sm text-stone-500">You already added a relative. Continue to the next step.</p>
+        </div>
+        <div className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm space-y-3">
+          <button
+            onClick={() => router.push(nextUrl())}
+            className="w-full rounded-xl bg-stone-900 py-2.5 text-sm font-medium text-white hover:bg-stone-800 transition-colors"
+          >
+            Continue →
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push(`/onboarding/person?treeId=${treeId}`)}
+            className="w-full text-center text-sm text-stone-400 hover:text-stone-600 transition-colors py-1"
+          >
+            ← Back
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -161,6 +197,13 @@ function OnboardingRelativeForm() {
           className="w-full text-center text-sm text-stone-400 hover:text-stone-600 transition-colors py-1"
         >
           Skip for now →
+        </button>
+        <button
+          type="button"
+          onClick={() => router.push(`/onboarding/person?treeId=${treeId}`)}
+          className="w-full text-center text-sm text-stone-400 hover:text-stone-600 transition-colors py-1"
+        >
+          ← Back
         </button>
       </div>
     </div>
