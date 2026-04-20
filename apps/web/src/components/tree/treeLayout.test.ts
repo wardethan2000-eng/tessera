@@ -12,7 +12,7 @@ import {
   ROW_GAP,
   SPOUSE_ATTACH_GAP,
 } from "./treeLayout.js";
-import type { ApiPerson, ApiRelationship } from "./treeTypes";
+import type { ApiPerson, ApiRelationship, ConstellationEdgeData } from "./treeTypes";
 
 const peopleFixture: ApiPerson[] = [
   { id: "parent-a", name: "Parent A", birthYear: 1970 },
@@ -603,6 +603,42 @@ describe("computeLayout", () => {
     assert.ok(
       kevin.x >= familyMin - (NODE_WIDTH + ROW_GAP) && kevin.x <= familyMax + (NODE_WIDTH + ROW_GAP),
       `Kevin (${kevin.x}) should be near the Ron+Virginia family [${familyMin}, ${familyMax}]`,
+    );
+
+    // There should be a visible family group gap between the last Ron+Virginia
+    // child token and the first David+Jan child token (Brian).
+    // The gap between the rightmost Virginia+Ron child's right edge and Brian's
+    // left edge should exceed the normal ROW_GAP.
+    const rvChildRightEdge = Math.max(amy.x, kevin.x, melani.x, lois.x) + NODE_WIDTH;
+    const djChildLeftEdge = brian.x;
+    // Barry is attached to Melani, not a separate token, so Brian is the first
+    // David+Jan-only token.  Account for spouse attach gap on the bridge token.
+    assert.ok(
+      djChildLeftEdge - rvChildRightEdge > ROW_GAP,
+      `Family group gap should exceed ROW_GAP: Brian left (${djChildLeftEdge}) - RV right (${rvChildRightEdge}) = ${djChildLeftEdge - rvChildRightEdge}`,
+    );
+
+    // Branch connector bars should be staggered: Virginia+Ron's unionY
+    // should differ from David+Jan's unionY.
+    const edges = buildEdges(twoFamilySiblingRelationships, positions);
+    const ronAmyEdge = edges.find(
+      (e) => e.source === "ron" && e.target === "amy",
+    );
+    const davidBrianEdge = edges.find(
+      (e) => e.source === "david" && e.target === "brian",
+    );
+    assert.ok(ronAmyEdge, "Ron→Amy edge should exist");
+    assert.ok(davidBrianEdge, "David→Brian edge should exist");
+    const ronAmyUnionY = (ronAmyEdge!.data as ConstellationEdgeData).unionY;
+    const davidBrianUnionY = (davidBrianEdge!.data as ConstellationEdgeData).unionY;
+    assert.ok(
+      ronAmyUnionY !== undefined && davidBrianUnionY !== undefined,
+      "Both edges should have unionY",
+    );
+    assert.notEqual(
+      ronAmyUnionY,
+      davidBrianUnionY,
+      `Virginia+Ron unionY (${ronAmyUnionY}) should differ from David+Jan unionY (${davidBrianUnionY})`,
     );
   });
 });

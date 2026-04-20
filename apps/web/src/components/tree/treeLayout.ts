@@ -20,6 +20,8 @@ const GENERATION_GAP = 280;  // vertical distance between generation rows
 const EDIT_SLOT_GAP = 32;
 const ROW_GAP = 112;
 const SPOUSE_ATTACH_GAP = 144;
+const FAMILY_GROUP_GAP = 80;   // extra horizontal gap between different parent-family groups
+const FAMILY_BAR_STAGGER = 16; // vertical offset between successive parent-couple branch bars
 const MIN_LANE_GAP = 200;
 
 function sortedPair(leftId: string, rightId: string): [string, string] {
@@ -540,9 +542,22 @@ function computeLanePositions(
   const tokenWidths = tokens.map(
     (token) => NODE_WIDTH + token.attachedSpouseIds.length * SPOUSE_ATTACH_GAP,
   );
+
+  // Extra gap between tokens whose anchors belong to different parent families.
+  // Both tokens must have a "parents:" signature for the gap to apply so that
+  // solo or parentless tokens don't produce spurious gaps.
+  const familyTransitionGaps = tokens.map((token, index) => {
+    const next = tokens[index + 1];
+    if (!next) return 0;
+    if (!token.parentSignature.startsWith("parents:")) return 0;
+    if (!next.parentSignature.startsWith("parents:")) return 0;
+    return token.parentSignature !== next.parentSignature ? FAMILY_GROUP_GAP : 0;
+  });
+
   const totalWidth =
     tokenWidths.reduce((sum, width) => sum + width, 0) +
-    Math.max(0, tokens.length - 1) * ROW_GAP;
+    Math.max(0, tokens.length - 1) * ROW_GAP +
+    familyTransitionGaps.reduce<number>((sum, gap) => sum + gap, 0);
   let cursorX = -totalWidth / 2;
 
   tokens.forEach((token, index) => {
@@ -557,7 +572,7 @@ function computeLanePositions(
         );
       });
 
-    cursorX += tokenWidth + ROW_GAP;
+    cursorX += tokenWidth + ROW_GAP + (familyTransitionGaps[index] ?? 0);
   });
 
   return { positions, componentMembersByPersonId };
@@ -967,22 +982,13 @@ function buildTokenComponentMembers(tokens: RowToken[]) {
   return tokens.map((token) => [...token.memberIds].sort());
 }
 
+/**
+ * Placeholder – family-group spacing is now applied directly in
+ * `computeLanePositions` via `familyTransitionGaps`.  This function is
+ * retained only so that the call-site in `buildLaneTokens` still compiles.
+ */
 function addSiblingSpacing(tokens: RowToken[]) {
-  if (tokens.length <= 1) return tokens;
-  const spaced: RowToken[] = [];
-  tokens.forEach((token, index) => {
-    spaced.push(token);
-    const next = tokens[index + 1];
-    if (!next) return;
-    if (token.parentSignature === next.parentSignature) return;
-    spaced.push({
-      anchorId: `gap:${token.anchorId}:${next.anchorId}`,
-      memberIds: [],
-      attachedSpouseIds: [],
-      parentSignature: `gap:${index}`,
-    });
-  });
-  return spaced.filter((token) => !token.anchorId.startsWith("gap:"));
+  return tokens;
 }
 
 function hasRelationship(
@@ -1538,6 +1544,31 @@ export function buildEdges(
     })),
   ];
 
+  // Pre-compute per-parent-couple stagger index so that different families'
+  // horizontal branch bars render at different Y heights.  This prevents
+  // visually merging bars when two families share the same generation row.
+  const familyBarStagger = new Map<string, number>();
+  {
+    const familyUnionEntries: Array<{ key: string; avgX: number }> = [];
+    const seenFamilies = new Set<string>();
+    for (const r of visualRelationships) {
+      if (r.type !== "parent_child") continue;
+      const pids = [...(parentIdsByChild.get(r.toPersonId) ?? [])].sort();
+      if (pids.length !== 2) continue;
+      const key = pids.join("|");
+      if (seenFamilies.has(key)) continue;
+      seenFamilies.add(key);
+      const anchors = pids
+        .map((pid) => getPortraitBottomAnchor(pid, positions))
+        .filter((v): v is { x: number; y: number } => Boolean(v));
+      if (anchors.length < 2) continue;
+      const avgX = anchors.reduce((s, a) => s + a.x, 0) / anchors.length;
+      familyUnionEntries.push({ key, avgX });
+    }
+    familyUnionEntries.sort((a, b) => a.avgX - b.avgX);
+    familyUnionEntries.forEach((entry, idx) => familyBarStagger.set(entry.key, idx));
+  }
+
   return visualRelationships.flatMap((r) => {
     const isLocal = focusPersonIds
       ? focusPersonIds.has(r.fromPersonId) && focusPersonIds.has(r.toPersonId)
@@ -1556,10 +1587,11 @@ export function buildEdges(
           ? allParentAnchors.reduce((sum, anchor) => sum + anchor.x, 0) /
             allParentAnchors.length
           : sourceAnchor?.x;
+      const staggerIdx = familyBarStagger.get(parentIds.join("|")) ?? 0;
       const unionY =
         hasFamilyUnion && allParentAnchors.length > 0 && targetAnchor
           ? Math.min(
-              Math.max(...allParentAnchors.map((anchor) => anchor.y)) + 28,
+              Math.max(...allParentAnchors.map((anchor) => anchor.y)) + 28 + staggerIdx * FAMILY_BAR_STAGGER,
               targetAnchor.y - 40,
             )
           : undefined;
