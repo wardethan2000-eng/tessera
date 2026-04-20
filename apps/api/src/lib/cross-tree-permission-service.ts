@@ -35,6 +35,7 @@ export function canManageTreeScope(role: string): boolean {
 function canAccessVisibilityLevel(
   visibility: MemoryVisibilityLevel,
   role: string,
+  viewerIsLinkedPersonInTree: boolean,
 ): boolean {
   if (visibility === "hidden") {
     return false;
@@ -44,8 +45,15 @@ function canAccessVisibilityLevel(
     return true;
   }
 
-  // The schema supports circle-based visibility before the product has circle
-  // membership records. Until that lands, keep those modes steward-only.
+  if (visibility === "family_circle") {
+    // Accessible to any tree member who has a person record linked to their
+    // account in this tree — i.e. they are part of the family graph, not just
+    // an external contributor. Stewards can always see it too.
+    return viewerIsLinkedPersonInTree || canManageTreeScope(role);
+  }
+
+  // named_circle remains steward-only until a named-circle management UI
+  // exists that lets founders curate who belongs to each circle.
   return canManageTreeScope(role);
 }
 
@@ -147,20 +155,50 @@ export async function getViewableMemoryIdsForTree(
     return [];
   }
 
-  const membership = await db.query.treeMemberships.findFirst({
-    where: (treeMembership, { and, eq }) =>
-      and(
-        eq(treeMembership.treeId, treeId),
-        eq(treeMembership.userId, viewerUserId),
-      ),
-    columns: {
-      role: true,
-    },
-  });
+  const [membership, linkedPersonInTree] = await Promise.all([
+    db.query.treeMemberships.findFirst({
+      where: (treeMembership, { and, eq }) =>
+        and(
+          eq(treeMembership.treeId, treeId),
+          eq(treeMembership.userId, viewerUserId),
+        ),
+      columns: {
+        role: true,
+      },
+    }),
+    // Check whether the viewer has a person record linked to their account in
+    // this tree — used to grant family_circle visibility.
+    (async () => {
+      const [scopedPerson, legacyPerson] = await Promise.all([
+        db
+          .select({ personId: schema.treePersonScope.personId })
+          .from(schema.treePersonScope)
+          .innerJoin(
+            schema.people,
+            and(
+              eq(schema.people.id, schema.treePersonScope.personId),
+              eq(schema.people.linkedUserId, viewerUserId),
+            ),
+          )
+          .where(eq(schema.treePersonScope.treeId, treeId))
+          .limit(1),
+        db.query.people.findFirst({
+          where: (person, { and, eq }) =>
+            and(
+              eq(person.treeId, treeId),
+              eq(person.linkedUserId, viewerUserId),
+            ),
+          columns: { id: true },
+        }),
+      ]);
+      return scopedPerson.length > 0 || Boolean(legacyPerson);
+    })(),
+  ]);
 
   if (!membership) {
     return [];
   }
+
   const resolvedVisibilities = await resolveMemoryVisibilitiesForTree(treeId, memoryIds);
   const visibilityByMemoryId = new Map(
     resolvedVisibilities.map((visibility) => [visibility.memoryId, visibility.visibility]),
@@ -169,7 +207,7 @@ export async function getViewableMemoryIdsForTree(
   return memoryIds
     .filter((memory) => {
       const resolvedVisibility = visibilityByMemoryId.get(memory) ?? "all_members";
-      return canAccessVisibilityLevel(resolvedVisibility, membership.role);
+      return canAccessVisibilityLevel(resolvedVisibility, membership.role, linkedPersonInTree);
     })
     .map((memoryId) => memoryId);
 }
