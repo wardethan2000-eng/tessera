@@ -1,4 +1,4 @@
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import * as schema from "@familytree/database";
 import { db } from "./db.js";
 
@@ -7,6 +7,13 @@ type MemoryVisibilityLevel =
   | "family_circle"
   | "named_circle"
   | "hidden";
+
+export type ResolvedMemoryVisibility = {
+  memoryId: string;
+  visibility: MemoryVisibilityLevel;
+  isOverride: boolean;
+  unlockDate: Date | null;
+};
 
 type PermissionResult = {
   allowed: boolean;
@@ -42,27 +49,11 @@ function canAccessVisibilityLevel(
   return canManageTreeScope(role);
 }
 
-export async function getViewableMemoryIdsForTree(
+async function resolveMemoryVisibilitiesForTree(
   treeId: string,
   memoryIds: string[],
-  viewerUserId: string,
-): Promise<string[]> {
+): Promise<ResolvedMemoryVisibility[]> {
   if (memoryIds.length === 0) {
-    return [];
-  }
-
-  const membership = await db.query.treeMemberships.findFirst({
-    where: (treeMembership, { and, eq }) =>
-      and(
-        eq(treeMembership.treeId, treeId),
-        eq(treeMembership.userId, viewerUserId),
-      ),
-    columns: {
-      role: true,
-    },
-  });
-
-  if (!membership) {
     return [];
   }
 
@@ -126,27 +117,68 @@ export async function getViewableMemoryIdsForTree(
   );
   const legacyPersonIds = new Set(legacyPeople.map((person) => person.id));
 
-  return memories
-    .filter((memory) => {
-      const override = visibilityByMemoryId.get(memory.id);
-      let resolvedVisibility: MemoryVisibilityLevel;
-
-      if (override) {
-        resolvedVisibility =
-          override.unlockDate && override.unlockDate > now
-            ? "hidden"
-            : override.visibilityOverride;
-      } else {
-        resolvedVisibility =
-          scopeDefaultByPersonId.get(memory.primaryPersonId) ??
+  return memories.map((memory) => {
+    const override = visibilityByMemoryId.get(memory.id);
+    const visibility =
+      override
+        ? override.unlockDate && override.unlockDate > now
+          ? "hidden"
+          : override.visibilityOverride
+        : scopeDefaultByPersonId.get(memory.primaryPersonId) ??
           (legacyPersonIds.has(memory.primaryPersonId)
             ? "all_members"
             : "all_members");
-      }
 
+    return {
+      memoryId: memory.id,
+      visibility,
+      isOverride: Boolean(override),
+      unlockDate: override?.unlockDate ?? null,
+    };
+  });
+}
+
+export async function getViewableMemoryIdsForTree(
+  treeId: string,
+  memoryIds: string[],
+  viewerUserId: string,
+): Promise<string[]> {
+  if (memoryIds.length === 0) {
+    return [];
+  }
+
+  const membership = await db.query.treeMemberships.findFirst({
+    where: (treeMembership, { and, eq }) =>
+      and(
+        eq(treeMembership.treeId, treeId),
+        eq(treeMembership.userId, viewerUserId),
+      ),
+    columns: {
+      role: true,
+    },
+  });
+
+  if (!membership) {
+    return [];
+  }
+  const resolvedVisibilities = await resolveMemoryVisibilitiesForTree(treeId, memoryIds);
+  const visibilityByMemoryId = new Map(
+    resolvedVisibilities.map((visibility) => [visibility.memoryId, visibility.visibility]),
+  );
+
+  return memoryIds
+    .filter((memory) => {
+      const resolvedVisibility = visibilityByMemoryId.get(memory) ?? "all_members";
       return canAccessVisibilityLevel(resolvedVisibility, membership.role);
     })
-    .map((memory) => memory.id);
+    .map((memoryId) => memoryId);
+}
+
+export async function getResolvedMemoryVisibilitiesForTree(
+  treeId: string,
+  memoryIds: string[],
+): Promise<ResolvedMemoryVisibility[]> {
+  return resolveMemoryVisibilitiesForTree(treeId, memoryIds);
 }
 
 export async function canEditPerson(

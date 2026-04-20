@@ -45,6 +45,13 @@ export const memoryKindEnum = pgEnum("memory_kind", [
   "other",
 ]);
 
+export const memoryReachKindEnum = pgEnum("memory_reach_kind", [
+  "immediate_family",
+  "ancestors",
+  "descendants",
+  "whole_tree",
+]);
+
 export const invitationStatusEnum = pgEnum("invitation_status", [
   "pending",
   "accepted",
@@ -552,6 +559,34 @@ export const memoryPersonTags = pgTable(
   ],
 );
 
+export const memoryReachRules = pgTable(
+  "memory_reach_rules",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    memoryId: uuid("memory_id")
+      .notNull()
+      .references(() => memories.id, { onDelete: "cascade" }),
+    kind: memoryReachKindEnum("kind").notNull(),
+    seedPersonId: uuid("seed_person_id").references(() => people.id, {
+      onDelete: "set null",
+    }),
+    scopeTreeId: uuid("scope_tree_id").references(() => trees.id, {
+      onDelete: "set null",
+    }),
+    createdByUserId: text("created_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("memory_reach_rules_memory_idx").on(table.memoryId),
+    index("memory_reach_rules_seed_person_idx").on(table.seedPersonId),
+    index("memory_reach_rules_scope_tree_idx").on(table.scopeTreeId),
+    index("memory_reach_rules_created_by_idx").on(table.createdByUserId),
+    index("memory_reach_rules_kind_idx").on(table.kind),
+  ],
+);
+
 export const memoryTreeVisibility = pgTable(
   "memory_tree_visibility",
   {
@@ -567,6 +602,31 @@ export const memoryTreeVisibility = pgTable(
   (table) => [
     primaryKey({ columns: [table.memoryId, table.treeId] }),
     index("memory_tree_vis_tree_idx").on(table.treeId),
+  ],
+);
+
+export const memoryPersonSuppressions = pgTable(
+  "memory_person_suppressions",
+  {
+    memoryId: uuid("memory_id")
+      .notNull()
+      .references(() => memories.id, { onDelete: "cascade" }),
+    treeId: uuid("tree_id")
+      .notNull()
+      .references(() => trees.id, { onDelete: "cascade" }),
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => people.id, { onDelete: "cascade" }),
+    suppressedByUserId: text("suppressed_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.memoryId, table.treeId, table.personId] }),
+    index("memory_person_suppressions_tree_person_idx").on(table.treeId, table.personId),
+    index("memory_person_suppressions_person_idx").on(table.personId),
+    index("memory_person_suppressions_suppressed_by_idx").on(table.suppressedByUserId),
   ],
 );
 
@@ -708,7 +768,9 @@ export const treesRelations = relations(trees, ({ one, many }) => ({
   relationshipVisibility: many(treeRelationshipVisibility),
   memories: many(memories, { relationName: "tree_memories" }),
   contributingMemories: many(memories, { relationName: "contributing_tree_memories" }),
+  scopedMemoryReachRules: many(memoryReachRules, { relationName: "memory_reach_scope_tree" }),
   memoryVisibility: many(memoryTreeVisibility),
+  memoryPersonSuppressions: many(memoryPersonSuppressions),
   invitations: many(invitations),
   archiveExports: many(archiveExports),
   prompts: many(prompts),
@@ -793,6 +855,8 @@ export const peopleRelations = relations(people, ({ one, many }) => ({
   memories: many(memories),
   treeScopes: many(treePersonScope),
   memoryTags: many(memoryPersonTags),
+  memoryReachSeeds: many(memoryReachRules),
+  memorySuppressions: many(memoryPersonSuppressions),
   invitations: many(invitations),
   promptsReceived: many(prompts),
 }));
@@ -844,7 +908,9 @@ export const memoriesRelations = relations(memories, ({ one, many }) => ({
   place: one(places, { fields: [memories.placeId], references: [places.id] }),
   prompt: one(prompts, { fields: [memories.promptId], references: [prompts.id] }),
   personTags: many(memoryPersonTags),
+  reachRules: many(memoryReachRules),
   treeVisibility: many(memoryTreeVisibility),
+  personSuppressions: many(memoryPersonSuppressions),
 }));
 
 export const promptsRelations = relations(prompts, ({ one, many }) => ({
@@ -940,6 +1006,48 @@ export const memoryTreeVisibilityRelations = relations(memoryTreeVisibility, ({ 
   tree: one(trees, {
     fields: [memoryTreeVisibility.treeId],
     references: [trees.id],
+  }),
+}));
+
+export const memoryPersonSuppressionsRelations = relations(
+  memoryPersonSuppressions,
+  ({ one }) => ({
+    memory: one(memories, {
+      fields: [memoryPersonSuppressions.memoryId],
+      references: [memories.id],
+    }),
+    tree: one(trees, {
+      fields: [memoryPersonSuppressions.treeId],
+      references: [trees.id],
+    }),
+    person: one(people, {
+      fields: [memoryPersonSuppressions.personId],
+      references: [people.id],
+    }),
+    suppressedBy: one(users, {
+      fields: [memoryPersonSuppressions.suppressedByUserId],
+      references: [users.id],
+    }),
+  }),
+);
+
+export const memoryReachRulesRelations = relations(memoryReachRules, ({ one }) => ({
+  memory: one(memories, {
+    fields: [memoryReachRules.memoryId],
+    references: [memories.id],
+  }),
+  seedPerson: one(people, {
+    fields: [memoryReachRules.seedPersonId],
+    references: [people.id],
+  }),
+  scopeTree: one(trees, {
+    fields: [memoryReachRules.scopeTreeId],
+    references: [trees.id],
+    relationName: "memory_reach_scope_tree",
+  }),
+  createdBy: one(users, {
+    fields: [memoryReachRules.createdByUserId],
+    references: [users.id],
   }),
 }));
 

@@ -2,7 +2,10 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import * as schema from "@familytree/database";
-import { canManageTreeScope } from "../lib/cross-tree-permission-service.js";
+import {
+  canManageTreeScope,
+  getResolvedMemoryVisibilitiesForTree,
+} from "../lib/cross-tree-permission-service.js";
 import {
   getTreeMemories,
   isMemoryInTreeScope,
@@ -23,6 +26,17 @@ const CreateMemoryBody = z.object({
   placeId: z.string().uuid().optional(),
   placeLabelOverride: z.string().max(200).optional(),
   promptId: z.string().uuid().optional(),
+  taggedPersonIds: z.array(z.string().uuid()).max(24).optional(),
+  reach: z
+    .array(
+      z.object({
+        kind: z.enum(["immediate_family", "ancestors", "descendants", "whole_tree"]),
+        seedPersonId: z.string().uuid().optional(),
+        scopeTreeId: z.string().uuid().optional(),
+      }),
+    )
+    .max(12)
+    .optional(),
 });
 
 const UpdateMemoryVisibilityBody = z.object({
@@ -52,6 +66,22 @@ function serializePlace(place: {
         locality: place.locality,
       }
     : null;
+}
+
+function serializeTreeVisibility(
+  resolved:
+    | {
+        visibility: "all_members" | "family_circle" | "named_circle" | "hidden";
+        isOverride: boolean;
+        unlockDate: Date | null;
+      }
+    | undefined,
+) {
+  return {
+    treeVisibilityLevel: resolved?.visibility ?? "all_members",
+    treeVisibilityIsOverride: resolved?.isOverride ?? false,
+    treeVisibilityUnlockDate: resolved?.unlockDate?.toISOString() ?? null,
+  };
 }
 
 export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
@@ -87,6 +117,8 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
         placeId,
         placeLabelOverride,
         promptId,
+        taggedPersonIds,
+        reach,
       } = parsed.data;
 
       if (kind === "story" && !body) {
@@ -139,6 +171,43 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
         }
       }
 
+      if (taggedPersonIds?.length) {
+        for (const taggedPersonId of taggedPersonIds) {
+          const taggedPersonInScope = await isPersonInTreeScope(treeId, taggedPersonId);
+          if (!taggedPersonInScope) {
+            return reply.status(400).send({
+              error: "Tagged people must be in this tree",
+            });
+          }
+        }
+      }
+
+      if (reach?.length) {
+        for (const rule of reach) {
+          if (rule.kind === "whole_tree") {
+            if (rule.scopeTreeId && rule.scopeTreeId !== treeId) {
+              return reply.status(400).send({
+                error: "Whole-tree reach must target the current tree",
+              });
+            }
+            continue;
+          }
+
+          if (!rule.seedPersonId) {
+            return reply.status(400).send({
+              error: "Lineage reach rules require a seed person",
+            });
+          }
+
+          const seedPersonInScope = await isPersonInTreeScope(treeId, rule.seedPersonId);
+          if (!seedPersonInScope) {
+            return reply.status(400).send({
+              error: "Reach-rule seed people must be in this tree",
+            });
+          }
+        }
+      }
+
       const memory = await db.transaction((tx) =>
         createMemoryWithPrimaryTag(tx, {
           treeId,
@@ -152,6 +221,12 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
           dateOfEventText,
           placeId,
           placeLabelOverride,
+          taggedPersonIds,
+          reachRules: reach?.map((rule) => ({
+            kind: rule.kind,
+            seedPersonId: rule.seedPersonId ?? null,
+            scopeTreeId: rule.kind === "whole_tree" ? treeId : rule.scopeTreeId ?? null,
+          })),
         }),
       );
 
@@ -166,7 +241,16 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
       // Fetch with media for the response
       const full = await db.query.memories.findFirst({
         where: (m, { eq }) => eq(m.id, memory.id),
-        with: { media: true, place: true },
+        with: {
+          media: true,
+          place: true,
+          personTags: {
+            with: {
+              person: true,
+            },
+          },
+          reachRules: true,
+        },
       });
 
       const withUrl =
@@ -181,7 +265,12 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
             ? { ...full, place: serializePlace(full.place) }
           : full;
 
-      return reply.status(201).send(withUrl);
+      const [visibility] = await getResolvedMemoryVisibilitiesForTree(treeId, [memory.id]);
+
+      return reply.status(201).send({
+        ...withUrl,
+        ...serializeTreeVisibility(visibility),
+      });
     },
   );
 
@@ -212,6 +301,13 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
         personId,
         viewerUserId: session.user.id,
       });
+      const visibilities = await getResolvedMemoryVisibilitiesForTree(
+        treeId,
+        memories.map((memory) => memory.id),
+      );
+      const visibilityById = new Map(
+        visibilities.map((visibility) => [visibility.memoryId, visibility]),
+      );
 
       return reply.send(
         memories.map((m) => ({
@@ -219,6 +315,7 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
           mediaUrl: m.media ? mediaUrl(m.media.objectKey) : null,
           mimeType: m.media?.mimeType ?? null,
           place: serializePlace(m.place),
+          ...serializeTreeVisibility(visibilityById.get(m.id)),
         })),
       );
     },
@@ -242,6 +339,13 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
       limit: 200,
       viewerUserId: session.user.id,
     });
+    const visibilities = await getResolvedMemoryVisibilitiesForTree(
+      treeId,
+      memories.map((memory) => memory.id),
+    );
+    const visibilityById = new Map(
+      visibilities.map((visibility) => [visibility.memoryId, visibility]),
+    );
 
     return reply.send(
       memories.map((m) => ({
@@ -253,6 +357,7 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
           ? mediaUrl(m.primaryPerson.portraitMedia.objectKey)
           : null,
         place: serializePlace(m.place),
+        ...serializeTreeVisibility(visibilityById.get(m.id)),
       })),
     );
   });

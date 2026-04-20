@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import * as schema from "@familytree/database";
 import { getViewableMemoryIdsForTree } from "./cross-tree-permission-service.js";
 import { db } from "./db.js";
+import { getReachMatchedMemoryIdsForTree } from "./memory-reach-service.js";
 
 function applyScopeToPerson<
   TPerson extends {
@@ -147,8 +148,11 @@ export async function getTreeMemories(
     personId?: string;
     limit?: number;
     viewerUserId: string;
+    includeSuppressed?: boolean;
   },
 ) {
+  const scopedPersonIds = await getTreeScopedPersonIds(treeId);
+
   const taggedMemoryQuery = db
     .selectDistinct({ memoryId: schema.memoryPersonTags.memoryId })
     .from(schema.memoryPersonTags)
@@ -177,9 +181,19 @@ export async function getTreeMemories(
       ),
   ]);
 
+  const reachedMemoryIds = await getReachMatchedMemoryIdsForTree(
+    treeId,
+    scopedPersonIds,
+    options?.personId,
+  );
+
   const memoryIds = [
     ...new Set(
-      [...taggedMemoryRows, ...legacyMemoryRows].map((row) => row.memoryId),
+      [
+        ...taggedMemoryRows,
+        ...legacyMemoryRows,
+        ...reachedMemoryIds.map((memoryId) => ({ memoryId })),
+      ].map((row) => row.memoryId),
     ),
   ];
   if (memoryIds.length === 0) {
@@ -195,12 +209,33 @@ export async function getTreeMemories(
     return [];
   }
 
+  const suppressionIds =
+    options.personId && !options.includeSuppressed
+      ? await getSuppressedMemoryIdsForPersonSurface(
+          treeId,
+          options.personId,
+          visibleMemoryIds,
+        )
+      : [];
+
+  const suppressedIdSet = new Set(suppressionIds);
+  const finalMemoryIds = visibleMemoryIds.filter((memoryId) => !suppressedIdSet.has(memoryId));
+  if (finalMemoryIds.length === 0) {
+    return [];
+  }
+
   return db.query.memories.findMany({
-    where: (memory, { inArray }) => inArray(memory.id, visibleMemoryIds),
+    where: (memory, { inArray }) => inArray(memory.id, finalMemoryIds),
     with: {
       media: true,
       place: true,
       primaryPerson: { with: { portraitMedia: true } },
+      personTags: {
+        with: {
+          person: true,
+        },
+      },
+      reachRules: true,
     },
     orderBy: (memory, { desc }) => [desc(memory.createdAt)],
     ...(options?.limit ? { limit: options.limit } : {}),
@@ -354,6 +389,35 @@ export async function getVisibleMemoryIdsForTree(
   viewerUserId: string,
 ): Promise<string[]> {
   return getViewableMemoryIdsForTree(treeId, memoryIds, viewerUserId);
+}
+
+export async function getSuppressedMemoryIdsForPersonSurface(
+  treeId: string,
+  personId: string,
+  memoryIds?: string[],
+): Promise<string[]> {
+  if (memoryIds && memoryIds.length === 0) {
+    return [];
+  }
+
+  const rows = await db.query.memoryPersonSuppressions.findMany({
+    where: (suppression, operators) =>
+      memoryIds?.length
+        ? and(
+            operators.eq(suppression.treeId, treeId),
+            operators.eq(suppression.personId, personId),
+            operators.inArray(suppression.memoryId, memoryIds),
+          )
+        : and(
+            operators.eq(suppression.treeId, treeId),
+            operators.eq(suppression.personId, personId),
+          ),
+    columns: {
+      memoryId: true,
+    },
+  });
+
+  return rows.map((row) => row.memoryId);
 }
 
 export async function isMemoryInTreeScope(treeId: string, memoryId: string) {

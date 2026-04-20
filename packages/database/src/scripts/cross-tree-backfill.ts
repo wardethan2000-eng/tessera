@@ -1,5 +1,6 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import { pathToFileURL } from "node:url";
 import * as schema from "../schema.js";
 import {
   backfillCrossTreeSchema,
@@ -54,29 +55,39 @@ function printSummary(summary: Awaited<ReturnType<typeof previewCrossTreeBackfil
 
 const apply = process.argv.includes("--apply");
 const json = process.argv.includes("--json");
-const databaseUrl = process.env.DATABASE_URL;
 
-if (!databaseUrl) {
-  throw new Error("DATABASE_URL environment variable is required");
+async function main() {
+  const databaseUrl = process.env.DATABASE_URL;
+
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL environment variable is required");
+  }
+
+  const pool = new Pool({ connectionString: databaseUrl });
+  const db = drizzle(pool, { schema });
+
+  try {
+    const summary = apply
+      ? await backfillCrossTreeSchema(db)
+      : await previewCrossTreeBackfill(db);
+
+    if (json) {
+      console.log(JSON.stringify(summary, null, 2));
+    } else {
+      printSummary(summary);
+      if (!apply) {
+        console.log("");
+        console.log("Re-run with --apply to execute the backfill.");
+      }
+    }
+  } finally {
+    await pool.end();
+  }
 }
 
-const pool = new Pool({ connectionString: databaseUrl });
-const db = drizzle(pool, { schema });
-
-try {
-  const summary = apply
-    ? await backfillCrossTreeSchema(db)
-    : await previewCrossTreeBackfill(db);
-
-  if (json) {
-    console.log(JSON.stringify(summary, null, 2));
-  } else {
-    printSummary(summary);
-    if (!apply) {
-      console.log("");
-      console.log("Re-run with --apply to execute the backfill.");
-    }
-  }
-} finally {
-  await pool.end();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
 }

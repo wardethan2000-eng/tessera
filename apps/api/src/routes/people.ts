@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq, or } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 import * as schema from "@familytree/database";
 import {
   listLikelyDuplicatePeople,
@@ -11,6 +11,7 @@ import { removePersonFromTree } from "../lib/cross-tree-mutation-service.js";
 import {
   canEditPerson,
   canManageTreeScope,
+  getResolvedMemoryVisibilitiesForTree,
 } from "../lib/cross-tree-permission-service.js";
 import {
   getTreeMemories,
@@ -18,6 +19,7 @@ import {
   getTreeScopedPeople,
   getTreeScopedPerson,
   getVisibleTreesForPerson,
+  isMemoryInTreeScope,
   isPersonInTreeScope,
 } from "../lib/cross-tree-read-service.js";
 import { db } from "../lib/db.js";
@@ -93,6 +95,10 @@ const MergePeopleBody = z.object({
     .optional(),
 });
 
+const UpdatePersonMemorySuppressionBody = z.object({
+  suppressed: z.boolean(),
+});
+
 async function verifyMembership(treeId: string, userId: string) {
   return db.query.treeMemberships.findFirst({
     where: (t, { and, eq }) =>
@@ -126,6 +132,81 @@ function serializePlace(place: {
         locality: place.locality,
       }
     : null;
+}
+
+function describeReachRule(
+  rule:
+    | {
+        kind: "immediate_family" | "ancestors" | "descendants" | "whole_tree";
+      }
+    | undefined,
+) {
+  if (!rule) return "Shared through family context";
+
+  switch (rule.kind) {
+    case "immediate_family":
+      return "Shared through immediate family";
+    case "ancestors":
+      return "Shared through ancestors";
+    case "descendants":
+      return "Shared through descendants";
+    case "whole_tree":
+      return "Shared with this tree";
+    default:
+      return "Shared through family context";
+  }
+}
+
+function serializeMemoryForPersonSurface<
+  TMemory extends {
+    id: string;
+    media: { objectKey: string; mimeType: string } | null;
+    place: {
+      id: string;
+      label: string;
+      latitude: number;
+      longitude: number;
+      countryCode: string | null;
+      adminRegion: string | null;
+      locality: string | null;
+    } | null;
+    personTags: Array<{ personId: string }>;
+    reachRules: Array<{
+      kind: "immediate_family" | "ancestors" | "descendants" | "whole_tree";
+    }>;
+  },
+>(
+  memory: TMemory,
+  personId: string,
+) {
+  const isDirectSubject = memory.personTags.some((tag) => tag.personId === personId);
+
+  return {
+    ...memory,
+    mediaUrl: memory.media ? mediaUrl(memory.media.objectKey) : null,
+    mimeType: memory.media?.mimeType ?? null,
+    place: serializePlace(memory.place),
+    memoryContext: isDirectSubject ? "direct" : "contextual",
+    memoryReasonLabel: isDirectSubject
+      ? "Tagged directly"
+      : describeReachRule(memory.reachRules[0]),
+  };
+}
+
+function serializeTreeVisibility(
+  resolved:
+    | {
+        visibility: "all_members" | "family_circle" | "named_circle" | "hidden";
+        isOverride: boolean;
+        unlockDate: Date | null;
+      }
+    | undefined,
+) {
+  return {
+    treeVisibilityLevel: resolved?.visibility ?? "all_members",
+    treeVisibilityIsOverride: resolved?.isOverride ?? false,
+    treeVisibilityUnlockDate: resolved?.unlockDate?.toISOString() ?? null,
+  };
 }
 
 export async function peoplePlugin(app: FastifyInstance): Promise<void> {
@@ -294,13 +375,44 @@ export async function peoplePlugin(app: FastifyInstance): Promise<void> {
       return reply.status(403).send({ error: "Not a member of this tree" });
     }
 
-    const [person, memories, relationships] = await Promise.all([
+    const [person, memories, allMemories, relationships, personPermission] = await Promise.all([
       getTreeScopedPerson(treeId, personId),
       getTreeMemories(treeId, { personId, viewerUserId: session.user.id }),
+      getTreeMemories(treeId, {
+        personId,
+        viewerUserId: session.user.id,
+        includeSuppressed: true,
+      }),
       getTreePersonRelationships(treeId, personId),
+      canEditPerson(session.user.id, personId),
     ]);
 
     if (!person) return reply.status(404).send({ error: "Person not found" });
+
+    const visibilityRows = await getResolvedMemoryVisibilitiesForTree(
+      treeId,
+      allMemories.map((memory) => memory.id),
+    );
+    const visibilityById = new Map(
+      visibilityRows.map((visibility) => [visibility.memoryId, visibility]),
+    );
+
+    const serializedMemories = memories.map((memory) =>
+      ({
+        ...serializeMemoryForPersonSurface(memory, personId),
+        ...serializeTreeVisibility(visibilityById.get(memory.id)),
+      }),
+    );
+    const visibleMemoryIds = new Set(serializedMemories.map((memory) => memory.id));
+    const suppressedContextualMemories = personPermission.allowed
+      ? allMemories
+          .filter((memory) => !visibleMemoryIds.has(memory.id))
+          .map((memory) => ({
+            ...serializeMemoryForPersonSurface(memory, personId),
+            ...serializeTreeVisibility(visibilityById.get(memory.id)),
+          }))
+          .filter((memory) => memory.memoryContext === "contextual")
+      : [];
 
     return reply.send({
       ...person,
@@ -309,15 +421,110 @@ export async function peoplePlugin(app: FastifyInstance): Promise<void> {
         : null,
       birthPlaceResolved: serializePlace(person.birthPlaceRef),
       deathPlaceResolved: serializePlace(person.deathPlaceRef),
-      memories: memories.map((m) => ({
-        ...m,
-        mediaUrl: m.media ? mediaUrl(m.media.objectKey) : null,
-        mimeType: m.media?.mimeType ?? null,
-        place: serializePlace(m.place),
-      })),
+      memories: serializedMemories,
+      directMemories: serializedMemories.filter((memory) => memory.memoryContext === "direct"),
+      contextualMemories: serializedMemories.filter(
+        (memory) => memory.memoryContext === "contextual",
+      ),
+      suppressedContextualMemories,
       relationships,
     });
   });
+
+  app.patch(
+    "/api/trees/:treeId/people/:personId/memories/:memoryId/suppression",
+    async (request, reply) => {
+      const session = await getSession(request.headers);
+      if (!session) return reply.status(401).send({ error: "Unauthorized" });
+
+      const { treeId, personId, memoryId } = request.params as {
+        treeId: string;
+        personId: string;
+        memoryId: string;
+      };
+
+      const membership = await verifyMembership(treeId, session.user.id);
+      if (!membership) {
+        return reply.status(403).send({ error: "Not a member of this tree" });
+      }
+
+      const parsed = UpdatePersonMemorySuppressionBody.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid request body" });
+      }
+
+      const [personInScope, memoryInScope, permission] = await Promise.all([
+        isPersonInTreeScope(treeId, personId),
+        isMemoryInTreeScope(treeId, memoryId),
+        canEditPerson(session.user.id, personId),
+      ]);
+
+      if (!personInScope) {
+        return reply.status(404).send({ error: "Person not found" });
+      }
+      if (!memoryInScope) {
+        return reply.status(404).send({ error: "Memory not found in this tree" });
+      }
+      if (!permission.allowed) {
+        return reply.status(403).send({ error: permission.reason });
+      }
+
+      const personMemories = await getTreeMemories(treeId, {
+        personId,
+        viewerUserId: session.user.id,
+        includeSuppressed: true,
+      });
+      const matchingMemory = personMemories.find((memory) => memory.id === memoryId);
+      if (!matchingMemory) {
+        return reply.status(400).send({
+          error: "This memory does not appear on this person's surface",
+        });
+      }
+
+      const isDirectSubject = matchingMemory.personTags.some((tag) => tag.personId === personId);
+      if (isDirectSubject) {
+        return reply.status(400).send({
+          error: "Directly tagged memories cannot be hidden from this page",
+        });
+      }
+
+      if (!parsed.data.suppressed) {
+        await db
+          .delete(schema.memoryPersonSuppressions)
+          .where(
+            and(
+              eq(schema.memoryPersonSuppressions.memoryId, memoryId),
+              eq(schema.memoryPersonSuppressions.treeId, treeId),
+              eq(schema.memoryPersonSuppressions.personId, personId),
+            ),
+          );
+
+        return reply.send({ suppressed: false, treeId, personId, memoryId });
+      }
+
+      const [updated] = await db
+        .insert(schema.memoryPersonSuppressions)
+        .values({
+          treeId,
+          personId,
+          memoryId,
+          suppressedByUserId: session.user.id,
+        })
+        .onConflictDoUpdate({
+          target: [
+            schema.memoryPersonSuppressions.memoryId,
+            schema.memoryPersonSuppressions.treeId,
+            schema.memoryPersonSuppressions.personId,
+          ],
+          set: {
+            suppressedByUserId: session.user.id,
+          },
+        })
+        .returning();
+
+      return reply.send({ suppressed: true, record: updated });
+    },
+  );
 
   app.post("/api/trees/:treeId/people/merge", async (request, reply) => {
     const session = await getSession(request.headers);

@@ -6,6 +6,10 @@ import { useSession } from "@/lib/auth-client";
 import { AnimatePresence } from "framer-motion";
 import { DriftMode } from "@/components/tree/DriftMode";
 import { AddMemoryWizard } from "@/components/tree/AddMemoryWizard";
+import {
+  MemoryVisibilityControl,
+  type TreeVisibilityLevel,
+} from "@/components/tree/MemoryVisibilityControl";
 import { SearchOverlay } from "@/components/tree/SearchOverlay";
 import { Shimmer } from "@/components/ui/Shimmer";
 
@@ -16,6 +20,7 @@ const EASE = "cubic-bezier(0.22, 0.61, 0.36, 1)";
 interface Tree {
   id: string;
   name: string;
+  role?: string;
 }
 
 interface Person {
@@ -44,6 +49,8 @@ interface Memory {
   primaryPersonId?: string | null;
   personPortraitUrl?: string | null;
   createdAt?: string;
+  treeVisibilityLevel?: TreeVisibilityLevel;
+  treeVisibilityIsOverride?: boolean;
 }
 
 function extractYear(text?: string | null): number | null {
@@ -69,11 +76,18 @@ function getVoiceTranscriptLabel(memory: Memory): string | null {
   return null;
 }
 
-function MemoryCard({ memory, onClick }: { memory: Memory; onClick: () => void }) {
+function MemoryCard({
+  memory,
+  onClick,
+  extraControls,
+}: {
+  memory: Memory;
+  onClick: () => void;
+  extraControls?: React.ReactNode;
+}) {
   const [hovered, setHovered] = useState(false);
   return (
-    <button
-      onClick={onClick}
+    <article
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
@@ -81,7 +95,6 @@ function MemoryCard({ memory, onClick }: { memory: Memory; onClick: () => void }
         border: "1px solid var(--rule)",
         borderRadius: 8,
         padding: 0,
-        cursor: "pointer",
         textAlign: "left",
         flexShrink: 0,
         width: 200,
@@ -93,82 +106,100 @@ function MemoryCard({ memory, onClick }: { memory: Memory; onClick: () => void }
         transition: `box-shadow 200ms ${EASE}, transform 200ms ${EASE}`,
       }}
     >
-      {memory.kind === "photo" && memory.mediaUrl ? (
-        <div style={{ height: 110, overflow: "hidden", position: "relative" }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={memory.mediaUrl}
-            alt={memory.title}
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-          />
-        </div>
-      ) : (
-        <div
-          style={{
-            height: 110,
-            background: "var(--paper-deep)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <span
-            style={{
-              fontFamily: "var(--font-display)",
-              fontSize: 32,
-              color: "var(--rule)",
-            }}
-          >
-            {memory.kind === "story" ? "✦" : memory.kind === "voice" ? "◉" : "▤"}
-          </span>
-        </div>
-      )}
-      <div style={{ padding: "10px 12px 12px" }}>
-        <div
-          style={{
-            fontFamily: "var(--font-display)",
-            fontSize: 13,
-            color: "var(--ink)",
-            lineHeight: 1.3,
-            marginBottom: 4,
-            display: "-webkit-box",
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: "vertical",
-            overflow: "hidden",
-          }}
-        >
-          {memory.title}
-        </div>
-        <div
-          style={{
-            fontFamily: "var(--font-ui)",
-            fontSize: 11,
-            color: "var(--ink-faded)",
-          }}
-        >
-          {memory.personName ?? ""}
-          {memory.personName && memory.dateOfEventText ? " · " : ""}
-          {memory.dateOfEventText ?? ""}
-        </div>
-        {memory.kind === "voice" && (
+      <button
+        type="button"
+        onClick={onClick}
+        style={{
+          background: "none",
+          border: "none",
+          padding: 0,
+          width: "100%",
+          cursor: "pointer",
+          textAlign: "left",
+        }}
+      >
+        {memory.kind === "photo" && memory.mediaUrl ? (
+          <div style={{ height: 110, overflow: "hidden", position: "relative" }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={memory.mediaUrl}
+              alt={memory.title}
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+          </div>
+        ) : (
           <div
             style={{
-              marginTop: 8,
-              fontFamily: "var(--font-body)",
+              height: 110,
+              background: "var(--paper-deep)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <div
+              style={{
+                fontFamily: "var(--font-display)",
+                fontSize: 32,
+                color: "var(--rule)",
+              }}
+            >
+              {memory.kind === "story" ? "✦" : memory.kind === "voice" ? "◉" : "▤"}
+            </div>
+          </div>
+        )}
+        <div style={{ padding: "10px 12px 12px" }}>
+          <div
+            style={{
+              fontFamily: "var(--font-display)",
               fontSize: 13,
-              lineHeight: 1.55,
-              color: "var(--ink-faded)",
+              color: "var(--ink)",
+              lineHeight: 1.3,
+              marginBottom: 4,
               display: "-webkit-box",
-              WebkitLineClamp: 3,
+              WebkitLineClamp: 2,
               WebkitBoxOrient: "vertical",
               overflow: "hidden",
             }}
           >
-            {getVoiceTranscriptLabel(memory)}
+            {memory.title}
           </div>
-        )}
-      </div>
-    </button>
+          <div
+            style={{
+              fontFamily: "var(--font-ui)",
+              fontSize: 11,
+              color: "var(--ink-faded)",
+            }}
+          >
+            {memory.personName ?? ""}
+            {memory.personName && memory.dateOfEventText ? " · " : ""}
+            {memory.dateOfEventText ?? ""}
+          </div>
+          {memory.kind === "voice" && (
+            <div
+              style={{
+                marginTop: 8,
+                fontFamily: "var(--font-body)",
+                fontSize: 13,
+                lineHeight: 1.55,
+                color: "var(--ink-faded)",
+                display: "-webkit-box",
+                WebkitLineClamp: 3,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }}
+            >
+              {getVoiceTranscriptLabel(memory)}
+            </div>
+          )}
+        </div>
+      </button>
+      {extraControls && (
+        <div style={{ padding: "0 12px 12px" }}>
+          {extraControls}
+        </div>
+      )}
+    </article>
   );
 }
 
@@ -269,6 +300,7 @@ export default function AtriumPage() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [inboxCount, setInboxCount] = useState(0);
+  const [updatingMemoryVisibilityId, setUpdatingMemoryVisibilityId] = useState<string | null>(null);
 
   // Global ⌘K handler
   useEffect(() => {
@@ -342,6 +374,23 @@ export default function AtriumPage() {
     if (res.ok) setMemories(await res.json());
   }, [treeId]);
 
+  const setMemoryTreeVisibility = useCallback(
+    async (memoryId: string, visibility: TreeVisibilityLevel | null) => {
+      setUpdatingMemoryVisibilityId(memoryId);
+      const res = await fetch(`${API}/api/trees/${treeId}/memories/${memoryId}/visibility`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ visibilityOverride: visibility }),
+      });
+      if (res.ok) {
+        await refreshMemories();
+      }
+      setUpdatingMemoryVisibilityId(null);
+    },
+    [refreshMemories, treeId],
+  );
+
   const apiPeople = people.map((p) => ({
     id: p.id,
     name: p.name,
@@ -353,6 +402,8 @@ export default function AtriumPage() {
     memories.find((m) => m.kind === "story") ??
     memories[0] ??
     null;
+  const canManageTreeVisibility =
+    tree?.role === "founder" || tree?.role === "steward";
 
   const recentMemories = memories.slice(0, 20);
 
@@ -621,6 +672,17 @@ export default function AtriumPage() {
                 {featuredMemory.personName && featuredMemory.dateOfEventText ? " · " : ""}
                 {featuredMemory.dateOfEventText ?? ""}
               </div>
+              {canManageTreeVisibility && (
+                <div style={{ marginTop: 16, maxWidth: 240 }}>
+                  <MemoryVisibilityControl
+                    memory={featuredMemory}
+                    disabled={updatingMemoryVisibilityId === featuredMemory.id}
+                    onChange={(visibility) => {
+                      void setMemoryTreeVisibility(featuredMemory.id, visibility);
+                    }}
+                  />
+                </div>
+              )}
             </>
           ) : (
             <>
@@ -785,6 +847,17 @@ export default function AtriumPage() {
               <MemoryCard
                 key={m.id}
                 memory={m}
+                extraControls={
+                  canManageTreeVisibility ? (
+                    <MemoryVisibilityControl
+                      memory={m}
+                      disabled={updatingMemoryVisibilityId === m.id}
+                      onChange={(visibility) => {
+                        void setMemoryTreeVisibility(m.id, visibility);
+                      }}
+                    />
+                  ) : undefined
+                }
                 onClick={() => {
                   if (m.primaryPersonId) {
                     router.push(`/trees/${treeId}/people/${m.primaryPersonId}`);

@@ -32,6 +32,12 @@ type CreateTaggedMemoryInput = {
   dateOfEventText?: string | null;
   placeId?: string | null;
   placeLabelOverride?: string | null;
+  taggedPersonIds?: string[];
+  reachRules?: Array<{
+    kind: "immediate_family" | "ancestors" | "descendants" | "whole_tree";
+    seedPersonId?: string | null;
+    scopeTreeId?: string | null;
+  }>;
 };
 
 type AddPersonToTreeScopeInput = {
@@ -185,10 +191,31 @@ export async function createMemoryWithPrimaryTag(
     throw new Error("Failed to create memory");
   }
 
-  await tx.insert(schema.memoryPersonTags).values({
-    memoryId: memory.id,
-    personId: input.primaryPersonId,
-  });
+  const taggedPersonIds = [
+    input.primaryPersonId,
+    ...(input.taggedPersonIds ?? []),
+  ].filter((personId, index, allIds) => allIds.indexOf(personId) === index);
+
+  if (taggedPersonIds.length > 0) {
+    await tx.insert(schema.memoryPersonTags).values(
+      taggedPersonIds.map((personId) => ({
+        memoryId: memory.id,
+        personId,
+      })),
+    );
+  }
+
+  if ((input.reachRules?.length ?? 0) > 0) {
+    await tx.insert(schema.memoryReachRules).values(
+      input.reachRules!.map((rule) => ({
+        memoryId: memory.id,
+        kind: rule.kind,
+        seedPersonId: rule.seedPersonId ?? null,
+        scopeTreeId: rule.scopeTreeId ?? null,
+        createdByUserId: input.contributorUserId,
+      })),
+    );
+  }
 
   return memory;
 }

@@ -20,6 +20,7 @@ interface AddMemoryWizardProps {
   onSuccess?: () => void;
   onMemoryAdded?: () => void;
   defaultPersonId?: string;
+  defaultKind?: MemoryKind;
   promptId?: string;
   promptQuestion?: string;
 }
@@ -36,8 +37,13 @@ interface Step2State {
 
 interface Step3State {
   personId: string;
+  taggedPersonIds: string[];
   dateOfEventText: string;
   placeId: string;
+  shareWithImmediateFamily: boolean;
+  shareWithAncestors: boolean;
+  shareWithDescendants: boolean;
+  shareWithWholeTree: boolean;
 }
 
 const KIND_OPTIONS: { id: MemoryKind; icon: string; label: string; description: string }[] = [
@@ -59,16 +65,22 @@ export function AddMemoryWizard({
   onSuccess,
   onMemoryAdded,
   defaultPersonId,
+  defaultKind,
   promptId,
   promptQuestion,
 }: AddMemoryWizardProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [step1, setStep1] = useState<Step1State>({ kind: "photo" });
+  const [step1, setStep1] = useState<Step1State>({ kind: defaultKind ?? "photo" });
   const [step2, setStep2] = useState<Step2State>({ title: "", body: "", file: null });
   const [step3, setStep3] = useState<Step3State>({
     personId: defaultPersonId ?? (people[0]?.id ?? ""),
+    taggedPersonIds: defaultPersonId ? [defaultPersonId] : [],
     dateOfEventText: "",
     placeId: "",
+    shareWithImmediateFamily: false,
+    shareWithAncestors: false,
+    shareWithDescendants: false,
+    shareWithWholeTree: false,
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -138,6 +150,23 @@ export function AddMemoryWizard({
       };
       if (step2.body.trim()) body.body = step2.body.trim();
       if (resolvedMediaId) body.mediaId = resolvedMediaId;
+      if (!promptId) {
+        body.taggedPersonIds = step3.taggedPersonIds;
+        body.reach = [
+          step3.shareWithImmediateFamily
+            ? { kind: "immediate_family", seedPersonId: step3.personId }
+            : null,
+          step3.shareWithAncestors
+            ? { kind: "ancestors", seedPersonId: step3.personId }
+            : null,
+          step3.shareWithDescendants
+            ? { kind: "descendants", seedPersonId: step3.personId }
+            : null,
+          step3.shareWithWholeTree
+            ? { kind: "whole_tree", scopeTreeId: treeId }
+            : null,
+        ].filter((value): value is NonNullable<typeof value> => Boolean(value));
+      }
 
       const res = await fetch(
         promptId
@@ -173,6 +202,17 @@ export function AddMemoryWizard({
     : step1.kind === "document"
     ? ".pdf,.doc,.docx,application/pdf,application/msword"
     : undefined;
+
+  const selectedPeople = people.filter((person) => step3.taggedPersonIds.includes(person.id));
+
+  function toggleTaggedPerson(personId: string) {
+    setStep3((current) => ({
+      ...current,
+      taggedPersonIds: current.taggedPersonIds.includes(personId)
+        ? current.taggedPersonIds.filter((id) => id !== personId)
+        : [...current.taggedPersonIds, personId],
+    }));
+  }
 
   return (
     <div
@@ -651,7 +691,7 @@ export function AddMemoryWizard({
                 marginBottom: 16,
               }}
             >
-              {promptId ? "Finalize reply" : "Assign to a person"}
+              {promptId ? "Finalize reply" : "Assign & share"}
             </div>
 
             {/* Person picker */}
@@ -666,7 +706,7 @@ export function AddMemoryWizard({
                     marginBottom: 6,
                   }}
                 >
-                  Person *
+                  Anchor person *
                 </label>
                 <div
                   style={{
@@ -683,7 +723,15 @@ export function AddMemoryWizard({
                     return (
                       <button
                         key={p.id}
-                        onClick={() => setStep3((s) => ({ ...s, personId: p.id }))}
+                        onClick={() =>
+                          setStep3((s) => ({
+                            ...s,
+                            personId: p.id,
+                            taggedPersonIds: s.taggedPersonIds.includes(p.id)
+                              ? s.taggedPersonIds
+                              : [...s.taggedPersonIds, p.id],
+                          }))
+                        }
                         style={{
                           background: selected ? "var(--paper-deep)" : "none",
                           border: `1.5px solid ${selected ? "var(--moss)" : "var(--rule)"}`,
@@ -764,6 +812,169 @@ export function AddMemoryWizard({
                 </strong>
                 .
               </div>
+            )}
+
+            {!promptId && (
+              <>
+                <div style={{ marginBottom: 14 }}>
+                  <label
+                    style={{
+                      display: "block",
+                      fontFamily: "var(--font-ui)",
+                      fontSize: 12,
+                      color: "var(--ink-faded)",
+                      marginBottom: 6,
+                    }}
+                  >
+                    Who is this directly about?
+                  </label>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
+                      gap: 8,
+                      maxHeight: 180,
+                      overflowY: "auto",
+                    }}
+                  >
+                    {people.map((person) => {
+                      const selected = step3.taggedPersonIds.includes(person.id);
+                      return (
+                        <button
+                          key={person.id}
+                          type="button"
+                          onClick={() => toggleTaggedPerson(person.id)}
+                          style={{
+                            border: `1.5px solid ${selected ? "var(--moss)" : "var(--rule)"}`,
+                            background: selected ? "rgba(78,93,66,0.08)" : "none",
+                            borderRadius: 8,
+                            padding: "10px 10px",
+                            cursor: "pointer",
+                            textAlign: "left",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontFamily: "var(--font-ui)",
+                              fontSize: 12,
+                              color: selected ? "var(--ink)" : "var(--ink-soft)",
+                              lineHeight: 1.35,
+                            }}
+                          >
+                            {person.name}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: 16 }}>
+                  <label
+                    style={{
+                      display: "block",
+                      fontFamily: "var(--font-ui)",
+                      fontSize: 12,
+                      color: "var(--ink-faded)",
+                      marginBottom: 6,
+                    }}
+                  >
+                    Where else should it appear?
+                  </label>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 8,
+                      padding: "12px 14px",
+                      background: "var(--paper-deep)",
+                      border: "1px solid var(--rule)",
+                      borderRadius: 8,
+                    }}
+                  >
+                    {[
+                      {
+                        checked: step3.shareWithImmediateFamily,
+                        label: "Share through immediate family",
+                        description:
+                          "Surface it for parents, children, siblings, and spouses around the anchor person.",
+                        onChange: (checked: boolean) =>
+                          setStep3((current) => ({
+                            ...current,
+                            shareWithImmediateFamily: checked,
+                          })),
+                      },
+                      {
+                        checked: step3.shareWithAncestors,
+                        label: "Share through ancestors",
+                        description: "Let it appear up the anchor person's lineage.",
+                        onChange: (checked: boolean) =>
+                          setStep3((current) => ({
+                            ...current,
+                            shareWithAncestors: checked,
+                          })),
+                      },
+                      {
+                        checked: step3.shareWithDescendants,
+                        label: "Share through descendants",
+                        description: "Let it appear down the anchor person's lineage.",
+                        onChange: (checked: boolean) =>
+                          setStep3((current) => ({
+                            ...current,
+                            shareWithDescendants: checked,
+                          })),
+                      },
+                      {
+                        checked: step3.shareWithWholeTree,
+                        label: "Share with this whole tree",
+                        description:
+                          "Use sparingly for memories relevant across the entire current archive.",
+                        onChange: (checked: boolean) =>
+                          setStep3((current) => ({
+                            ...current,
+                            shareWithWholeTree: checked,
+                          })),
+                      },
+                    ].map((option) => (
+                      <label
+                        key={option.label}
+                        style={{ display: "flex", gap: 10, alignItems: "flex-start" }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={option.checked}
+                          onChange={(event) => option.onChange(event.target.checked)}
+                          style={{ marginTop: 2 }}
+                        />
+                        <span>
+                          <span
+                            style={{
+                              display: "block",
+                              fontFamily: "var(--font-ui)",
+                              fontSize: 12,
+                              color: "var(--ink)",
+                            }}
+                          >
+                            {option.label}
+                          </span>
+                          <span
+                            style={{
+                              display: "block",
+                              fontFamily: "var(--font-ui)",
+                              fontSize: 11,
+                              color: "var(--ink-faded)",
+                              marginTop: 2,
+                              lineHeight: 1.35,
+                            }}
+                          >
+                            {option.description}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </>
             )}
 
             {/* Date */}
@@ -850,6 +1061,21 @@ export function AddMemoryWizard({
                     </strong>
                   </>
                 )}
+                {!promptId && selectedPeople.length > 0 && (
+                  <>
+                    {" "}· directly about{" "}
+                    <strong style={{ color: "var(--ink)" }}>
+                      {selectedPeople.map((person) => person.name).join(", ")}
+                    </strong>
+                  </>
+                )}
+                {!promptId &&
+                  (step3.shareWithImmediateFamily ||
+                    step3.shareWithAncestors ||
+                    step3.shareWithDescendants ||
+                    step3.shareWithWholeTree) && (
+                    <> · shared more broadly through family context</>
+                  )}
                 {step3.dateOfEventText && (
                   <> · <em>{step3.dateOfEventText}</em></>
                 )}
@@ -894,21 +1120,26 @@ export function AddMemoryWizard({
               </button>
               <button
                 onClick={handleSubmit}
-                disabled={(!promptId && !step3.personId) || submitting}
+                disabled={
+                  (!promptId && (!step3.personId || step3.taggedPersonIds.length === 0)) ||
+                  submitting
+                }
                 style={{
                   fontFamily: "var(--font-ui)",
                   fontSize: 13,
                   fontWeight: 500,
                   color: "white",
                   background:
-                    ((!promptId && !step3.personId) || submitting)
+                    ((!promptId && (!step3.personId || step3.taggedPersonIds.length === 0)) ||
+                      submitting)
                       ? "var(--ink-faded)"
                       : "var(--moss)",
                   border: "none",
                   borderRadius: 6,
                   padding: "9px 20px",
                   cursor:
-                    ((!promptId && !step3.personId) || submitting)
+                    ((!promptId && (!step3.personId || step3.taggedPersonIds.length === 0)) ||
+                      submitting)
                       ? "default"
                       : "pointer",
                   minWidth: 120,

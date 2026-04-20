@@ -5,6 +5,11 @@ import { useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
 import { MemoryLightbox, type LightboxMemory } from "@/components/tree/MemoryLightbox";
 import { PromptComposer } from "@/components/tree/PromptComposer";
+import { AddMemoryWizard } from "@/components/tree/AddMemoryWizard";
+import {
+  MemoryVisibilityControl,
+  type TreeVisibilityLevel,
+} from "@/components/tree/MemoryVisibilityControl";
 import { PlacePicker } from "@/components/tree/PlacePicker";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -40,6 +45,9 @@ type Person = {
   homeTreeId?: string | null;
   portraitUrl: string | null;
   memories: Memory[];
+  directMemories?: Memory[];
+  contextualMemories?: Memory[];
+  suppressedContextualMemories?: Memory[];
   relationships: Relationship[];
 };
 
@@ -58,6 +66,11 @@ type Memory = {
   mediaUrl: string | null;
   mimeType?: string | null;
   createdAt: string;
+  memoryContext?: "direct" | "contextual";
+  memoryReasonLabel?: string | null;
+  treeVisibilityLevel?: TreeVisibilityLevel;
+  treeVisibilityIsOverride?: boolean;
+  treeVisibilityUnlockDate?: string | null;
 };
 
 type Relationship = {
@@ -189,16 +202,9 @@ export default function PersonPage({
 
   // Add memory
   const [showMemoryForm, setShowMemoryForm] = useState(false);
-  const [memoryForm, setMemoryForm] = useState({
-    kind: "story" as MemoryKind,
-    title: "",
-    body: "",
-    dateOfEventText: "",
-    placeId: "",
-    mediaId: "",
-  });
-  const [memoryFile, setMemoryFile] = useState<File | null>(null);
-  const [savingMemory, setSavingMemory] = useState(false);
+  const [memoryComposerKind, setMemoryComposerKind] = useState<MemoryKind>("photo");
+  const [updatingMemorySuppressionId, setUpdatingMemorySuppressionId] = useState<string | null>(null);
+  const [updatingMemoryVisibilityId, setUpdatingMemoryVisibilityId] = useState<string | null>(null);
 
   // Add relationship
   const [showRelForm, setShowRelForm] = useState(false);
@@ -395,45 +401,6 @@ export default function PersonPage({
     setUploadingPortrait(false);
   }
 
-  async function saveMemory(e: React.FormEvent) {
-    e.preventDefault();
-    setSavingMemory(true);
-    let resolvedMediaId = memoryForm.mediaId;
-    if ((memoryForm.kind === "photo" || memoryForm.kind === "voice" || memoryForm.kind === "document") && memoryFile) {
-      const presignRes = await fetch(`${API}/api/trees/${treeId}/media/presign`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ filename: memoryFile.name, contentType: memoryFile.type, sizeBytes: memoryFile.size }),
-      });
-      if (presignRes.ok) {
-        const { mediaId, uploadUrl } = (await presignRes.json()) as { mediaId: string; uploadUrl: string };
-        await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": memoryFile.type }, body: memoryFile });
-        resolvedMediaId = mediaId;
-      }
-    }
-    const res = await fetch(`${API}/api/trees/${treeId}/people/${personId}/memories`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({
-        kind: memoryForm.kind,
-        title: memoryForm.title,
-        body: memoryForm.kind === "story" ? memoryForm.body : undefined,
-        mediaId: ["photo", "voice", "document"].includes(memoryForm.kind) ? resolvedMediaId || undefined : undefined,
-        dateOfEventText: memoryForm.dateOfEventText || undefined,
-        placeId: memoryForm.placeId || undefined,
-      }),
-    });
-    if (res.ok) {
-      setShowMemoryForm(false);
-      setMemoryForm({ kind: "story", title: "", body: "", dateOfEventText: "", placeId: "", mediaId: "" });
-      setMemoryFile(null);
-      await loadPerson();
-    }
-    setSavingMemory(false);
-  }
-
   async function saveRelationship(e: React.FormEvent) {
     e.preventDefault();
     setSavingRel(true);
@@ -453,6 +420,46 @@ export default function PersonPage({
       await loadPerson();
     }
     setSavingRel(false);
+  }
+
+  async function setMemorySurfaceSuppression(memoryId: string, suppressed: boolean) {
+    setUpdatingMemorySuppressionId(memoryId);
+    const res = await fetch(
+      `${API}/api/trees/${treeId}/people/${personId}/memories/${memoryId}/suppression`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ suppressed }),
+      },
+    );
+    if (res.ok) {
+      await loadPerson();
+    }
+    setUpdatingMemorySuppressionId(null);
+  }
+
+  async function setMemoryTreeVisibility(
+    memoryId: string,
+    visibility: TreeVisibilityLevel | null,
+    options?: { closeLightbox?: boolean },
+  ) {
+    setUpdatingMemoryVisibilityId(memoryId);
+    const res = await fetch(`${API}/api/trees/${treeId}/memories/${memoryId}/visibility`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        visibilityOverride: visibility,
+      }),
+    });
+    if (res.ok) {
+      if (options?.closeLightbox) {
+        setLightboxIndex(null);
+      }
+      await loadPerson();
+    }
+    setUpdatingMemoryVisibilityId(null);
   }
 
   async function mergeDuplicate(candidate: DuplicateCandidate) {
@@ -504,6 +511,8 @@ export default function PersonPage({
       dateOfEventText: m.dateOfEventText,
       mediaUrl: m.mediaUrl,
       mimeType: m.mimeType,
+      treeVisibilityLevel: m.treeVisibilityLevel,
+      treeVisibilityIsOverride: m.treeVisibilityIsOverride,
     })));
     setLightboxIndex(startIndex);
   }, []);
@@ -551,8 +560,16 @@ export default function PersonPage({
   const otherPeople = allPeople.filter((p) => p.id !== personId);
 
   // Decade grouping
+  const directMemories =
+    person.directMemories ??
+    person.memories.filter((memory) => memory.memoryContext !== "contextual");
+  const contextualMemories =
+    person.contextualMemories ??
+    person.memories.filter((memory) => memory.memoryContext === "contextual");
+  const suppressedContextualMemories = person.suppressedContextualMemories ?? [];
+
   const decadeMap = new Map<string, Memory[]>();
-  for (const m of person.memories) {
+  for (const m of directMemories) {
     const year = extractYear(m.dateOfEventText);
     if (year) {
       const decade = getDecade(year);
@@ -561,8 +578,9 @@ export default function PersonPage({
     }
   }
   const decades = Array.from(decadeMap.keys()).sort();
-  const undatedMemories = person.memories.filter((m) => !extractYear(m.dateOfEventText));
-  const storyMemories = person.memories.filter((m) => m.kind === "story");
+  const undatedMemories = directMemories.filter((m) => !extractYear(m.dateOfEventText));
+  const storyMemories = directMemories.filter((m) => m.kind === "story");
+  const contextualStoryMemories = contextualMemories.filter((m) => m.kind === "story");
 
   const dateRange =
     person.birthDateText && person.deathDateText
@@ -584,6 +602,15 @@ export default function PersonPage({
     sortedVisibleTrees.find((tree) => tree.id === treeId)?.role ?? null;
   const canManageDuplicates =
     currentTreeRole === "founder" || currentTreeRole === "steward";
+  const canManageTreeVisibility = canManageDuplicates;
+  const canSuppressFromSurface =
+    canManageDuplicates || person.linkedUserId === session?.user?.id;
+  const memoryWizardPeople = [
+    { id: person.id, name: person.displayName },
+    ...allPeople
+      .filter((candidate) => candidate.id !== person.id)
+      .map((candidate) => ({ id: candidate.id, name: candidate.displayName })),
+  ];
 
   // Per-decade stats for the "In this chapter" sidebar
   const decadeStats = activeDecade
@@ -601,11 +628,54 @@ export default function PersonPage({
 
   const TABS: { id: Tab; label: string }[] = [
     { id: "memories", label: `Memories${person.memories.length > 0 ? ` ${person.memories.length}` : ""}` },
-    { id: "stories", label: `Stories${storyMemories.length > 0 ? ` ${storyMemories.length}` : ""}` },
+    {
+      id: "stories",
+      label: `Stories${storyMemories.length + contextualStoryMemories.length > 0 ? ` ${storyMemories.length + contextualStoryMemories.length}` : ""}`,
+    },
     { id: "connections", label: `Connections${person.relationships.length > 0 ? ` ${person.relationships.length}` : ""}` },
     { id: "about", label: "About" },
     { id: "prompts", label: `Questions${personPrompts.length > 0 ? ` ${personPrompts.length}` : ""}` },
   ];
+
+  function renderTreeVisibilityControl(memory: Memory) {
+    if (!canManageTreeVisibility) return null;
+
+    return (
+      <MemoryVisibilityControl
+        memory={memory}
+        disabled={updatingMemoryVisibilityId === memory.id}
+        onChange={(visibility) => {
+          void setMemoryTreeVisibility(memory.id, visibility);
+        }}
+      />
+    );
+  }
+
+  function renderMemoryCardControls(memory: Memory) {
+    if (!canManageTreeVisibility && !(canSuppressFromSurface && memory.memoryContext === "contextual")) {
+      return null;
+    }
+
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {renderTreeVisibilityControl(memory)}
+        {canSuppressFromSurface && memory.memoryContext === "contextual" && (
+          <button
+            type="button"
+            onClick={() => setMemorySurfaceSuppression(memory.id, true)}
+            disabled={updatingMemorySuppressionId === memory.id}
+            style={{
+              ...secondaryBtnStyle,
+              padding: "6px 10px",
+              fontSize: 12,
+            }}
+          >
+            {updatingMemorySuppressionId === memory.id ? "Hiding…" : "Hide from this page"}
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--paper)", display: "flex", flexDirection: "column" }}>
@@ -909,22 +979,16 @@ export default function PersonPage({
                 <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--ink)", margin: 0, fontWeight: 400 }}>
                   Memories
                 </h2>
-                <button onClick={() => setShowMemoryForm((s) => !s)} style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--moss)", background: "none", border: "1px solid var(--moss)", borderRadius: 20, padding: "5px 14px", cursor: "pointer" }}>
-                  {showMemoryForm ? "Cancel" : "+ Add memory"}
+                <button
+                  onClick={() => {
+                    setMemoryComposerKind("photo");
+                    setShowMemoryForm(true);
+                  }}
+                  style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--moss)", background: "none", border: "1px solid var(--moss)", borderRadius: 20, padding: "5px 14px", cursor: "pointer" }}
+                >
+                  + Add memory
                 </button>
               </div>
-
-              {showMemoryForm && (
-                <MemoryForm
-                  treeId={treeId}
-                  memoryForm={memoryForm}
-                  setMemoryForm={setMemoryForm}
-                  memoryFile={memoryFile}
-                  setMemoryFile={setMemoryFile}
-                  savingMemory={savingMemory}
-                  saveMemory={saveMemory}
-                />
-              )}
 
               {decades.map((decade) => {
                 const mems = decadeMap.get(decade)!;
@@ -939,6 +1003,7 @@ export default function PersonPage({
                         <MemoryCard
                           key={m.id}
                           memory={m}
+                          extraControls={renderMemoryCardControls(m)}
                           onClick={() => openLightbox(mems, i)}
                         />
                       ))}
@@ -958,7 +1023,71 @@ export default function PersonPage({
                       <MemoryCard
                         key={m.id}
                         memory={m}
+                        extraControls={renderMemoryCardControls(m)}
                         onClick={() => openLightbox(undatedMemories, i)}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {contextualMemories.length > 0 && (
+                <section style={{ marginBottom: 48 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
+                    <span style={{ fontFamily: "var(--font-display)", fontSize: 18, color: "var(--ink-soft)", fontStyle: "italic" }}>
+                      From family context
+                    </span>
+                    <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
+                  </div>
+                  <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", marginTop: 0, marginBottom: 16 }}>
+                    These memories appear here because they were shared through family or lineage context, not because this page owns them.
+                  </p>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
+                    {contextualMemories.map((memory, index) => (
+                      <MemoryCard
+                        key={memory.id}
+                        memory={memory}
+                        extraControls={renderMemoryCardControls(memory)}
+                        onClick={() => openLightbox(contextualMemories, index)}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {canSuppressFromSurface && suppressedContextualMemories.length > 0 && (
+                <section style={{ marginBottom: 48 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
+                    <span style={{ fontFamily: "var(--font-display)", fontSize: 18, color: "var(--ink-soft)", fontStyle: "italic" }}>
+                      Hidden from this page
+                    </span>
+                    <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
+                  </div>
+                  <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", marginTop: 0, marginBottom: 16 }}>
+                    These memories still live in the archive, but they no longer surface on this page.
+                  </p>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
+                    {suppressedContextualMemories.map((memory) => (
+                      <MemoryCard
+                        key={memory.id}
+                        memory={memory}
+                        extraControls={
+                          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                            {renderTreeVisibilityControl(memory)}
+                            <button
+                              type="button"
+                              onClick={() => setMemorySurfaceSuppression(memory.id, false)}
+                              disabled={updatingMemorySuppressionId === memory.id}
+                              style={{
+                                ...secondaryBtnStyle,
+                                padding: "6px 10px",
+                                fontSize: 12,
+                              }}
+                            >
+                              {updatingMemorySuppressionId === memory.id ? "Restoring…" : "Restore to page"}
+                            </button>
+                          </div>
+                        }
                       />
                     ))}
                   </div>
@@ -979,14 +1108,20 @@ export default function PersonPage({
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
                 <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--ink)", margin: 0, fontWeight: 400 }}>Stories</h2>
                 <button
-                  onClick={() => { setShowMemoryForm(true); setMemoryForm((f) => ({ ...f, kind: "story" })); setActiveTab("memories"); }}
+                  onClick={() => {
+                    setMemoryComposerKind("story");
+                    setShowMemoryForm(true);
+                    setActiveTab("memories");
+                  }}
                   style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--moss)", background: "none", border: "1px solid var(--moss)", borderRadius: 20, padding: "5px 14px", cursor: "pointer" }}
                 >
                   + Add story
                 </button>
               </div>
               {storyMemories.length === 0 ? (
-                <p style={{ fontFamily: "var(--font-ui)", fontSize: 14, color: "var(--ink-faded)" }}>No stories yet.</p>
+                contextualStoryMemories.length === 0 ? (
+                  <p style={{ fontFamily: "var(--font-ui)", fontSize: 14, color: "var(--ink-faded)" }}>No stories yet.</p>
+                ) : null
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 40 }}>
                   {storyMemories.map((m) => (
@@ -994,8 +1129,61 @@ export default function PersonPage({
                       <h3 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--ink)", fontWeight: 400, margin: "0 0 8px" }}>{m.title}</h3>
                       {m.dateOfEventText && <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", marginBottom: 16 }}>{m.dateOfEventText}</p>}
                       {m.body && <p style={{ fontFamily: "var(--font-body)", fontSize: 17, lineHeight: 1.85, color: "var(--ink-soft)", whiteSpace: "pre-wrap", margin: 0 }}>{m.body}</p>}
+                      {canManageTreeVisibility && (
+                        <div style={{ marginTop: 16, maxWidth: 240 }}>
+                          {renderTreeVisibilityControl(m)}
+                        </div>
+                      )}
                     </article>
                   ))}
+                </div>
+              )}
+              {contextualStoryMemories.length > 0 && (
+                <div style={{ marginTop: 40 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
+                    <span style={{ fontFamily: "var(--font-display)", fontSize: 18, color: "var(--ink-soft)", fontStyle: "italic" }}>
+                      Shared through family context
+                    </span>
+                    <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 40 }}>
+                    {contextualStoryMemories.map((m) => (
+                      <article key={m.id} style={{ borderBottom: "1px solid var(--rule)", paddingBottom: 40 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <h3 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--ink)", fontWeight: 400, margin: 0 }}>
+                              {m.title}
+                            </h3>
+                            {m.memoryReasonLabel && (
+                              <span style={pillStyle}>{m.memoryReasonLabel}</span>
+                            )}
+                          </div>
+                          {canSuppressFromSurface && (
+                            <button
+                              type="button"
+                              onClick={() => setMemorySurfaceSuppression(m.id, true)}
+                              disabled={updatingMemorySuppressionId === m.id}
+                              style={{
+                                ...secondaryBtnStyle,
+                                padding: "6px 10px",
+                                fontSize: 12,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {updatingMemorySuppressionId === m.id ? "Hiding…" : "Hide from this page"}
+                            </button>
+                          )}
+                        </div>
+                        {m.dateOfEventText && <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", marginBottom: 16 }}>{m.dateOfEventText}</p>}
+                        {m.body && <p style={{ fontFamily: "var(--font-body)", fontSize: 17, lineHeight: 1.85, color: "var(--ink-soft)", whiteSpace: "pre-wrap", margin: 0 }}>{m.body}</p>}
+                        {(canManageTreeVisibility || canSuppressFromSurface) && (
+                          <div style={{ marginTop: 16, maxWidth: 240 }}>
+                            {renderTreeVisibilityControl(m)}
+                          </div>
+                        )}
+                      </article>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -1427,6 +1615,11 @@ export default function PersonPage({
           memories={lightboxMemories}
           initialIndex={lightboxIndex}
           onClose={() => setLightboxIndex(null)}
+          canManageTreeVisibility={canManageTreeVisibility}
+          updatingTreeVisibilityId={updatingMemoryVisibilityId}
+          onSetTreeVisibility={(memoryId, visibility) =>
+            void setMemoryTreeVisibility(memoryId, visibility, { closeLightbox: true })
+          }
         />
       )}
 
@@ -1439,6 +1632,18 @@ export default function PersonPage({
         defaultPersonId={person.id}
         onPromptSent={loadPersonPrompts}
       />
+
+      {showMemoryForm && (
+        <AddMemoryWizard
+          treeId={treeId}
+          people={memoryWizardPeople}
+          apiBase={API}
+          onClose={() => setShowMemoryForm(false)}
+          onSuccess={loadPerson}
+          defaultPersonId={person.id}
+          defaultKind={memoryComposerKind}
+        />
+      )}
     </div>
   );
 }
@@ -1506,7 +1711,15 @@ const pillStyle: React.CSSProperties = {
 
 // ── Sub-components ─────────────────────────────────────────────────────────
 
-function MemoryCard({ memory, onClick }: { memory: Memory; onClick?: () => void }) {
+function MemoryCard({
+  memory,
+  onClick,
+  extraControls,
+}: {
+  memory: Memory;
+  onClick?: () => void;
+  extraControls?: React.ReactNode;
+}) {
   const kindIcon: Record<MemoryKind, string> = {
     photo: "◻",
     story: "✦",
@@ -1544,6 +1757,11 @@ function MemoryCard({ memory, onClick }: { memory: Memory; onClick?: () => void 
           <span style={{ fontSize: 11, opacity: 0.4 }}>{kindIcon[memory.kind]}</span>
           <h3 style={{ fontFamily: "var(--font-display)", fontSize: 15, color: "var(--ink)", margin: 0, fontWeight: 400, lineHeight: 1.3 }}>{memory.title}</h3>
         </div>
+        {memory.memoryContext === "contextual" && memory.memoryReasonLabel && (
+          <div style={{ marginBottom: 8 }}>
+            <span style={pillStyle}>{memory.memoryReasonLabel}</span>
+          </div>
+        )}
         {memory.dateOfEventText && (
           <p style={{ fontFamily: "var(--font-ui)", fontSize: 11, color: "var(--ink-faded)", margin: "0 0 8px" }}>{memory.dateOfEventText}</p>
         )}
@@ -1557,85 +1775,15 @@ function MemoryCard({ memory, onClick }: { memory: Memory; onClick?: () => void 
             {getVoiceTranscriptLabel(memory)}
           </p>
         )}
+        {extraControls && (
+          <div
+            style={{ marginTop: 12 }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            {extraControls}
+          </div>
+        )}
       </div>
     </article>
-  );
-}
-
-function MemoryForm({
-  treeId,
-  memoryForm,
-  setMemoryForm,
-  memoryFile,
-  setMemoryFile,
-  savingMemory,
-  saveMemory,
-}: {
-  treeId: string;
-  memoryForm: { kind: MemoryKind; title: string; body: string; dateOfEventText: string; placeId: string; mediaId: string };
-  setMemoryForm: React.Dispatch<React.SetStateAction<typeof memoryForm>>;
-  memoryFile: File | null;
-  setMemoryFile: (f: File | null) => void;
-  savingMemory: boolean;
-  saveMemory: (e: React.FormEvent) => void;
-}) {
-  const KINDS: { id: MemoryKind; label: string }[] = [
-    { id: "story", label: "Story" },
-    { id: "photo", label: "Photo" },
-    { id: "voice", label: "Voice memo" },
-    { id: "document", label: "Document" },
-  ];
-
-  return (
-    <form onSubmit={saveMemory} style={{ background: "var(--paper-deep)", border: "1px solid var(--rule)", borderRadius: 8, padding: 20, marginBottom: 28, display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {KINDS.map(({ id, label }) => (
-          <button key={id} type="button" onClick={() => setMemoryForm((f) => ({ ...f, kind: id }))}
-            style={{ borderRadius: 6, padding: "7px 14px", fontFamily: "var(--font-ui)", fontSize: 12, border: "1px solid", borderColor: memoryForm.kind === id ? "var(--moss)" : "var(--rule)", background: memoryForm.kind === id ? "var(--moss)" : "none", color: memoryForm.kind === id ? "var(--paper)" : "var(--ink-soft)", cursor: "pointer" }}>
-            {label}
-          </button>
-        ))}
-      </div>
-      <input type="text" required value={memoryForm.title}
-        onChange={(e) => setMemoryForm((f) => ({ ...f, title: e.target.value }))}
-        placeholder="Title" style={inputStyle} />
-      {["story"].includes(memoryForm.kind) && (
-        <textarea required rows={4} value={memoryForm.body}
-          onChange={(e) => setMemoryForm((f) => ({ ...f, body: e.target.value }))}
-          placeholder="Write the memory…"
-          style={{ ...inputStyle, resize: "none" }} />
-      )}
-      {["photo"].includes(memoryForm.kind) && (
-        <input type="file" accept="image/*" required
-          onChange={(e) => setMemoryFile(e.target.files?.[0] ?? null)}
-          style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-soft)" }} />
-      )}
-      {["voice"].includes(memoryForm.kind) && (
-        <input type="file" accept="audio/*" required
-          onChange={(e) => setMemoryFile(e.target.files?.[0] ?? null)}
-          style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-soft)" }} />
-      )}
-      {["document"].includes(memoryForm.kind) && (
-        <input type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword" required
-          onChange={(e) => setMemoryFile(e.target.files?.[0] ?? null)}
-          style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-soft)" }} />
-      )}
-      {memoryFile && <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", margin: 0 }}>{memoryFile.name}</p>}
-      <input type="text" value={memoryForm.dateOfEventText}
-        onChange={(e) => setMemoryForm((f) => ({ ...f, dateOfEventText: e.target.value }))}
-        placeholder="Date of event (e.g. 1964, Summer 1972)"
-        style={inputStyle} />
-      <PlacePicker
-        treeId={treeId}
-        apiBase={API}
-        value={memoryForm.placeId}
-        onChange={(placeId) => setMemoryForm((f) => ({ ...f, placeId }))}
-        label="Place on the map"
-        emptyLabel="No mapped place"
-      />
-      <button type="submit" disabled={savingMemory} style={primaryBtnStyle}>
-        {savingMemory ? "Saving…" : "Add memory"}
-      </button>
-    </form>
   );
 }

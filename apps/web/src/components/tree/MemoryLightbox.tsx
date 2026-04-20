@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useCallback, useRef, useState } from "react";
+import {
+  MemoryVisibilityControl,
+  type TreeVisibilityLevel,
+} from "@/components/tree/MemoryVisibilityControl";
 
 type MemoryKind = "story" | "photo" | "voice" | "document" | "other";
 
@@ -16,15 +20,30 @@ export interface LightboxMemory {
   dateOfEventText?: string | null;
   mediaUrl?: string | null;
   mimeType?: string | null;
+  treeVisibilityLevel?: TreeVisibilityLevel;
+  treeVisibilityIsOverride?: boolean;
 }
 
 interface MemoryLightboxProps {
   memories: LightboxMemory[];
   initialIndex: number;
   onClose: () => void;
+  canManageTreeVisibility?: boolean;
+  updatingTreeVisibilityId?: string | null;
+  onSetTreeVisibility?: (
+    memoryId: string,
+    visibility: TreeVisibilityLevel | null,
+  ) => void;
 }
 
-export function MemoryLightbox({ memories, initialIndex, onClose }: MemoryLightboxProps) {
+export function MemoryLightbox({
+  memories,
+  initialIndex,
+  onClose,
+  canManageTreeVisibility,
+  updatingTreeVisibilityId,
+  onSetTreeVisibility,
+}: MemoryLightboxProps) {
   const [index, setIndex] = useState(initialIndex);
   const [playing, setPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -152,15 +171,26 @@ export function MemoryLightbox({ memories, initialIndex, onClose }: MemoryLightb
             </span>
           )}
         </div>
-        <span
-          style={{
-            fontFamily: "var(--font-ui)",
-            fontSize: 12,
-            color: "rgba(246,241,231,0.35)",
-          }}
-        >
-          {index + 1} / {memories.length}
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          {canManageTreeVisibility && onSetTreeVisibility && (
+            <div style={{ minWidth: 220 }}>
+              <MemoryVisibilityControl
+                memory={memory}
+                disabled={updatingTreeVisibilityId === memory.id}
+                onChange={(visibility) => onSetTreeVisibility(memory.id, visibility)}
+              />
+            </div>
+          )}
+          <span
+            style={{
+              fontFamily: "var(--font-ui)",
+              fontSize: 12,
+              color: "rgba(246,241,231,0.35)",
+            }}
+          >
+            {index + 1} / {memories.length}
+          </span>
+        </div>
       </div>
 
       {/* Main content area */}
