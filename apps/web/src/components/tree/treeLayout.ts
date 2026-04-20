@@ -17,7 +17,7 @@ const NODE_HEIGHT = 156;
 const PORTRAIT_SIZE = 64;
 const PORTRAIT_RADIUS = PORTRAIT_SIZE / 2;
 const GENERATION_GAP = 280;  // vertical distance between generation rows
-const EDIT_SLOT_GAP = 104;
+const EDIT_SLOT_GAP = 32;
 const ROW_GAP = 112;
 const SPOUSE_ATTACH_GAP = 144;
 const MIN_LANE_GAP = 200;
@@ -316,7 +316,35 @@ function buildDerivedSiblingParentState(
     if (knownParentSets.length === 0) continue;
 
     const sharedParentIds = [...new Set(knownParentSets.flat())].sort();
-    if (sharedParentIds.length > 2) continue;
+    if (sharedParentIds.length > 2) {
+      // Mixed-family sibling group: propagate the majority parent set to
+      // parentless siblings so they participate in family-affinity ordering.
+      const parentSetCounts = new Map<string, { ids: string[]; count: number }>();
+      for (const parentSet of knownParentSets) {
+        const key = parentSet.join("|");
+        const entry = parentSetCounts.get(key);
+        if (entry) {
+          entry.count += 1;
+        } else {
+          parentSetCounts.set(key, { ids: parentSet, count: 1 });
+        }
+      }
+      let majoritySet: string[] = [];
+      let majorityCount = 0;
+      for (const { ids, count } of parentSetCounts.values()) {
+        if (count > majorityCount) {
+          majoritySet = ids;
+          majorityCount = count;
+        }
+      }
+      for (const memberId of component.memberIds) {
+        const existing = actualParentIdsByChild.get(memberId) ?? [];
+        if (existing.length === 0 && majoritySet.length > 0) {
+          derivedParentIdsByChild.set(memberId, majoritySet);
+        }
+      }
+      continue;
+    }
 
     for (const memberId of component.memberIds) {
       derivedParentIdsByChild.set(memberId, sharedParentIds);
@@ -725,27 +753,34 @@ function orderComponentByFamilyAffinity(
 
   const tokenMap = new Map(component.map((t) => [t.anchorId, t]));
 
-  // Collect parent-family keys for each token from ALL memberIds
-  const parentKeysPerToken = new Map<string, Set<string>>();
+  // Separate anchor parent key (from anchor person) and all parent keys (from all members).
+  // This lets us prefer same-family neighbors in the DFS so cross-family bridge tokens
+  // (like Melani+Barry) don't pull in the other family before same-family siblings.
+  const anchorKeyPerToken = new Map<string, string>();
+  const allKeysPerToken = new Map<string, Set<string>>();
   for (const token of component) {
-    const keys = new Set<string>();
+    const allKeys = new Set<string>();
     for (const memberId of token.memberIds) {
       const pids = parentIdsByChild.get(memberId);
       if (pids && pids.length > 0) {
-        keys.add(pids.join("|"));
+        const key = pids.join("|");
+        allKeys.add(key);
+        if (memberId === token.anchorId) {
+          anchorKeyPerToken.set(token.anchorId, key);
+        }
       }
     }
-    parentKeysPerToken.set(token.anchorId, keys);
+    allKeysPerToken.set(token.anchorId, allKeys);
   }
 
   // Build adjacency: tokens that share any parent-family key
   const familyAdj = new Map<string, Set<string>>();
   for (let i = 0; i < component.length; i += 1) {
     const idI = component[i]!.anchorId;
-    const keysI = parentKeysPerToken.get(idI) ?? new Set<string>();
+    const keysI = allKeysPerToken.get(idI) ?? new Set<string>();
     for (let j = i + 1; j < component.length; j += 1) {
       const idJ = component[j]!.anchorId;
-      const keysJ = parentKeysPerToken.get(idJ) ?? new Set<string>();
+      const keysJ = allKeysPerToken.get(idJ) ?? new Set<string>();
       let shared = false;
       for (const k of keysI) {
         if (keysJ.has(k)) {
@@ -760,7 +795,10 @@ function orderComponentByFamilyAffinity(
     }
   }
 
-  // DFS traversal, choosing neighbors in compareTokenOrder to be stable
+  // DFS traversal with family-priority neighbor ordering:
+  // 1. Prefer neighbors whose anchor key matches the current token's anchor key
+  // 2. Prefer "pure" tokens (single family) over cross-family bridge tokens
+  // 3. Fall back to compareTokenOrder for stable tie-breaking
   const sorted = [...component].sort((l, r) => compareTokenOrder(l, r, peopleById));
   const ordered: RowToken[] = [];
   const visited = new Set<string>();
@@ -769,9 +807,23 @@ function orderComponentByFamilyAffinity(
     if (visited.has(id)) return;
     visited.add(id);
     ordered.push(tokenMap.get(id)!);
+    const currentAnchorKey = anchorKeyPerToken.get(id);
     const neighbors = [...(familyAdj.get(id) ?? [])]
       .filter((n) => !visited.has(n))
-      .sort((a, b) => compareTokenOrder(tokenMap.get(a)!, tokenMap.get(b)!, peopleById));
+      .sort((a, b) => {
+        const aAnchorKey = anchorKeyPerToken.get(a);
+        const bAnchorKey = anchorKeyPerToken.get(b);
+        const aMatchesCurrent = currentAnchorKey != null && aAnchorKey === currentAnchorKey;
+        const bMatchesCurrent = currentAnchorKey != null && bAnchorKey === currentAnchorKey;
+        if (aMatchesCurrent !== bMatchesCurrent) return aMatchesCurrent ? -1 : 1;
+
+        const aKeyCount = (allKeysPerToken.get(a) ?? new Set()).size;
+        const bKeyCount = (allKeysPerToken.get(b) ?? new Set()).size;
+        if (aKeyCount <= 1 && bKeyCount > 1) return -1;
+        if (aKeyCount > 1 && bKeyCount <= 1) return 1;
+
+        return compareTokenOrder(tokenMap.get(a)!, tokenMap.get(b)!, peopleById);
+      });
     for (const n of neighbors) {
       dfs(n);
     }

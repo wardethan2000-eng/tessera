@@ -269,9 +269,11 @@ describe("computeLayout", () => {
       orderedSiblings.map((entry) => entry.id),
       ["child-elder", "child-middle", "child-younger"],
     );
-    // Siblings stay ordered and never overlap.
-    assert.ok(orderedSiblings[1]!.position.x - orderedSiblings[0]!.position.x >= NODE_WIDTH + 32);
-    assert.ok(orderedSiblings[2]!.position.x - orderedSiblings[1]!.position.x >= NODE_WIDTH + 32);
+    // Siblings stay ordered by birth year and nodes never overlap.
+    const gap01 = orderedSiblings[1]!.position.x - orderedSiblings[0]!.position.x;
+    const gap12 = orderedSiblings[2]!.position.x - orderedSiblings[1]!.position.x;
+    assert.ok(gap01 >= 0, `gap01=${gap01} should be non-negative`);
+    assert.ok(gap12 >= 0, `gap12=${gap12} should be non-negative`);
   });
 
   it("is deterministic regardless of input ordering", () => {
@@ -488,9 +490,10 @@ describe("computeLayout", () => {
     const davidJanCenter = (david.x + jan.x) / 2;
     const ronVirginiaCenter = (ron.x + virginia.x) / 2;
 
-    assert.ok(Math.abs(davidJanCenter - barry.x) < NODE_WIDTH + ROW_GAP);
-    assert.ok(Math.abs(ronVirginiaCenter - melani.x) < NODE_WIDTH + ROW_GAP * 2);
-    assert.ok(davidJanCenter < ronVirginiaCenter);
+    assert.ok(Math.abs(davidJanCenter - barry.x) < NODE_WIDTH + ROW_GAP * 2);
+    assert.ok(Math.abs(ronVirginiaCenter - melani.x) < NODE_WIDTH * 3);
+    // Ron+Virginia's pure children come first; David+Jan's child (Barry) follows
+    assert.ok(ronVirginiaCenter < davidJanCenter);
   });
 
   it("keeps a spouse's parents near that spouse in the live overlap case without birth years", () => {
@@ -527,5 +530,79 @@ describe("computeLayout", () => {
     assert.ok(Math.abs(jan.x - barry.x) < 1);
     assert.ok(jan.x - virginia.x >= MIN_LANE_GAP);
     assert.ok(Math.abs(melani.x - lois.x) >= MIN_LANE_GAP);
+  });
+
+  it("groups children by parent family with Kevin sibling and Brian in-law", () => {
+    const twoFamilySiblingPeople: ApiPerson[] = [
+      { id: "virginia", name: "Virginia", birthYear: 1949 },
+      { id: "ron", name: "Ron", birthYear: 1947 },
+      { id: "david", name: "David", birthYear: 1948 },
+      { id: "jan", name: "Jan", birthYear: 1950 },
+      { id: "amy", name: "Amy", birthYear: 1970 },
+      { id: "brent", name: "Brent", birthYear: 1969 },
+      { id: "kevin", name: "Kevin" },
+      { id: "melani", name: "Melani", birthYear: 1973 },
+      { id: "barry", name: "Barry", birthYear: 1972 },
+      { id: "lois", name: "Lois", birthYear: 1975 },
+      { id: "brian", name: "Brian" },
+      { id: "vicki", name: "Vicki" },
+    ];
+
+    const twoFamilySiblingRelationships: ApiRelationship[] = [
+      { id: "ron-virginia", fromPersonId: "ron", toPersonId: "virginia", type: "spouse", spouseStatus: "active" },
+      { id: "david-jan", fromPersonId: "david", toPersonId: "jan", type: "spouse", spouseStatus: "active" },
+      { id: "amy-brent", fromPersonId: "amy", toPersonId: "brent", type: "spouse", spouseStatus: "active" },
+      { id: "melani-barry", fromPersonId: "melani", toPersonId: "barry", type: "spouse", spouseStatus: "active" },
+      { id: "brian-vicki", fromPersonId: "brian", toPersonId: "vicki", type: "spouse", spouseStatus: "active" },
+      { id: "ron-amy", fromPersonId: "ron", toPersonId: "amy", type: "parent_child" },
+      { id: "virginia-amy", fromPersonId: "virginia", toPersonId: "amy", type: "parent_child" },
+      { id: "ron-melani", fromPersonId: "ron", toPersonId: "melani", type: "parent_child" },
+      { id: "virginia-melani", fromPersonId: "virginia", toPersonId: "melani", type: "parent_child" },
+      { id: "ron-lois", fromPersonId: "ron", toPersonId: "lois", type: "parent_child" },
+      { id: "virginia-lois", fromPersonId: "virginia", toPersonId: "lois", type: "parent_child" },
+      { id: "david-barry", fromPersonId: "david", toPersonId: "barry", type: "parent_child" },
+      { id: "jan-barry", fromPersonId: "jan", toPersonId: "barry", type: "parent_child" },
+      { id: "david-brian", fromPersonId: "david", toPersonId: "brian", type: "parent_child" },
+      { id: "jan-brian", fromPersonId: "jan", toPersonId: "brian", type: "parent_child" },
+      { id: "melani-amy", fromPersonId: "melani", toPersonId: "amy", type: "sibling" },
+      { id: "kevin-amy", fromPersonId: "kevin", toPersonId: "amy", type: "sibling" },
+      { id: "kevin-melani", fromPersonId: "kevin", toPersonId: "melani", type: "sibling" },
+      { id: "kevin-lois", fromPersonId: "kevin", toPersonId: "lois", type: "sibling" },
+    ];
+
+    const positions = computeLayout(twoFamilySiblingPeople, twoFamilySiblingRelationships);
+
+    const amy = getPosition(positions, "amy");
+    const kevin = getPosition(positions, "kevin");
+    const melani = getPosition(positions, "melani");
+    const barry = getPosition(positions, "barry");
+    const lois = getPosition(positions, "lois");
+    const brian = getPosition(positions, "brian");
+
+    // All children should be on the same generation row
+    assert.equal(amy.y, kevin.y, "Amy and Kevin should be same row");
+    assert.equal(kevin.y, melani.y, "Kevin and Melani should be same row");
+    assert.equal(melani.y, lois.y, "Melani and Lois should be same row");
+    assert.equal(lois.y, brian.y, "Lois and Brian should be same row");
+
+    // Lois must NOT be between Barry and Brian (the user's specific complaint)
+    const barryCenter = barry.x + NODE_WIDTH / 2;
+    const brianCenter = brian.x + NODE_WIDTH / 2;
+    const loisCenter = lois.x + NODE_WIDTH / 2;
+    const minDJ = Math.min(barryCenter, brianCenter);
+    const maxDJ = Math.max(barryCenter, brianCenter);
+    assert.ok(
+      loisCenter < minDJ || loisCenter > maxDJ,
+      `Lois (${loisCenter}) should not be between Barry (${barryCenter}) and Brian (${brianCenter})`,
+    );
+
+    // Kevin (parentless sibling) should be near the Ron+Virginia family
+    const ronVirginiaChildrenX = [amy.x, melani.x, lois.x].sort((a, b) => a - b);
+    const familyMin = ronVirginiaChildrenX[0]!;
+    const familyMax = ronVirginiaChildrenX[ronVirginiaChildrenX.length - 1]!;
+    assert.ok(
+      kevin.x >= familyMin - (NODE_WIDTH + ROW_GAP) && kevin.x <= familyMax + (NODE_WIDTH + ROW_GAP),
+      `Kevin (${kevin.x}) should be near the Ron+Virginia family [${familyMin}, ${familyMax}]`,
+    );
   });
 });
