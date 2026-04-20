@@ -649,6 +649,7 @@ function buildLaneTokens(
     childIdsByParent,
     peopleById,
     explicitSiblingComponentByPersonId,
+    existingPositions,
   );
   const orderedComponents = tokenComponents.sort((left, right) => {
     if (existingPositions && existingPositions.size > 0) {
@@ -672,6 +673,7 @@ function buildTokenComponents(
   childIdsByParent: Map<string, string[]>,
   peopleById: Map<string, ApiPerson>,
   explicitSiblingComponentByPersonId: Map<string, string>,
+  existingPositions?: Map<string, { x: number; y: number }>,
 ) {
   if (tokens.length <= 1) return tokens.map((token) => [token]);
 
@@ -740,6 +742,7 @@ function buildTokenComponents(
       component,
       parentIdsByChild,
       peopleById,
+      existingPositions,
     );
     components.push(ordered);
   }
@@ -748,29 +751,28 @@ function buildTokenComponents(
 }
 
 /**
- * Reorder tokens within a component so that tokens whose members share
- * a parent family are placed adjacent to each other.  This prevents a
- * sibling (e.g. Brian) from being sorted far from a spouse-token that
- * contains the other sibling (e.g. Melani+Barry) purely because of
- * alphabetical ordering.
+ * Reorder tokens within a component so that children from the same parent
+ * family are grouped contiguously, with cross-family bridge tokens placed
+ * at the boundary between the two families they connect.
  *
- * Uses a DFS on "parent-family affinity": two tokens are adjacent when
- * any of their memberIds share the same parentIdsByChild signature.
+ * Uses a deterministic partition approach:
+ *   1. Classify each token as "pure" (belongs to exactly one parent family)
+ *      or "bridge" (has members from multiple parent families).
+ *   2. Order the distinct families left-to-right using existing parent
+ *      positions when available, falling back to alphabetical key sort.
+ *   3. Emit: [pure family-1] [bridge 1→2] [pure family-2] [bridge 2→3] …
  */
 function orderComponentByFamilyAffinity(
   component: RowToken[],
   parentIdsByChild: Map<string, string[]>,
   peopleById: Map<string, ApiPerson>,
+  existingPositions?: Map<string, { x: number; y: number }>,
 ): RowToken[] {
   if (component.length <= 2) {
     return [...component].sort((l, r) => compareTokenOrder(l, r, peopleById));
   }
 
-  const tokenMap = new Map(component.map((t) => [t.anchorId, t]));
-
-  // Separate anchor parent key (from anchor person) and all parent keys (from all members).
-  // This lets us prefer same-family neighbors in the DFS so cross-family bridge tokens
-  // (like Melani+Barry) don't pull in the other family before same-family siblings.
+  // --- Step 1: compute parent-family keys per token -----------------------
   const anchorKeyPerToken = new Map<string, string>();
   const allKeysPerToken = new Map<string, Set<string>>();
   for (const token of component) {
@@ -788,69 +790,97 @@ function orderComponentByFamilyAffinity(
     allKeysPerToken.set(token.anchorId, allKeys);
   }
 
-  // Build adjacency: tokens that share any parent-family key
-  const familyAdj = new Map<string, Set<string>>();
-  for (let i = 0; i < component.length; i += 1) {
-    const idI = component[i]!.anchorId;
-    const keysI = allKeysPerToken.get(idI) ?? new Set<string>();
-    for (let j = i + 1; j < component.length; j += 1) {
-      const idJ = component[j]!.anchorId;
-      const keysJ = allKeysPerToken.get(idJ) ?? new Set<string>();
-      let shared = false;
-      for (const k of keysI) {
-        if (keysJ.has(k)) {
-          shared = true;
-          break;
-        }
+  // If there are fewer than 2 distinct family keys the component is
+  // single-family — plain birth-order sort is sufficient.
+  const allFamilyKeys = new Set<string>();
+  for (const keys of allKeysPerToken.values()) {
+    for (const k of keys) allFamilyKeys.add(k);
+  }
+  if (allFamilyKeys.size < 2) {
+    return [...component].sort((l, r) => compareTokenOrder(l, r, peopleById));
+  }
+
+  // --- Step 2: order the family keys left-to-right -----------------------
+  const familyAvgX = new Map<string, number>();
+  for (const key of allFamilyKeys) {
+    const parentIds = key.split("|");
+    const xs: number[] = [];
+    for (const pid of parentIds) {
+      const pos = existingPositions?.get(pid);
+      if (pos) xs.push(pos.x);
+    }
+    if (xs.length > 0) {
+      familyAvgX.set(key, xs.reduce((s, x) => s + x, 0) / xs.length);
+    }
+  }
+  const orderedFamilyKeys = [...allFamilyKeys].sort((a, b) => {
+    const aX = familyAvgX.get(a);
+    const bX = familyAvgX.get(b);
+    if (aX !== undefined && bX !== undefined) return aX - bX;
+    if (aX !== undefined) return -1;
+    if (bX !== undefined) return 1;
+    return a.localeCompare(b);
+  });
+
+  // --- Step 3: partition tokens into pure / bridge / orphan groups --------
+  const pureByFamily = new Map<string, RowToken[]>();
+  const bridges: RowToken[] = [];
+  const orphans: RowToken[] = [];
+
+  for (const token of component) {
+    const allKeys = allKeysPerToken.get(token.anchorId) ?? new Set<string>();
+    if (allKeys.size === 0) {
+      orphans.push(token);
+    } else if (allKeys.size === 1) {
+      const key = [...allKeys][0]!;
+      const group = pureByFamily.get(key) ?? [];
+      group.push(token);
+      pureByFamily.set(key, group);
+    } else {
+      bridges.push(token);
+    }
+  }
+
+  // Sort within each group by birth-order
+  for (const group of pureByFamily.values()) {
+    group.sort((l, r) => compareTokenOrder(l, r, peopleById));
+  }
+  bridges.sort((l, r) => compareTokenOrder(l, r, peopleById));
+  orphans.sort((l, r) => compareTokenOrder(l, r, peopleById));
+
+  // --- Step 4: assemble final order --------------------------------------
+  // Orphans (tokens with no parent key, e.g. solo persons) are attached to
+  // the first family group since they're typically sibling-connected.
+  // Bridge tokens are placed at the end of the family their anchor belongs
+  // to, so the attached spouse (from the other family) faces outward.
+  const usedBridges = new Set<string>();
+  const result: RowToken[] = [];
+
+  for (let i = 0; i < orderedFamilyKeys.length; i += 1) {
+    const key = orderedFamilyKeys[i]!;
+
+    // Attach orphans to the first family group
+    if (i === 0) result.push(...orphans);
+
+    result.push(...(pureByFamily.get(key) ?? []));
+
+    // Insert bridge tokens whose anchor person belongs to this family
+    for (const b of bridges) {
+      if (usedBridges.has(b.anchorId)) continue;
+      const bAnchorKey = anchorKeyPerToken.get(b.anchorId);
+      if (bAnchorKey === key) {
+        result.push(b);
+        usedBridges.add(b.anchorId);
       }
-      if (shared) {
-        (familyAdj.get(idI) ?? (familyAdj.set(idI, new Set()), familyAdj.get(idI)!)).add(idJ);
-        (familyAdj.get(idJ) ?? (familyAdj.set(idJ, new Set()), familyAdj.get(idJ)!)).add(idI);
-      }
     }
   }
 
-  // DFS traversal with family-priority neighbor ordering:
-  // 1. Prefer neighbors whose anchor key matches the current token's anchor key
-  // 2. Prefer "pure" tokens (single family) over cross-family bridge tokens
-  // 3. Fall back to compareTokenOrder for stable tie-breaking
-  const sorted = [...component].sort((l, r) => compareTokenOrder(l, r, peopleById));
-  const ordered: RowToken[] = [];
-  const visited = new Set<string>();
-
-  function dfs(id: string) {
-    if (visited.has(id)) return;
-    visited.add(id);
-    ordered.push(tokenMap.get(id)!);
-    const currentAnchorKey = anchorKeyPerToken.get(id);
-    const neighbors = [...(familyAdj.get(id) ?? [])]
-      .filter((n) => !visited.has(n))
-      .sort((a, b) => {
-        const aAnchorKey = anchorKeyPerToken.get(a);
-        const bAnchorKey = anchorKeyPerToken.get(b);
-        const aMatchesCurrent = currentAnchorKey != null && aAnchorKey === currentAnchorKey;
-        const bMatchesCurrent = currentAnchorKey != null && bAnchorKey === currentAnchorKey;
-        if (aMatchesCurrent !== bMatchesCurrent) return aMatchesCurrent ? -1 : 1;
-
-        const aKeyCount = (allKeysPerToken.get(a) ?? new Set()).size;
-        const bKeyCount = (allKeysPerToken.get(b) ?? new Set()).size;
-        if (aKeyCount <= 1 && bKeyCount > 1) return -1;
-        if (aKeyCount > 1 && bKeyCount <= 1) return 1;
-
-        return compareTokenOrder(tokenMap.get(a)!, tokenMap.get(b)!, peopleById);
-      });
-    for (const n of neighbors) {
-      dfs(n);
-    }
+  // Append any remaining unused bridges at the end
+  for (const b of bridges) {
+    if (!usedBridges.has(b.anchorId)) result.push(b);
   }
 
-  for (const token of sorted) {
-    if (!visited.has(token.anchorId)) {
-      dfs(token.anchorId);
-    }
-  }
-
-  return ordered;
+  return result;
 }
 
 function collectTokenRelationshipKeys(
