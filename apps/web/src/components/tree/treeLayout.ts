@@ -180,6 +180,7 @@ export function computeLayout(
       activeSpousesByPersonId,
       peopleById,
       explicitSiblingComponentByPersonId,
+      positions,
     );
     lanePlans.push(lanePlan);
 
@@ -477,6 +478,7 @@ function computeLanePositions(
   activeSpousesByPersonId: Map<string, string[]>,
   peopleById: Map<string, ApiPerson>,
   explicitSiblingComponentByPersonId: Map<string, string>,
+  existingPositions?: Map<string, { x: number; y: number }>,
 ) {
   const lanePeople = people.filter(
     (person) =>
@@ -491,6 +493,7 @@ function computeLanePositions(
       activeSpousesByPersonId,
       peopleById,
       explicitSiblingComponentByPersonId,
+      existingPositions,
     );
 
   const positions = new Map<string, number>();
@@ -540,6 +543,7 @@ function buildLaneTokens(
   activeSpousesByPersonId: Map<string, string[]>,
   peopleById: Map<string, ApiPerson>,
   explicitSiblingComponentByPersonId: Map<string, string>,
+  existingPositions?: Map<string, { x: number; y: number }>,
 ) {
   const attachedSpousesByAnchorId = new Map<string, string[]>();
   for (const [personId, anchorId] of attachedAnchorByPersonId.entries()) {
@@ -603,9 +607,18 @@ function buildLaneTokens(
     peopleById,
     explicitSiblingComponentByPersonId,
   );
-  const orderedComponents = tokenComponents.sort((left, right) =>
-    compareTokenComponents(left, right, peopleById),
-  );
+  const orderedComponents = tokenComponents.sort((left, right) => {
+    if (existingPositions && existingPositions.size > 0) {
+      const leftCenter = getComponentAvgParentCenter(left, parentIdsByChild, existingPositions);
+      const rightCenter = getComponentAvgParentCenter(right, parentIdsByChild, existingPositions);
+      if (leftCenter !== null && rightCenter !== null && leftCenter !== rightCenter) {
+        return leftCenter - rightCenter;
+      }
+      if (leftCenter !== null && rightCenter === null) return 1;
+      if (leftCenter === null && rightCenter !== null) return -1;
+    }
+    return compareTokenComponents(left, right, peopleById);
+  });
 
   return addSiblingSpacing(orderedComponents.flat());
 }
@@ -680,11 +693,97 @@ function buildTokenComponents(
       }
     }
 
-    component.sort((left, right) => compareTokenOrder(left, right, peopleById));
-    components.push(component);
+    const ordered = orderComponentByFamilyAffinity(
+      component,
+      parentIdsByChild,
+      peopleById,
+    );
+    components.push(ordered);
   }
 
   return components;
+}
+
+/**
+ * Reorder tokens within a component so that tokens whose members share
+ * a parent family are placed adjacent to each other.  This prevents a
+ * sibling (e.g. Brian) from being sorted far from a spouse-token that
+ * contains the other sibling (e.g. Melani+Barry) purely because of
+ * alphabetical ordering.
+ *
+ * Uses a DFS on "parent-family affinity": two tokens are adjacent when
+ * any of their memberIds share the same parentIdsByChild signature.
+ */
+function orderComponentByFamilyAffinity(
+  component: RowToken[],
+  parentIdsByChild: Map<string, string[]>,
+  peopleById: Map<string, ApiPerson>,
+): RowToken[] {
+  if (component.length <= 2) {
+    return [...component].sort((l, r) => compareTokenOrder(l, r, peopleById));
+  }
+
+  const tokenMap = new Map(component.map((t) => [t.anchorId, t]));
+
+  // Collect parent-family keys for each token from ALL memberIds
+  const parentKeysPerToken = new Map<string, Set<string>>();
+  for (const token of component) {
+    const keys = new Set<string>();
+    for (const memberId of token.memberIds) {
+      const pids = parentIdsByChild.get(memberId);
+      if (pids && pids.length > 0) {
+        keys.add(pids.join("|"));
+      }
+    }
+    parentKeysPerToken.set(token.anchorId, keys);
+  }
+
+  // Build adjacency: tokens that share any parent-family key
+  const familyAdj = new Map<string, Set<string>>();
+  for (let i = 0; i < component.length; i += 1) {
+    const idI = component[i]!.anchorId;
+    const keysI = parentKeysPerToken.get(idI) ?? new Set<string>();
+    for (let j = i + 1; j < component.length; j += 1) {
+      const idJ = component[j]!.anchorId;
+      const keysJ = parentKeysPerToken.get(idJ) ?? new Set<string>();
+      let shared = false;
+      for (const k of keysI) {
+        if (keysJ.has(k)) {
+          shared = true;
+          break;
+        }
+      }
+      if (shared) {
+        (familyAdj.get(idI) ?? (familyAdj.set(idI, new Set()), familyAdj.get(idI)!)).add(idJ);
+        (familyAdj.get(idJ) ?? (familyAdj.set(idJ, new Set()), familyAdj.get(idJ)!)).add(idI);
+      }
+    }
+  }
+
+  // DFS traversal, choosing neighbors in compareTokenOrder to be stable
+  const sorted = [...component].sort((l, r) => compareTokenOrder(l, r, peopleById));
+  const ordered: RowToken[] = [];
+  const visited = new Set<string>();
+
+  function dfs(id: string) {
+    if (visited.has(id)) return;
+    visited.add(id);
+    ordered.push(tokenMap.get(id)!);
+    const neighbors = [...(familyAdj.get(id) ?? [])]
+      .filter((n) => !visited.has(n))
+      .sort((a, b) => compareTokenOrder(tokenMap.get(a)!, tokenMap.get(b)!, peopleById));
+    for (const n of neighbors) {
+      dfs(n);
+    }
+  }
+
+  for (const token of sorted) {
+    if (!visited.has(token.anchorId)) {
+      dfs(token.anchorId);
+    }
+  }
+
+  return ordered;
 }
 
 function collectTokenRelationshipKeys(
@@ -732,6 +831,35 @@ function compareTokenComponents(
   if (leftBirthYear !== rightBirthYear) return leftBirthYear - rightBirthYear;
 
   return left[0]!.anchorId.localeCompare(right[0]!.anchorId);
+}
+
+/**
+ * Compute the average center-x of all known parent positions for a component.
+ * Returns null when no parent has a position yet (e.g. the top generation).
+ */
+function getComponentAvgParentCenter(
+  component: RowToken[],
+  parentIdsByChild: Map<string, string[]>,
+  existingPositions: Map<string, { x: number; y: number }>,
+): number | null {
+  let totalX = 0;
+  let count = 0;
+  const seenParents = new Set<string>();
+  for (const token of component) {
+    for (const memberId of token.memberIds) {
+      const parentIds = parentIdsByChild.get(memberId) ?? [];
+      for (const parentId of parentIds) {
+        if (seenParents.has(parentId)) continue;
+        seenParents.add(parentId);
+        const pos = existingPositions.get(parentId);
+        if (pos) {
+          totalX += pos.x + NODE_WIDTH / 2;
+          count += 1;
+        }
+      }
+    }
+  }
+  return count > 0 ? totalX / count : null;
 }
 
 function getTokenComponentRank(component: RowToken[]) {
