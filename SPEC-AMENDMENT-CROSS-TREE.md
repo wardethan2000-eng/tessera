@@ -1,7 +1,7 @@
 # SPEC Amendment: Cross-Tree Data Architecture
 
 **Amends:** Parts III, IV, VI, IX (Monetization), XII
-**Status:** Draft
+**Status:** Implemented
 **Date:** 2026-04-19
 
 ---

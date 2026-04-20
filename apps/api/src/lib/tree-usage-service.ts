@@ -170,18 +170,27 @@ export async function checkTreeCanAdd(
     return { allowed: true };
   }
 
-  if (context.limits.contributorSeatsMax === -1) {
+  if (resource === "contributor") {
+    if (context.limits.contributorSeatsMax === -1) {
+      return { allowed: true };
+    }
+
+    const contributorSeats = await getContributorSeatCount(treeId);
+    if (contributorSeats >= context.limits.contributorSeatsMax) {
+      return {
+        allowed: false,
+        status: 409,
+        reason: `This tree has reached its contributor seat limit (${context.limits.contributorSeatsMax})`,
+      };
+    }
+
     return { allowed: true };
   }
 
-  const contributorSeats = await getContributorSeatCount(treeId);
-  if (contributorSeats >= context.limits.contributorSeatsMax) {
-    return {
-      allowed: false,
-      status: 409,
-      reason: `This tree has reached its contributor seat limit (${context.limits.contributorSeatsMax})`,
-    };
-  }
-
-  return { allowed: true };
+  const _exhaustiveCheck: never = resource;
+  return {
+    allowed: false,
+    status: 400,
+    reason: `Unknown resource type: ${_exhaustiveCheck}`,
+  };
 }

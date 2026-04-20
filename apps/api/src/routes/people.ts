@@ -528,13 +528,13 @@ export async function peoplePlugin(app: FastifyInstance): Promise<void> {
   /**
    * GET /api/trees/:treeId/people/:personId/cross-tree
    *
-   * Returns the "mirror" person record and their public memories from a
-   * connected tree, accessible because of an active crossTreePersonLink.
+   * Returns scope-based views of a person across other trees where the
+   * requesting user also has membership. Uses `tree_person_scope` to
+   * discover which trees include this person, then returns the scoped
+   * profile and visible memories from each.
    *
    * The requesting user must be a member of treeId.
-   * The personId must be in treeId.
-   * The response lists all active links for this person and the linked
-   * person's basic profile + memories from the other tree.
+   * The personId must be in scope for treeId.
    */
   app.get(
     "/api/trees/:treeId/people/:personId/cross-tree",
@@ -574,7 +574,6 @@ export async function peoplePlugin(app: FastifyInstance): Promise<void> {
             });
 
             return {
-              connectionId: null,
               treeId: candidateTree.id,
               treeName: candidateTree.name,
               linkedPerson: {
@@ -663,14 +662,17 @@ export async function peoplePlugin(app: FastifyInstance): Promise<void> {
     if (!updated) return reply.status(404).send({ error: "Person not found" });
 
     const fullUpdated = await getTreeScopedPerson(treeId, personId);
+    if (!fullUpdated) {
+      return reply.status(404).send({ error: "Person not found after update" });
+    }
 
     return reply.send({
       ...fullUpdated,
-      portraitUrl: fullUpdated?.portraitMedia
+      portraitUrl: fullUpdated.portraitMedia
         ? mediaUrl(fullUpdated.portraitMedia.objectKey)
         : null,
-      birthPlaceResolved: serializePlace(fullUpdated?.birthPlaceRef),
-      deathPlaceResolved: serializePlace(fullUpdated?.deathPlaceRef),
+      birthPlaceResolved: serializePlace(fullUpdated.birthPlaceRef),
+      deathPlaceResolved: serializePlace(fullUpdated.deathPlaceRef),
     });
   });
 

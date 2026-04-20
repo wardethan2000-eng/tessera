@@ -3,6 +3,14 @@
 **Companion to:** `SPEC-AMENDMENT-CROSS-TREE.md`
 **Purpose:** Step-by-step instructions for implementing the cross-tree data architecture across multiple development sessions.
 
+> **Implementation Status (Updated):**
+> All phases below have been **completed and deployed**. The legacy connection
+> model (`tree_connections`, `cross_tree_person_links`, `tree_connection_status`)
+> has been fully retired — dropped from the Drizzle schema and live database via
+> migration `0008_retire_tree_connections.sql`. Code examples in this guide
+> reflect the design-time intent; refer to the actual source files for the
+> canonical, current implementation.
+
 ---
 
 ## Table of Contents
