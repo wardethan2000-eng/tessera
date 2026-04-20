@@ -48,6 +48,25 @@ These are the highest-value gaps relative to the product thesis:
 - There is no ambient surface for TV, frame, or kiosk experiences.
 - Hosted / BYO-storage / self-hosted modes are not yet productized.
 
+## Cross-Tree Guardrails
+
+The repo now has enough cross-tree groundwork that product boundaries need to
+be explicit, not implied.
+
+- Account-linked identity is the safest way to unify a living person across
+  multiple trees.
+- Duplicate people across trees may be suggested automatically, but they should
+  not silently collapse without steward review or an already-confirmed account
+  link.
+- The main canvas should remain tree-shaped and vertical per tree, not a
+  horizontally expanding super-graph of every adjacent family.
+- Cross-tree overlap should surface as shared identity, shared memories,
+  duplicate-resolution flows, and cross-tree navigation rather than automatic
+  sideways branch expansion in the canvas.
+
+See `MULTI-TREE-IDENTITY-AND-SCOPE-PLAN.md` for the planning-level rules and
+`ACCOUNT-IDENTITY-IMPLEMENTATION-PLAN.md` for the concrete engineering plan.
+
 ## Phase Structure
 
 The order below is intentional. Later phases depend on the earlier ones.

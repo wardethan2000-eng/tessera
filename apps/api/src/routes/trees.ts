@@ -2,13 +2,33 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import * as schema from "@familytree/database";
 import { db } from "../lib/db.js";
+import { getIdentityStatusForUser } from "../lib/account-identity-service.js";
+import { addPersonToTreeScope } from "../lib/cross-tree-write-service.js";
+import { getTreeScopedPerson, isPersonInTreeScope } from "../lib/cross-tree-read-service.js";
 import { getSession } from "../lib/session.js";
+import { checkTreeCanAdd } from "../lib/tree-usage-service.js";
 
 const CreateTreeBody = z.object({
   name: z.string().min(1).max(160),
 });
 
 export async function treesPlugin(app: FastifyInstance): Promise<void> {
+  app.get("/api/me/identity", async (request, reply) => {
+    const session = await getSession(request.headers);
+    if (!session) return reply.status(401).send({ error: "Unauthorized" });
+
+    const identity = await getIdentityStatusForUser(session.user.id);
+
+    return reply.send({
+      user: {
+        id: session.user.id,
+        email: session.user.email,
+        name: session.user.name,
+      },
+      ...identity,
+    });
+  });
+
   app.post("/api/trees", async (request, reply) => {
     const session = await getSession(request.headers);
     if (!session) return reply.status(401).send({ error: "Unauthorized" });
@@ -63,6 +83,65 @@ export async function treesPlugin(app: FastifyInstance): Promise<void> {
     if (!membership) return reply.status(404).send({ error: "Tree not found" });
 
     return reply.send({ ...membership.tree, role: membership.role });
+  });
+
+  app.post("/api/trees/:treeId/identity/bootstrap", async (request, reply) => {
+    const session = await getSession(request.headers);
+    if (!session) return reply.status(401).send({ error: "Unauthorized" });
+
+    const { treeId } = request.params as { treeId: string };
+
+    const membership = await db.query.treeMemberships.findFirst({
+      where: (t, { and, eq }) =>
+        and(eq(t.treeId, treeId), eq(t.userId, session.user.id)),
+    });
+    if (!membership) {
+      return reply.status(403).send({ error: "Not a member of this tree" });
+    }
+
+    const identity = await getIdentityStatusForUser(session.user.id);
+    if (identity.status === "unclaimed") {
+      return reply.send({
+        status: "unclaimed",
+        wasAddedToScope: false,
+        person: null,
+      });
+    }
+
+    if (identity.status === "conflict") {
+      return reply.status(409).send({
+        error:
+          "This account is linked to multiple people. Resolve the duplicate identity before bootstrapping into a new tree.",
+        ...identity,
+      });
+    }
+
+    const claimedPerson = identity.canonicalPerson;
+    const alreadyInScope = await isPersonInTreeScope(treeId, claimedPerson.id);
+
+    if (!alreadyInScope) {
+      const capacity = await checkTreeCanAdd(treeId, "person");
+      if (!capacity.allowed) {
+        return reply.status(capacity.status).send({ error: capacity.reason });
+      }
+
+      await addPersonToTreeScope({
+        treeId,
+        personId: claimedPerson.id,
+        addedByUserId: session.user.id,
+      });
+    }
+
+    const person = await getTreeScopedPerson(treeId, claimedPerson.id);
+    if (!person) {
+      return reply.status(500).send({ error: "Failed to load claimed person in this tree" });
+    }
+
+    return reply.send({
+      status: "claimed",
+      wasAddedToScope: !alreadyInScope,
+      person,
+    });
   });
 
   /** GET /api/trees/:treeId/members — list all members of a tree */

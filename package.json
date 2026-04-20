@@ -16,6 +16,8 @@
     "db:generate": "pnpm --filter @familytree/database db:generate",
     "db:push": "pnpm --filter @familytree/database db:push",
     "db:migrate": "pnpm --filter @familytree/database db:migrate",
-    "db:studio": "pnpm --filter @familytree/database db:studio"
+    "db:studio": "pnpm --filter @familytree/database db:studio",
+    "identity:audit": "pnpm --filter @familytree/api identity:audit",
+    "identity:remediate": "pnpm --filter @familytree/api identity:remediate"
   }
 }

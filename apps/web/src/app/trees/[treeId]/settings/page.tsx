@@ -17,9 +17,18 @@ interface Invitation {
   id: string;
   email: string;
   proposedRole: string;
+  linkedPersonId: string | null;
+  linkedPersonName: string | null;
   invitedByName: string;
   expiresAt: string;
   createdAt: string;
+}
+
+interface PersonOption {
+  id: string;
+  displayName: string;
+  isLiving: boolean;
+  linkedUserId: string | null;
 }
 
 interface Member {
@@ -44,6 +53,7 @@ export default function TreeSettingsPage() {
 
   const [tree, setTree] = useState<Tree | null>(null);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [people, setPeople] = useState<PersonOption[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [myRole, setMyRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -51,6 +61,7 @@ export default function TreeSettingsPage() {
   // Invite form
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"contributor" | "viewer" | "steward">("contributor");
+  const [inviteLinkedPersonId, setInviteLinkedPersonId] = useState("");
   const [inviting, setInviting] = useState(false);
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
@@ -153,14 +164,16 @@ export default function TreeSettingsPage() {
 
   const fetchData = useCallback(async () => {
     if (!treeId) return;
-    const [treeRes, invitesRes, membersRes] = await Promise.all([
+    const [treeRes, invitesRes, membersRes, peopleRes] = await Promise.all([
       fetch(`${API}/api/trees/${treeId}`, { credentials: "include" }),
       fetch(`${API}/api/trees/${treeId}/invitations`, { credentials: "include" }),
       fetch(`${API}/api/trees/${treeId}/members`, { credentials: "include" }),
+      fetch(`${API}/api/trees/${treeId}/people`, { credentials: "include" }),
     ]);
 
     if (treeRes.ok) setTree(await treeRes.json());
     if (invitesRes.ok) setInvitations(await invitesRes.json());
+    if (peopleRes.ok) setPeople(await peopleRes.json());
     if (membersRes.ok) {
       const membersData: Member[] = await membersRes.json();
       setMembers(membersData);
@@ -186,7 +199,11 @@ export default function TreeSettingsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ email: inviteEmail, proposedRole: inviteRole }),
+        body: JSON.stringify({
+          email: inviteEmail,
+          proposedRole: inviteRole,
+          linkedPersonId: inviteLinkedPersonId || undefined,
+        }),
       });
       if (!res.ok) {
         const e = await res.json();
@@ -195,6 +212,7 @@ export default function TreeSettingsPage() {
       }
       setInviteSuccess(`Invitation sent to ${inviteEmail}`);
       setInviteEmail("");
+      setInviteLinkedPersonId("");
       fetchData();
     } finally {
       setInviting(false);
@@ -210,6 +228,9 @@ export default function TreeSettingsPage() {
   }
 
   const isManager = myRole === "founder" || myRole === "steward";
+  const linkedInvitePeople = people
+    .filter((person) => person.isLiving)
+    .sort((left, right) => left.displayName.localeCompare(right.displayName));
 
   if (loading) {
     return (
@@ -264,6 +285,31 @@ export default function TreeSettingsPage() {
                 <option value="viewer">Viewer</option>
               </select>
             </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label
+                htmlFor="linked-person"
+                style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-soft)" }}
+              >
+                Link this invite to a person in the tree
+              </label>
+              <select
+                id="linked-person"
+                value={inviteLinkedPersonId}
+                onChange={(e) => setInviteLinkedPersonId(e.target.value)}
+                style={inputStyle}
+              >
+                <option value="">No linked person</option>
+                {linkedInvitePeople.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {person.displayName}
+                    {person.linkedUserId ? " (already claimed)" : ""}
+                  </option>
+                ))}
+              </select>
+              <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", margin: 0 }}>
+                Use this when you are inviting a living relative as themselves so the account can attach to the right person record after acceptance.
+              </p>
+            </div>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <button type="submit" disabled={inviting} style={primaryBtnStyle}>
                 {inviting ? "Sending…" : "Send invitation"}
@@ -296,6 +342,11 @@ export default function TreeSettingsPage() {
                     <p style={{ fontFamily: "var(--font-ui)", fontSize: 11, color: "var(--ink-faded)", margin: "2px 0 0" }}>
                       {ROLE_LABELS[inv.proposedRole] ?? inv.proposedRole} · invited by {inv.invitedByName} · expires {new Date(inv.expiresAt).toLocaleDateString()}
                     </p>
+                    {inv.linkedPersonName && (
+                      <p style={{ fontFamily: "var(--font-ui)", fontSize: 11, color: "var(--ink-faded)", margin: "4px 0 0" }}>
+                        Linked to {inv.linkedPersonName}
+                      </p>
+                    )}
                   </div>
                   <button
                     onClick={() => revokeInvite(inv.id)}

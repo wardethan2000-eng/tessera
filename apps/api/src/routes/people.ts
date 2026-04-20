@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { and, eq, or } from "drizzle-orm";
 import * as schema from "@familytree/database";
+import { getIdentityStatusForUser } from "../lib/account-identity-service.js";
 import {
   listLikelyDuplicatePeople,
   mergePeopleRecords,
@@ -230,10 +231,6 @@ export async function peoplePlugin(app: FastifyInstance): Promise<void> {
     }
 
     const { linkToUser, ...fields } = parsed.data;
-    const capacity = await checkTreeCanAdd(treeId, "person");
-    if (!capacity.allowed) {
-      return reply.status(capacity.status).send({ error: capacity.reason });
-    }
 
     if (fields.birthPlaceId) {
       const place = await validatePlaceId(fields.birthPlaceId, treeId);
@@ -246,6 +243,56 @@ export async function peoplePlugin(app: FastifyInstance): Promise<void> {
       if (!place) {
         return reply.status(400).send({ error: "Death place not found in this tree" });
       }
+    }
+
+    if (linkToUser) {
+      const identity = await getIdentityStatusForUser(session.user.id);
+      if (identity.status === "conflict") {
+        return reply.status(409).send({
+          error:
+            "This account is linked to multiple people. Resolve the duplicate identity before linking yourself to another tree.",
+          ...identity,
+        });
+      }
+
+      if (identity.status === "claimed") {
+        const claimedPersonId = identity.canonicalPerson.id;
+        const alreadyInScope = await isPersonInTreeScope(treeId, claimedPersonId);
+
+        if (!alreadyInScope) {
+          const capacity = await checkTreeCanAdd(treeId, "person");
+          if (!capacity.allowed) {
+            return reply.status(capacity.status).send({ error: capacity.reason });
+          }
+
+          await addPersonToTreeScope({
+            treeId,
+            personId: claimedPersonId,
+            addedByUserId: session.user.id,
+          });
+        }
+
+        const existingPerson = await getTreeScopedPerson(treeId, claimedPersonId);
+        if (!existingPerson) {
+          return reply.status(500).send({ error: "Failed to load claimed person" });
+        }
+
+        return reply.status(alreadyInScope ? 200 : 201).send({
+          ...existingPerson,
+          portraitUrl: existingPerson.portraitMedia
+            ? mediaUrl(existingPerson.portraitMedia.objectKey)
+            : null,
+          birthPlaceResolved: serializePlace(existingPerson.birthPlaceRef),
+          deathPlaceResolved: serializePlace(existingPerson.deathPlaceRef),
+          reusedClaimedPerson: true,
+          wasAddedToScope: !alreadyInScope,
+        });
+      }
+    }
+
+    const capacity = await checkTreeCanAdd(treeId, "person");
+    if (!capacity.allowed) {
+      return reply.status(capacity.status).send({ error: capacity.reason });
     }
 
     const person = await createPersonWithScope({

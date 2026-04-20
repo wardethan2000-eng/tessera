@@ -44,6 +44,7 @@ type AddPersonToTreeScopeInput = {
   treeId: string;
   personId: string;
   addedByUserId: string | null;
+  tx?: TxClient;
 };
 
 type UpdatePersonTreeScopeInput = {
@@ -90,7 +91,7 @@ export async function createPersonWithScope(input: CreateScopedPersonInput) {
 }
 
 export async function addPersonToTreeScope(input: AddPersonToTreeScopeInput) {
-  return db.transaction(async (tx) => {
+  const run = async (tx: TxClient) => {
     const person = await tx.query.people.findFirst({
       where: (candidate, { eq }) => eq(candidate.id, input.personId),
       columns: {
@@ -112,7 +113,13 @@ export async function addPersonToTreeScope(input: AddPersonToTreeScopeInput) {
       .onConflictDoNothing();
 
     return person;
-  });
+  };
+
+  if (input.tx) {
+    return run(input.tx);
+  }
+
+  return db.transaction(run);
 }
 
 export async function upsertPersonTreeScope(input: UpdatePersonTreeScopeInput) {

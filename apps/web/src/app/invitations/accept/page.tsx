@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
@@ -15,6 +16,38 @@ interface InvitationDetails {
   proposedRole: string;
   linkedPersonName: string | null;
   expiresAt: string;
+}
+
+interface ClaimedPersonSummary {
+  id: string;
+  displayName: string;
+  treeId: string;
+  homeTreeId: string | null;
+  scopeTreeIds: string[];
+}
+
+interface InvitationAcceptResult {
+  treeId: string;
+  message: string;
+  membershipStatus: "existing" | "created";
+  linkedIdentity:
+    | null
+    | {
+        status: "linked" | "already_linked";
+        linkedPersonId: string;
+        linkedPersonName: string;
+        message: string;
+      }
+    | {
+        status: "conflict";
+        linkedPersonId: string;
+        linkedPersonName: string;
+        reason: "user_has_multiple_claimed_people" | "user_already_linked_elsewhere";
+        existingCanonicalPersonId: string | null;
+        existingCanonicalTreeId: string | null;
+        claimedPeople: ClaimedPersonSummary[];
+        message: string;
+      };
 }
 
 export default function AcceptInvitationPage() {
@@ -39,7 +72,7 @@ function AcceptInvitationContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [accepting, setAccepting] = useState(false);
-  const [accepted, setAccepted] = useState(false);
+  const [acceptResult, setAcceptResult] = useState<InvitationAcceptResult | null>(null);
 
   useEffect(() => {
     if (!token) {
@@ -65,6 +98,7 @@ function AcceptInvitationContent() {
   async function handleAccept() {
     if (!token) return;
     setAccepting(true);
+    setError(null);
     try {
       const res = await fetch(`${API}/api/invitations/${token}/accept`, {
         method: "POST",
@@ -75,11 +109,13 @@ function AcceptInvitationContent() {
         setError(e.error ?? "Could not accept invitation");
         return;
       }
-      const data = await res.json();
-      setAccepted(true);
-      setTimeout(() => {
-        router.push(`/trees/${data.treeId}`);
-      }, 2000);
+      const data: InvitationAcceptResult = await res.json();
+      setAcceptResult(data);
+      if (data.linkedIdentity?.status !== "conflict") {
+        setTimeout(() => {
+          router.push(`/trees/${data.treeId}`);
+        }, 2000);
+      }
     } finally {
       setAccepting(false);
     }
@@ -118,17 +154,80 @@ function AcceptInvitationContent() {
   if (!invitation) return null;
 
   // Accepted confirmation
-  if (accepted) {
+  if (acceptResult) {
+    const identityConflict =
+      acceptResult.linkedIdentity?.status === "conflict"
+        ? acceptResult.linkedIdentity
+        : null;
+
     return (
       <main style={pageStyle}>
         <div style={cardStyle}>
-          <div style={{ fontFamily: "var(--font-display)", fontSize: 32, color: "var(--moss)", marginBottom: 16 }}>✓</div>
+          <div
+            style={{
+              fontFamily: "var(--font-display)",
+              fontSize: 32,
+              color: identityConflict ? "var(--amber, #c97d1a)" : "var(--moss)",
+              marginBottom: 16,
+            }}
+          >
+            {identityConflict ? "!" : "✓"}
+          </div>
           <p style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--ink)", margin: "0 0 8px" }}>
-            Welcome to {invitation.treeName}
+            {identityConflict ? `Joined ${invitation.treeName} with an identity conflict` : `Welcome to ${invitation.treeName}`}
           </p>
-          <p style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-faded)" }}>
-            Redirecting you to the archive…
+          <p style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-faded)", margin: "0 0 16px" }}>
+            {acceptResult.message}
           </p>
+
+          {acceptResult.linkedIdentity && (
+            <div style={messageBoxStyle}>
+              <p style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink)", margin: 0, lineHeight: 1.6 }}>
+                {acceptResult.linkedIdentity.message}
+              </p>
+            </div>
+          )}
+
+          {identityConflict && (
+            <>
+              <div style={{ ...messageBoxStyle, marginTop: 12 }}>
+                <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-soft)", margin: 0, lineHeight: 1.7 }}>
+                  The invitation was accepted, but your account was not attached to {identityConflict.linkedPersonName}.
+                  A steward needs to merge the overlapping person records before the identity can be unified across trees.
+                </p>
+              </div>
+
+              {identityConflict.claimedPeople.length > 0 && (
+                <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+                  {identityConflict.claimedPeople.map((person) => (
+                    <a
+                      key={person.id}
+                      href={`/trees/${person.treeId}/people/${person.id}`}
+                      style={claimedPersonLinkStyle}
+                    >
+                      <span style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink)" }}>
+                        {person.displayName}
+                      </span>
+                      <span style={{ fontFamily: "var(--font-ui)", fontSize: 11, color: "var(--ink-faded)" }}>
+                        Tree {person.treeId.slice(0, 8)}
+                      </span>
+                    </a>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          <div style={{ marginTop: 24, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            <a href={`/trees/${acceptResult.treeId}`} style={primaryBtnStyle}>
+              Continue to archive
+            </a>
+            {!identityConflict && (
+              <p style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-faded)", margin: 0 }}>
+                Redirecting you automatically…
+              </p>
+            )}
+          </div>
         </div>
       </main>
     );
@@ -207,7 +306,7 @@ function AcceptInvitationContent() {
           <button
             onClick={handleAccept}
             disabled={accepting}
-            style={primaryBtnStyle as React.CSSProperties}
+            style={primaryBtnStyle}
           >
             {accepting ? "Accepting…" : "Accept invitation"}
           </button>
@@ -222,7 +321,7 @@ function AcceptInvitationContent() {
   );
 }
 
-const pageStyle: React.CSSProperties = {
+const pageStyle: CSSProperties = {
   minHeight: "100vh",
   background: "var(--paper)",
   display: "flex",
@@ -231,7 +330,7 @@ const pageStyle: React.CSSProperties = {
   padding: 24,
 };
 
-const cardStyle: React.CSSProperties = {
+const cardStyle: CSSProperties = {
   background: "var(--paper-deep)",
   border: "1px solid var(--rule)",
   borderRadius: 12,
@@ -240,7 +339,27 @@ const cardStyle: React.CSSProperties = {
   width: "100%",
 };
 
-const primaryBtnStyle = {
+const messageBoxStyle: CSSProperties = {
+  marginTop: 16,
+  padding: "14px 16px",
+  background: "var(--paper)",
+  border: "1px solid var(--rule)",
+  borderRadius: 8,
+};
+
+const claimedPersonLinkStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 12,
+  padding: "10px 12px",
+  borderRadius: 8,
+  border: "1px solid var(--rule)",
+  background: "var(--paper)",
+  textDecoration: "none",
+};
+
+const primaryBtnStyle: CSSProperties = {
   display: "inline-block",
   background: "var(--moss)",
   color: "var(--paper)",
@@ -253,7 +372,7 @@ const primaryBtnStyle = {
   textDecoration: "none",
 };
 
-const secondaryBtnStyle = {
+const secondaryBtnStyle: CSSProperties = {
   display: "inline-block",
   background: "none",
   color: "var(--ink-soft)",
@@ -266,9 +385,9 @@ const secondaryBtnStyle = {
   textDecoration: "none",
 };
 
-const linkStyle = {
-  fontFamily: "var(--font-ui)" as const,
+const linkStyle: CSSProperties = {
+  fontFamily: "var(--font-ui)",
   fontSize: 13,
-  color: "var(--ink-faded)" as const,
-  textDecoration: "underline" as const,
+  color: "var(--ink-faded)",
+  textDecoration: "underline",
 };

@@ -4,10 +4,15 @@ import { and, eq } from "drizzle-orm";
 import { randomBytes, createHash } from "node:crypto";
 import { createTransport } from "nodemailer";
 import * as schema from "@familytree/database";
+import {
+  decideInvitationLinkedIdentity,
+  getIdentityStatusForUser,
+} from "../lib/account-identity-service.js";
 import { db } from "../lib/db.js";
 import { getSession } from "../lib/session.js";
 import { checkTreeCanAdd } from "../lib/tree-usage-service.js";
 import { addPersonToTreeScope } from "../lib/cross-tree-write-service.js";
+import { isPersonInTreeScope } from "../lib/cross-tree-read-service.js";
 
 const mailer = createTransport({
   host: process.env.SMTP_HOST ?? "localhost",
@@ -55,6 +60,15 @@ export async function invitationsPlugin(app: FastifyInstance): Promise<void> {
 
     const { email, proposedRole, linkedPersonId } = parsed.data;
 
+    if (linkedPersonId) {
+      const linkedPersonInScope = await isPersonInTreeScope(treeId, linkedPersonId);
+      if (!linkedPersonInScope) {
+        return reply.status(400).send({
+          error: "The linked person must already be in this tree before you can invite them by identity.",
+        });
+      }
+    }
+
     // Check if this email already has a pending invite for this tree
     const existing = await db.query.invitations.findFirst({
       where: (inv, { and, eq }) =>
@@ -79,7 +93,7 @@ export async function invitationsPlugin(app: FastifyInstance): Promise<void> {
       treeId,
       invitedByUserId: session.user.id,
       email: email.toLowerCase(),
-    proposedRole: proposedRole as "steward" | "contributor" | "viewer",
+      proposedRole: proposedRole as "steward" | "contributor" | "viewer",
       linkedPersonId: linkedPersonId ?? null,
       tokenHash,
       status: "pending",
@@ -138,7 +152,7 @@ export async function invitationsPlugin(app: FastifyInstance): Promise<void> {
     const invites = await db.query.invitations.findMany({
       where: (inv, { and, eq }) =>
         and(eq(inv.treeId, treeId), eq(inv.status, "pending")),
-      with: { invitedBy: true },
+      with: { invitedBy: true, linkedPerson: true },
       orderBy: (inv, { desc }) => [desc(inv.createdAt)],
     });
 
@@ -147,6 +161,8 @@ export async function invitationsPlugin(app: FastifyInstance): Promise<void> {
         id: inv.id,
         email: inv.email,
         proposedRole: inv.proposedRole,
+        linkedPersonId: inv.linkedPersonId,
+        linkedPersonName: inv.linkedPerson?.displayName ?? null,
         invitedByName: inv.invitedBy?.name ?? inv.invitedBy?.email ?? "Unknown",
         expiresAt: inv.expiresAt,
         createdAt: inv.createdAt,
@@ -218,24 +234,56 @@ export async function invitationsPlugin(app: FastifyInstance): Promise<void> {
       });
     }
 
+    const linkedPerson = invitation.linkedPersonId
+      ? await db.query.people.findFirst({
+          where: (person, { eq }) => eq(person.id, invitation.linkedPersonId!),
+          columns: {
+            id: true,
+            displayName: true,
+            treeId: true,
+            linkedUserId: true,
+          },
+        })
+      : null;
+
+    const identity = invitation.linkedPersonId
+      ? await getIdentityStatusForUser(session.user.id)
+      : null;
+
+    const linkedIdentityDecision =
+      invitation.linkedPersonId && linkedPerson && identity
+        ? decideInvitationLinkedIdentity({
+            userId: session.user.id,
+            linkedPersonId: linkedPerson.id,
+            linkedPersonLinkedUserId: linkedPerson.linkedUserId,
+            identity,
+          })
+        : null;
+
+    if (invitation.linkedPersonId && !linkedPerson) {
+      return reply.status(409).send({
+        error: "The linked person for this invitation could not be found.",
+      });
+    }
+
+    if (linkedIdentityDecision?.kind === "linked-person-claimed-by-other-user") {
+      return reply.status(409).send({
+        error:
+          "This invitation is linked to a person record that is already claimed by another account.",
+      });
+    }
+
     // Check if user already has membership
     const existing = await db.query.treeMemberships.findFirst({
       where: (m, { and, eq }) =>
         and(eq(m.treeId, invitation.treeId), eq(m.userId, session.user.id)),
     });
-    if (existing) {
-      // Mark accepted, but don't error — they're already in
-      await db
-        .update(schema.invitations)
-        .set({ status: "accepted", acceptedAt: new Date() })
-        .where(eq(schema.invitations.id, invitation.id));
-      return reply.send({ treeId: invitation.treeId, message: "Already a member" });
-    }
 
     if (
-      invitation.proposedRole === "founder" ||
-      invitation.proposedRole === "steward" ||
-      invitation.proposedRole === "contributor"
+      !existing &&
+      (invitation.proposedRole === "founder" ||
+        invitation.proposedRole === "steward" ||
+        invitation.proposedRole === "contributor")
     ) {
       const capacity = await checkTreeCanAdd(invitation.treeId, "contributor");
       if (!capacity.allowed) {
@@ -243,89 +291,90 @@ export async function invitationsPlugin(app: FastifyInstance): Promise<void> {
       }
     }
 
-    // Create membership and mark invitation accepted
-    await Promise.all([
-      db.insert(schema.treeMemberships).values({
-        treeId: invitation.treeId,
-        userId: session.user.id,
-        role: invitation.proposedRole as "founder" | "steward" | "contributor" | "viewer",
-        invitedByUserId: invitation.invitedByUserId,
-      }),
-      db
+    await db.transaction(async (tx) => {
+      if (!existing) {
+        await tx.insert(schema.treeMemberships).values({
+          treeId: invitation.treeId,
+          userId: session.user.id,
+          role: invitation.proposedRole as "founder" | "steward" | "contributor" | "viewer",
+          invitedByUserId: invitation.invitedByUserId,
+        });
+      }
+
+      await tx
         .update(schema.invitations)
         .set({ status: "accepted", acceptedAt: new Date() })
-        .where(eq(schema.invitations.id, invitation.id)),
-    ]);
+        .where(eq(schema.invitations.id, invitation.id));
 
-    // If the invitation was linked to a person record, bind this user to that
-    // person and ensure the person is in the tree's scope. This is the primary
-    // mechanism for cross-tree identity: a steward invites a real person, linking
-    // them to the person record in their tree. When the invitee accepts, the
-    // system now knows that person record represents this user.
-    let crossTreeIdentityMatch: {
-      existingPersonId: string;
-      existingTreeId: string;
-      linkedPersonId: string;
-    } | null = null;
+      if (linkedPerson) {
+        await addPersonToTreeScope({
+          treeId: invitation.treeId,
+          personId: linkedPerson.id,
+          addedByUserId: invitation.invitedByUserId,
+          tx,
+        });
 
-    if (invitation.linkedPersonId) {
-      // Set linkedUserId so the system knows this person record = this user
-      await db
-        .update(schema.people)
-        .set({ linkedUserId: session.user.id, updatedAt: new Date() })
-        .where(
-          and(
-            eq(schema.people.id, invitation.linkedPersonId),
-            eq(schema.people.treeId, invitation.treeId),
-          ),
-        );
-
-      // Ensure the person is in the tree's scope table
-      await addPersonToTreeScope({
-        treeId: invitation.treeId,
-        personId: invitation.linkedPersonId,
-        addedByUserId: invitation.invitedByUserId,
-      });
-
-      // Check if this user is already linked to a different person record in
-      // another tree. If so, we have a confirmed cross-tree identity: two
-      // person records representing the same human. Surface this so stewards
-      // can merge them via the existing merge flow.
-      const otherLinkedPeople = await db.query.people.findMany({
-        where: (person, { and: a, eq: e, ne }) =>
-          a(
-            e(person.linkedUserId, session.user.id),
-            ne(person.id, invitation.linkedPersonId!),
-          ),
-        columns: { id: true, treeId: true, displayName: true },
-      });
-
-      if (otherLinkedPeople.length > 0) {
-        const first = otherLinkedPeople[0]!;
-        crossTreeIdentityMatch = {
-          existingPersonId: first.id,
-          existingTreeId: first.treeId,
-          linkedPersonId: invitation.linkedPersonId,
-        };
+        if (linkedIdentityDecision?.kind === "claim-linked-person") {
+          await tx
+            .update(schema.people)
+            .set({ linkedUserId: session.user.id, updatedAt: new Date() })
+            .where(eq(schema.people.id, linkedPerson.id));
+        }
       }
-    }
+    });
+
+    const claimedPeople =
+      linkedIdentityDecision?.kind === "identity-conflict"
+        ? identity?.claimedPeople.map((person) => ({
+            id: person.id,
+            displayName: person.displayName,
+            treeId: person.treeId,
+            homeTreeId: person.homeTreeId,
+            scopeTreeIds: person.scopeTreeIds,
+          })) ?? []
+        : [];
+
+    const linkedIdentity =
+      linkedPerson && linkedIdentityDecision
+        ? linkedIdentityDecision.kind === "claim-linked-person"
+          ? {
+              status: "linked" as const,
+              linkedPersonId: linkedPerson.id,
+              linkedPersonName: linkedPerson.displayName,
+              message:
+                "Your account is now linked to the invited person in this tree.",
+            }
+          : linkedIdentityDecision.kind === "already-linked-to-person"
+            ? {
+                status: "already_linked" as const,
+                linkedPersonId: linkedPerson.id,
+                linkedPersonName: linkedPerson.displayName,
+                message:
+                  "Your account was already linked to this person. We kept that identity and added you to the tree.",
+              }
+            : {
+                status: "conflict" as const,
+                linkedPersonId: linkedPerson.id,
+                linkedPersonName: linkedPerson.displayName,
+                reason: linkedIdentityDecision.reason,
+                existingCanonicalPersonId:
+                  linkedIdentityDecision.existingCanonicalPersonId,
+                existingCanonicalTreeId:
+                  linkedIdentityDecision.existingCanonicalTreeId,
+                claimedPeople,
+                message:
+                  linkedIdentityDecision.reason ===
+                  "user_has_multiple_claimed_people"
+                    ? "Your account is already linked to multiple people. A steward needs to resolve that duplicate identity before this linked person can be unified."
+                    : "Your account is already linked to a different person record. A steward can merge the records to unify your identity across trees.",
+              }
+        : null;
 
     return reply.send({
       treeId: invitation.treeId,
-      message: "Invitation accepted",
-      ...(crossTreeIdentityMatch
-        ? {
-            crossTreeIdentity: {
-              message:
-                "You are already linked to a person record in another tree. " +
-                "A steward can merge these records to unify your profile across trees.",
-              existingPersonId: crossTreeIdentityMatch.existingPersonId,
-              existingTreeId: crossTreeIdentityMatch.existingTreeId,
-              newPersonId: crossTreeIdentityMatch.linkedPersonId,
-              newTreeId: invitation.treeId,
-            },
-          }
-        : {}),
+      message: existing ? "Already a member" : "Invitation accepted",
+      membershipStatus: existing ? "existing" : "created",
+      linkedIdentity,
     });
   });
 
