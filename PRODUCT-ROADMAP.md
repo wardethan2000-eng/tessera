@@ -90,13 +90,13 @@ Features to implement:
   - The job of the importer is to avoid blank-slate onboarding and reduce the
     first hour of work.
 
-- [ ] Quick-start onboarding
+- [x] Quick-start onboarding
   - Founders should be able to create a tree, define themselves, add one other
     person, add a few memories, and reach the Atrium quickly.
   - The first-use flow should bias toward "show me something alive" instead of
     "finish configuring everything."
 
-- [ ] Deferred curation flow
+- [x] Deferred curation flow
   - After import or linked-media creation, users should be able to leave items
     partially organized.
   - The system should support queues like "needs person tagging," "needs date,"

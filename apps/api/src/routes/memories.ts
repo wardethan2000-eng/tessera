@@ -433,4 +433,62 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
       return reply.send(updated);
     },
   );
+
+  app.patch(
+    "/api/trees/:treeId/memories/:memoryId",
+    async (request, reply) => {
+      const session = await getSession(request.headers);
+      if (!session) return reply.status(401).send({ error: "Unauthorized" });
+
+      const { treeId, memoryId } = request.params as {
+        treeId: string;
+        memoryId: string;
+      };
+
+      const membership = await db.query.treeMemberships.findFirst({
+        where: (t) => and(eq(t.treeId, treeId), eq(t.userId, session.user.id)),
+      });
+      if (!membership) {
+        return reply.status(403).send({ error: "Not a member of this tree" });
+      }
+      if (membership.role === "viewer") {
+        return reply.status(403).send({ error: "Viewers cannot edit memories" });
+      }
+
+      const PatchMemoryBody = z.object({
+        title: z.string().min(1).max(200).optional(),
+        dateOfEventText: z.string().max(100).nullable().optional(),
+        placeLabelOverride: z.string().max(200).nullable().optional(),
+      });
+
+      const parsed = PatchMemoryBody.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid request body" });
+      }
+
+      const inScope = await isMemoryInTreeScope(treeId, memoryId);
+      if (!inScope) {
+        return reply.status(404).send({ error: "Memory not found in this tree" });
+      }
+
+      const updates: Record<string, unknown> = {
+        updatedAt: new Date(),
+      };
+      if (parsed.data.title !== undefined) updates.title = parsed.data.title;
+      if (parsed.data.dateOfEventText !== undefined) {
+        updates.dateOfEventText = parsed.data.dateOfEventText;
+      }
+      if (parsed.data.placeLabelOverride !== undefined) {
+        updates.placeLabelOverride = parsed.data.placeLabelOverride;
+      }
+
+      const [updated] = await db
+        .update(schema.memories)
+        .set(updates)
+        .where(eq(schema.memories.id, memoryId))
+        .returning();
+
+      return reply.send(updated);
+    },
+  );
 }

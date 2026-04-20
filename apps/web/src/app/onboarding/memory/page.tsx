@@ -38,7 +38,11 @@ function OnboardingMemoryForm() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ kind: "story", body: body.trim() }),
+        body: JSON.stringify({
+          kind: "story",
+          title: body.trim().slice(0, 60) + (body.trim().length > 60 ? "…" : ""),
+          body: body.trim(),
+        }),
       },
     );
 

@@ -300,6 +300,7 @@ export default function AtriumPage() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [inboxCount, setInboxCount] = useState(0);
+  const [curationCount, setCurationCount] = useState(0);
   const [updatingMemoryVisibilityId, setUpdatingMemoryVisibilityId] = useState<string | null>(null);
 
   // Global ⌘K handler
@@ -352,6 +353,12 @@ export default function AtriumPage() {
         if (inboxRes.ok) {
           const inboxData = await inboxRes.json() as Array<{ status: string }>;
           setInboxCount(inboxData.filter((p) => p.status === "pending").length);
+        }
+        // Fetch curation queue count
+        const curationRes = await fetch(`${API}/api/trees/${treeId}/curation/queue`, { credentials: "include" });
+        if (curationRes.ok) {
+          const curationData = await curationRes.json() as { needsDate: unknown[]; needsPlace: unknown[]; needsPeople: unknown[] };
+          setCurationCount(curationData.needsDate.length + curationData.needsPlace.length + curationData.needsPeople.length);
         }
       } finally {
         setLoading(false);
@@ -520,8 +527,31 @@ export default function AtriumPage() {
           )}
         </a>
 
+        {/* Curation nudge */}
+        {curationCount > 0 && (
+          <a
+            href={`/trees/${treeId}/curation`}
+            style={{
+              fontFamily: "var(--font-ui)",
+              fontSize: 12,
+              color: "var(--amber, #c97d1a)",
+              background: "var(--paper-deep)",
+              border: "1px solid var(--amber, #c97d1a)",
+              borderRadius: 6,
+              padding: "5px 12px",
+              cursor: "pointer",
+              textDecoration: "none",
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+            }}
+            title="Curation queue"
+          >
+            ✎ {curationCount} need{curationCount === 1 ? "s" : ""} attention
+          </a>
+        )}
+
         <button
-          onClick={() => setSearchOpen(true)}
           style={{
             fontFamily: "var(--font-ui)",
             fontSize: 12,
