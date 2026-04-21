@@ -65,13 +65,17 @@ These were the non-obvious parts:
 - The live processes were originally started from `/home/ubuntu/heirloom`.
 - Later deployment used a safer separate checkout:
   - `/home/ubuntu/heirloom-feature-family-map`
+- A later cutover temporarily ran from a non-git live directory:
+  - `/home/ubuntu/heirloom-memory-pages-live`
+- The current live deployment was moved back to a clean git checkout:
+  - `/home/ubuntu/heirloom-dashboard-redesign-live`
 
 ## Current Running App
 
-At the time this was written, the running app processes were launched from:
+At the time this was last updated, the running app processes were launched from:
 
-- API: `/home/ubuntu/heirloom-feature-family-map/apps/api`
-- Web: `/home/ubuntu/heirloom-feature-family-map/apps/web`
+- API: `/home/ubuntu/heirloom-dashboard-redesign-live/apps/api`
+- Web: `/home/ubuntu/heirloom-dashboard-redesign-live/apps/web`
 
 Local health checks:
 
@@ -90,6 +94,12 @@ To confirm the working directories:
 ```bash
 ssh -i ~/.ssh/proxmox_key ubuntu@192.168.68.110 'pwdx <pid>'
 ```
+
+Current verified live pids during the dashboard-redesign deployment:
+
+- API listener pid: `148997`
+- Web wrapper pid file: `148995`
+- Web listener pid: `149023`
 
 ## Historical Startup Shape On The App VM
 
@@ -115,7 +125,7 @@ Important:
 - `heirloom.service` was found **inactive** during inspection.
 - The live app processes were running as background processes, not as an active systemd-managed deployment.
 
-If you want a cleaner deployment next time, convert the current feature checkout to a real persistent systemd service instead of relying on manual background processes.
+If you want a cleaner deployment next time, convert the current live checkout to a real persistent systemd service instead of relying on manual background processes.
 
 ## Data VM Notes
 
@@ -149,17 +159,18 @@ This was the most reliable path for direct DB inspection and cleanup.
 
 The safest workflow used here was:
 
-1. Push a feature branch to GitHub.
+1. Push the target branch to GitHub.
 2. SSH to the app VM as `ubuntu`.
-3. Clone the branch into a separate checkout instead of overwriting the dirty live repo.
+3. Clone the branch into a separate checkout instead of overwriting the dirty or non-git live directory.
 4. Reuse env files from the existing deployment:
-   - `~/heirloom/apps/api/.env`
-   - `~/heirloom/apps/web/.env.local`
+   - `~/heirloom-memory-pages-live/.env`
+   - `~/heirloom-memory-pages-live/apps/api/.env`
+   - `~/heirloom-memory-pages-live/apps/web/.env.local`
 5. Run:
 
 ```bash
 source ~/.nvm/nvm.sh
-cd ~/heirloom-feature-family-map
+cd ~/heirloom-dashboard-redesign-live
 pnpm install --frozen-lockfile
 set -a
 . apps/api/.env
@@ -168,8 +179,9 @@ pnpm db:migrate
 pnpm build
 ```
 
-6. Start API and web manually from that new checkout.
-7. Verify:
+6. Stop the existing listeners on `:4000` and `:3000`.
+7. Start API and web manually from that new checkout with `nohup`, writing logs and pid files into the deployment directory.
+8. Verify:
    - `curl http://127.0.0.1:4000/health`
    - `curl -I http://127.0.0.1:3000`
 
@@ -178,6 +190,8 @@ pnpm build
 - Old live checkout: `/home/ubuntu/heirloom`
 - Alternate checkout: `/home/ubuntu/FamilyTree`
 - Current feature deployment checkout: `/home/ubuntu/heirloom-feature-family-map`
+- Previous non-git live directory: `/home/ubuntu/heirloom-memory-pages-live`
+- Current live checkout: `/home/ubuntu/heirloom-dashboard-redesign-live`
 - Historical launcher script: `/home/ubuntu/start-heirloom.sh`
 - Backup directory on data VM: `~/familytree-backups`
 
@@ -187,4 +201,5 @@ pnpm build
 - Use the data VM for direct Postgres work.
 - Treat `/home/ubuntu/heirloom` as potentially dirty until it is cleaned up.
 - Prefer deploying new branches into a separate checkout, then cut over deliberately.
+- Do not assume the pid files are current; verify the live listeners with `ss -ltnp` and `pwdx`.
 - Replace the manual background-process launch with real systemd units once the deployment path stabilizes.
