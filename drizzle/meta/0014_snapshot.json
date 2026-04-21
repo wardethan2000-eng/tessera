@@ -1,6 +1,6 @@
 {
-  "id": "cb120b2f-ae19-451c-a9b7-ef006965c77e",
-  "prevId": "aac8941a-772b-4c2b-b415-fef039d35476",
+  "id": "5a26b496-a04e-4c0c-9126-499523374f79",
+  "prevId": "aa2cf143-e712-4657-b3b6-10dabab60fbc",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1403,6 +1403,205 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.memory_perspectives": {
+      "name": "memory_perspectives",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "memory_id": {
+          "name": "memory_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tree_id": {
+          "name": "tree_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "contributor_user_id": {
+          "name": "contributor_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "contributor_person_id": {
+          "name": "contributor_person_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "memory_perspectives_memory_idx": {
+          "name": "memory_perspectives_memory_idx",
+          "columns": [
+            {
+              "expression": "memory_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "memory_perspectives_tree_idx": {
+          "name": "memory_perspectives_tree_idx",
+          "columns": [
+            {
+              "expression": "tree_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "memory_perspectives_contributor_idx": {
+          "name": "memory_perspectives_contributor_idx",
+          "columns": [
+            {
+              "expression": "contributor_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "memory_perspectives_person_idx": {
+          "name": "memory_perspectives_person_idx",
+          "columns": [
+            {
+              "expression": "contributor_person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "memory_perspectives_memory_created_idx": {
+          "name": "memory_perspectives_memory_created_idx",
+          "columns": [
+            {
+              "expression": "memory_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "memory_perspectives_memory_id_memories_id_fk": {
+          "name": "memory_perspectives_memory_id_memories_id_fk",
+          "tableFrom": "memory_perspectives",
+          "tableTo": "memories",
+          "columnsFrom": [
+            "memory_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "memory_perspectives_tree_id_trees_id_fk": {
+          "name": "memory_perspectives_tree_id_trees_id_fk",
+          "tableFrom": "memory_perspectives",
+          "tableTo": "trees",
+          "columnsFrom": [
+            "tree_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "memory_perspectives_contributor_user_id_users_id_fk": {
+          "name": "memory_perspectives_contributor_user_id_users_id_fk",
+          "tableFrom": "memory_perspectives",
+          "tableTo": "users",
+          "columnsFrom": [
+            "contributor_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "memory_perspectives_contributor_person_id_people_id_fk": {
+          "name": "memory_perspectives_contributor_person_id_people_id_fk",
+          "tableFrom": "memory_perspectives",
+          "tableTo": "people",
+          "columnsFrom": [
+            "contributor_person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.memory_reach_rules": {
       "name": "memory_reach_rules",
       "schema": "",
@@ -1964,6 +2163,178 @@
         }
       },
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.person_memory_curation": {
+      "name": "person_memory_curation",
+      "schema": "",
+      "columns": {
+        "tree_id": {
+          "name": "tree_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "memory_id": {
+          "name": "memory_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_featured": {
+          "name": "is_featured",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "updated_by_user_id": {
+          "name": "updated_by_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "person_memory_curation_person_idx": {
+          "name": "person_memory_curation_person_idx",
+          "columns": [
+            {
+              "expression": "tree_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "person_memory_curation_memory_idx": {
+          "name": "person_memory_curation_memory_idx",
+          "columns": [
+            {
+              "expression": "memory_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "person_memory_curation_updated_by_idx": {
+          "name": "person_memory_curation_updated_by_idx",
+          "columns": [
+            {
+              "expression": "updated_by_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "person_memory_curation_tree_id_trees_id_fk": {
+          "name": "person_memory_curation_tree_id_trees_id_fk",
+          "tableFrom": "person_memory_curation",
+          "tableTo": "trees",
+          "columnsFrom": [
+            "tree_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "person_memory_curation_person_id_people_id_fk": {
+          "name": "person_memory_curation_person_id_people_id_fk",
+          "tableFrom": "person_memory_curation",
+          "tableTo": "people",
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "person_memory_curation_memory_id_memories_id_fk": {
+          "name": "person_memory_curation_memory_id_memories_id_fk",
+          "tableFrom": "person_memory_curation",
+          "tableTo": "memories",
+          "columnsFrom": [
+            "memory_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "person_memory_curation_updated_by_user_id_users_id_fk": {
+          "name": "person_memory_curation_updated_by_user_id_users_id_fk",
+          "tableFrom": "person_memory_curation",
+          "tableTo": "users",
+          "columnsFrom": [
+            "updated_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "person_memory_curation_tree_id_person_id_memory_id_pk": {
+          "name": "person_memory_curation_tree_id_person_id_memory_id_pk",
+          "columns": [
+            "tree_id",
+            "person_id",
+            "memory_id"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},

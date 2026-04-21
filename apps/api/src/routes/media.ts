@@ -220,13 +220,32 @@ async function checkScopedTreeAccess(
     return false;
   }
 
-  const memory = await db.query.memories.findFirst({
-    where: (candidate) => eq(candidate.mediaId, mediaRecord.id),
-    columns: {
-      id: true,
-      primaryPersonId: true,
-    },
-  });
+  const [linkedMemoryRow, legacyMemory] = await Promise.all([
+    db.query.memoryMedia.findFirst({
+      where: (candidate, { eq }) => eq(candidate.mediaId, mediaRecord.id),
+      columns: {
+        memoryId: true,
+      },
+    }),
+    db.query.memories.findFirst({
+      where: (candidate) => eq(candidate.mediaId, mediaRecord.id),
+      columns: {
+        id: true,
+        primaryPersonId: true,
+      },
+    }),
+  ]);
+  const memory = legacyMemory
+    ? legacyMemory
+    : linkedMemoryRow
+      ? await db.query.memories.findFirst({
+          where: (candidate, { eq }) => eq(candidate.id, linkedMemoryRow.memoryId),
+          columns: {
+            id: true,
+            primaryPersonId: true,
+          },
+        })
+      : null;
   if (!memory) {
     return false;
   }

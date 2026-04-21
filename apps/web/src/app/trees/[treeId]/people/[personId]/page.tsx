@@ -77,6 +77,8 @@ type Memory = {
   createdAt: string;
   memoryContext?: "direct" | "contextual";
   memoryReasonLabel?: string | null;
+  featuredOnPersonPage?: boolean;
+  curatedSortOrder?: number | null;
   treeVisibilityLevel?: TreeVisibilityLevel;
   treeVisibilityIsOverride?: boolean;
   treeVisibilityUnlockDate?: string | null;
@@ -179,6 +181,25 @@ function getVoiceTranscriptLabel(memory: Memory): string | null {
   if (memory.transcriptStatus === "queued" || memory.transcriptStatus === "processing") {
     return "Transcribing…";
   }
+  return null;
+}
+
+function getMemoryPreviewText(memory: Memory): string | null {
+  const body = memory.body?.trim();
+  if (body) {
+    return body;
+  }
+
+  const transcript = getVoiceTranscriptLabel(memory)?.trim();
+  if (transcript) {
+    return transcript;
+  }
+
+  const linkedLabel = memory.linkedMediaLabel?.trim();
+  if (linkedLabel) {
+    return linkedLabel;
+  }
+
   return null;
 }
 
@@ -691,6 +712,32 @@ export default function PersonPage({
     setShowMemoryForm(true);
   }, []);
 
+  const openMemoryPage = useCallback(
+    (targetMemoryId: string) => {
+      router.push(`/trees/${treeId}/memories/${targetMemoryId}`);
+    },
+    [router, treeId],
+  );
+
+  const renderQuickViewControl = useCallback(
+    (memories: Memory[], startIndex: number) => (
+      <button
+        type="button"
+        onClick={() => openLightbox(memories, startIndex)}
+        style={{
+          ...secondaryBtnStyle,
+          width: "100%",
+          justifyContent: "center",
+          fontSize: 12,
+          padding: "8px 10px",
+        }}
+      >
+        Quick view
+      </button>
+    ),
+    [openLightbox],
+  );
+
   if (isPending || loading || normalizingTreeId || normalizingPersonId) {
     return (
       <main style={{ minHeight: "100vh", background: "var(--paper)", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -771,6 +818,10 @@ export default function PersonPage({
   const contextualArchiveMemories = contextualMemories.filter(
     (memory) => memory.kind !== "story",
   );
+  const featureStory = storyMemories[0] ?? null;
+  const supportingStories = storyMemories.slice(1);
+  const contextualFeatureStory = contextualStoryMemories[0] ?? null;
+  const contextualSupportingStories = contextualStoryMemories.slice(1);
   for (const m of archiveMemories) {
     const year = extractYear(m.dateOfEventText);
     if (year) {
@@ -1181,12 +1232,22 @@ export default function PersonPage({
                   Stories
                 </h2>
               </div>
-              <button
-                onClick={() => openMemoryComposer("story")}
-                style={{ fontFamily: "var(--font-ui)", fontSize: 14, color: "var(--moss)", background: "none", border: "1px solid var(--moss)", borderRadius: 999, padding: "10px 18px", cursor: "pointer" }}
-              >
-                + Add story
-              </button>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                {canSuppressFromSurface && (
+                  <a
+                    href={`/trees/${treeId}/curation?personId=${personId}`}
+                    style={{ fontFamily: "var(--font-ui)", fontSize: 14, color: "var(--ink-soft)", background: "var(--paper)", border: "1px solid var(--rule)", borderRadius: 999, padding: "10px 18px", textDecoration: "none" }}
+                  >
+                    Edit chapter order
+                  </a>
+                )}
+                <button
+                  onClick={() => openMemoryComposer("story")}
+                  style={{ fontFamily: "var(--font-ui)", fontSize: 14, color: "var(--moss)", background: "none", border: "1px solid var(--moss)", borderRadius: 999, padding: "10px 18px", cursor: "pointer" }}
+                >
+                  + Add story
+                </button>
+              </div>
             </div>
 
             {storyMemories.length === 0 && contextualStoryMemories.length === 0 ? (
@@ -1195,13 +1256,32 @@ export default function PersonPage({
               </p>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 40 }}>
-                {storyMemories.map((m) => (
-                  <article key={m.id} style={{ borderBottom: "1px solid var(--rule)", paddingBottom: 40 }}>
-                    <h3 style={{ fontFamily: "var(--font-display)", fontSize: 28, color: "var(--ink)", fontWeight: 400, margin: "0 0 8px" }}>{m.title}</h3>
-                    {m.dateOfEventText && <p style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-faded)", marginBottom: 16 }}>{m.dateOfEventText}</p>}
-                    {m.body && <p style={{ fontFamily: "var(--font-body)", fontSize: 19, lineHeight: 1.9, color: "var(--ink-soft)", whiteSpace: "pre-wrap", margin: 0 }}>{m.body}</p>}
-                  </article>
-                ))}
+                {featureStory && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+                    <MemoryCard
+                      memory={featureStory}
+                      onClick={() => openMemoryPage(featureStory.id)}
+                      emphasis="feature"
+                    />
+                    {supportingStories.length > 0 && (
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+                          gap: 18,
+                        }}
+                      >
+                        {supportingStories.map((story) => (
+                          <MemoryCard
+                            key={story.id}
+                            memory={story}
+                            onClick={() => openMemoryPage(story.id)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {contextualStoryMemories.length > 0 && (
                   <div>
@@ -1211,21 +1291,31 @@ export default function PersonPage({
                       </span>
                       <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 40 }}>
-                      {contextualStoryMemories.map((m) => (
-                        <article key={m.id} style={{ borderBottom: "1px solid var(--rule)", paddingBottom: 40 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                              <h3 style={{ fontFamily: "var(--font-display)", fontSize: 28, color: "var(--ink)", fontWeight: 400, margin: 0 }}>
-                                {m.title}
-                              </h3>
-                              {m.memoryReasonLabel && (
-                                <span style={pillStyle}>{m.memoryReasonLabel}</span>
-                              )}
-                          </div>
-                          {m.dateOfEventText && <p style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-faded)", marginBottom: 16 }}>{m.dateOfEventText}</p>}
-                          {m.body && <p style={{ fontFamily: "var(--font-body)", fontSize: 19, lineHeight: 1.9, color: "var(--ink-soft)", whiteSpace: "pre-wrap", margin: 0 }}>{m.body}</p>}
-                        </article>
-                      ))}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+                      {contextualFeatureStory && (
+                        <MemoryCard
+                          memory={contextualFeatureStory}
+                          onClick={() => openMemoryPage(contextualFeatureStory.id)}
+                          emphasis="feature"
+                        />
+                      )}
+                      {contextualSupportingStories.length > 0 && (
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+                            gap: 18,
+                          }}
+                        >
+                          {contextualSupportingStories.map((story) => (
+                            <MemoryCard
+                              key={story.id}
+                              memory={story}
+                              onClick={() => openMemoryPage(story.id)}
+                            />
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1282,12 +1372,13 @@ export default function PersonPage({
                         <span style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--ink-soft)", fontStyle: "italic" }}>{decade}</span>
                         <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
                       </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 18 }}>
                         {mems.map((m, i) => (
                           <MemoryCard
                             key={m.id}
                             memory={m}
-                            onClick={() => openLightbox(mems, i)}
+                            onClick={() => openMemoryPage(m.id)}
+                            extraControls={renderQuickViewControl(mems, i)}
                           />
                         ))}
                       </div>
@@ -1301,12 +1392,13 @@ export default function PersonPage({
                        <span style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--ink-soft)", fontStyle: "italic" }}>Undated</span>
                       <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 18 }}>
                       {undatedMemories.map((m, i) => (
                         <MemoryCard
                           key={m.id}
                           memory={m}
-                          onClick={() => openLightbox(undatedMemories, i)}
+                          onClick={() => openMemoryPage(m.id)}
+                          extraControls={renderQuickViewControl(undatedMemories, i)}
                         />
                       ))}
                     </div>
@@ -1324,12 +1416,13 @@ export default function PersonPage({
                      <p style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-faded)", marginTop: 0, marginBottom: 16, lineHeight: 1.5 }}>
                        These memories appear here because they were shared through family or lineage context, not because this page owns them.
                      </p>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 18 }}>
                       {contextualArchiveMemories.map((memory, index) => (
                         <MemoryCard
                           key={memory.id}
                           memory={memory}
-                          onClick={() => openLightbox(contextualArchiveMemories, index)}
+                          onClick={() => openMemoryPage(memory.id)}
+                          extraControls={renderQuickViewControl(contextualArchiveMemories, index)}
                         />
                       ))}
                     </div>
@@ -1347,15 +1440,30 @@ export default function PersonPage({
                      <p style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-faded)", marginTop: 0, marginBottom: 16, lineHeight: 1.5 }}>
                        These memories still live in the archive, but they no longer surface on this page.
                      </p>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 18 }}>
                       {suppressedContextualMemories.map((memory, index) => (
                         <MemoryCard
                           key={memory.id}
                           memory={memory}
-                          onClick={() =>
-                            openLightbox(suppressedContextualMemories, index, {
-                              surfaceSuppressed: true,
-                            })
+                          onClick={() => openMemoryPage(memory.id)}
+                          extraControls={
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openLightbox(suppressedContextualMemories, index, {
+                                  surfaceSuppressed: true,
+                                })
+                              }
+                              style={{
+                                ...secondaryBtnStyle,
+                                width: "100%",
+                                justifyContent: "center",
+                                fontSize: 12,
+                                padding: "8px 10px",
+                              }}
+                            >
+                              Quick view
+                            </button>
                           }
                         />
                       ))}
@@ -1625,14 +1733,18 @@ function MemoryCard({
   memory,
   onClick,
   extraControls,
+  emphasis = "supporting",
 }: {
   memory: Memory;
   onClick?: () => void;
   extraControls?: React.ReactNode;
+  emphasis?: "feature" | "supporting";
 }) {
   const mime = memory.mimeType?.toLowerCase() ?? "";
   const isVideo = mime.startsWith("video/");
   const resolvedMediaUrl = getProxiedMediaUrl(memory.mediaUrl);
+  const previewText = getMemoryPreviewText(memory);
+  const isFeature = emphasis === "feature";
   const kindIcon: Record<MemoryKind, string> = {
     photo: "◻",
     story: "✦",
@@ -1645,76 +1757,181 @@ function MemoryCard({
     <article
       onClick={onClick}
       style={{
-        background: "var(--paper-deep)",
+        background: "var(--paper)",
         border: "1px solid var(--rule)",
-        borderRadius: 8,
+        borderRadius: 18,
         overflow: "hidden",
         cursor: onClick ? "pointer" : "default",
-        transition: "box-shadow 200ms",
+        transition: "box-shadow 200ms, transform 200ms",
       }}
       onMouseEnter={(e) => { if (onClick) e.currentTarget.style.boxShadow = "0 4px 16px rgba(28,25,21,0.1)"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "none"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "none"; e.currentTarget.style.transform = "none"; }}
     >
       {resolvedMediaUrl && memory.kind === "photo" && !isVideo && (
-        <img src={resolvedMediaUrl} alt={memory.title} style={{ width: "100%", height: 188, objectFit: "cover", display: "block" }} />
+        <img
+          src={resolvedMediaUrl}
+          alt={memory.title}
+          style={{
+            width: "100%",
+            height: isFeature ? 320 : 224,
+            objectFit: "cover",
+            display: "block",
+          }}
+        />
       )}
       {resolvedMediaUrl && isVideo && (
         <video
           src={resolvedMediaUrl}
-          style={{ width: "100%", height: 188, objectFit: "cover", display: "block", background: "var(--ink)" }}
+          style={{
+            width: "100%",
+            height: isFeature ? 320 : 224,
+            objectFit: "cover",
+            display: "block",
+            background: "var(--ink)",
+          }}
           muted
           playsInline
           preload="metadata"
         />
       )}
       {memory.kind === "voice" && (
-        <div style={{ height: 60, background: "var(--ink)", display: "flex", alignItems: "center", justifyContent: "center", gap: 2 }}>
+        <div
+          style={{
+            height: isFeature ? 140 : 88,
+            background: "var(--ink)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 3,
+          }}
+        >
           {Array.from({ length: 20 }, (_, i) => (
-            <div key={i} style={{ width: 3, height: 10 + Math.abs(Math.sin(i * 0.8) * 24), borderRadius: 2, background: "rgba(246,241,231,0.3)" }} />
+            <div
+              key={i}
+              style={{
+                width: 4,
+                height: 12 + Math.abs(Math.sin(i * 0.8) * (isFeature ? 44 : 26)),
+                borderRadius: 2,
+                background: "rgba(246,241,231,0.3)",
+              }}
+            />
           ))}
         </div>
       )}
-      <div style={{ padding: "14px 16px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-          <span style={{ fontSize: 11, opacity: 0.4 }}>{kindIcon[memory.kind]}</span>
-          <h3 style={{ fontFamily: "var(--font-display)", fontSize: 18, color: "var(--ink)", margin: 0, fontWeight: 400, lineHeight: 1.3 }}>{memory.title}</h3>
+      {!resolvedMediaUrl && memory.kind !== "voice" && (
+        <div
+          style={{
+            minHeight: isFeature ? 160 : 120,
+            background: "linear-gradient(180deg, var(--paper-deep), var(--paper))",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+          }}
+        >
+          <div
+            style={{
+              fontFamily: "var(--font-display)",
+              fontSize: isFeature ? 54 : 38,
+              color: "rgba(28,25,21,0.18)",
+            }}
+          >
+            {kindIcon[memory.kind]}
+          </div>
         </div>
-        {isVideo && (
-          <div style={{ marginBottom: 8 }}>
-            <span style={pillStyle}>Video</span>
-          </div>
-        )}
-        {memory.linkedMediaProvider === "google_drive" && (
-          <div style={{ marginBottom: 8 }}>
-            <span style={pillStyle}>Linked from Drive</span>
-          </div>
-        )}
-        {memory.memoryContext === "contextual" && memory.memoryReasonLabel && (
-          <div style={{ marginBottom: 8 }}>
+      )}
+      <div style={{ padding: isFeature ? "24px 26px 26px" : "18px 20px 20px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+          <span style={{ fontSize: 11, opacity: 0.4 }}>{kindIcon[memory.kind]}</span>
+          {memory.memoryContext === "contextual" && memory.memoryReasonLabel && (
             <span style={pillStyle}>{memory.memoryReasonLabel}</span>
+          )}
+          {memory.featuredOnPersonPage && memory.memoryContext !== "contextual" && (
+            <span style={pillStyle}>Featured</span>
+          )}
+          {isVideo && (
+            <span style={pillStyle}>Video</span>
+          )}
+          {memory.linkedMediaProvider === "google_drive" && (
+            <span style={pillStyle}>Linked from Drive</span>
+          )}
+        </div>
+        <div style={{ marginBottom: previewText ? 12 : 16 }}>
+          <h3
+            style={{
+              fontFamily: "var(--font-display)",
+              fontSize: isFeature ? 34 : 24,
+              color: "var(--ink)",
+              margin: "0 0 10px",
+              fontWeight: 400,
+              lineHeight: 1.15,
+              maxWidth: isFeature ? "18ch" : "none",
+            }}
+          >
+            {memory.title}
+          </h3>
+          {(memory.dateOfEventText || memory.place?.label) && (
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 10,
+                fontFamily: "var(--font-ui)",
+                fontSize: 12,
+                color: "var(--ink-faded)",
+              }}
+            >
+              {memory.dateOfEventText && <span>{memory.dateOfEventText}</span>}
+              {memory.place?.label && <span>{memory.place.label}</span>}
+            </div>
+          )}
+        </div>
+        {previewText && (
+          <p
+            style={{
+              fontFamily: "var(--font-body)",
+              fontSize: isFeature ? 19 : 16,
+              lineHeight: isFeature ? 1.85 : 1.75,
+              color: memory.kind === "voice" ? "var(--ink-faded)" : "var(--ink-soft)",
+              margin: 0,
+              display: "-webkit-box",
+              WebkitLineClamp: isFeature ? 5 : 3,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+              maxWidth: isFeature ? "54ch" : "none",
+            }}
+          >
+            {previewText}
+          </p>
+        )}
+        <div
+          style={{
+            marginTop: 18,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <div
+            style={{
+              fontFamily: "var(--font-ui)",
+              fontSize: 12,
+              color: "var(--moss)",
+            }}
+          >
+            Open memory →
           </div>
-        )}
-        {memory.dateOfEventText && (
-          <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", margin: "0 0 8px" }}>{memory.dateOfEventText}</p>
-        )}
-        {memory.body && memory.kind !== "photo" && (
-          <p style={{ fontFamily: "var(--font-body)", fontSize: 15, lineHeight: 1.7, color: "var(--ink-soft)", margin: 0, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-            {memory.body}
-          </p>
-        )}
-        {memory.kind === "voice" && (
-          <p style={{ fontFamily: "var(--font-body)", fontSize: 15, lineHeight: 1.7, color: "var(--ink-faded)", margin: 0, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-            {getVoiceTranscriptLabel(memory)}
-          </p>
-        )}
         {extraControls && (
           <div
-            style={{ marginTop: 12 }}
+            style={{ display: "flex", alignItems: "center", gap: 8 }}
             onClick={(event) => event.stopPropagation()}
           >
             {extraControls}
           </div>
         )}
+        </div>
       </div>
     </article>
   );

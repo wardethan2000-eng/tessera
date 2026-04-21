@@ -32,14 +32,49 @@ export async function exportPlugin(app: FastifyInstance): Promise<void> {
     if (!membership) return reply.status(403).send({ error: "Not a member of this tree" });
 
     // Fetch all tree data in parallel
-    const [tree, people, memories, relationships] = await Promise.all([
+    const [tree, people, memories, relationships, personCuration] = await Promise.all([
       db.query.trees.findFirst({ where: (t, { eq }) => eq(t.id, treeId) }),
       getTreeScopedPeople(treeId),
       getTreeMemories(treeId, { viewerUserId: session.user.id }),
       getTreeRelationships(treeId),
+      db.query.personMemoryCuration.findMany({
+        where: (curation, { eq }) => eq(curation.treeId, treeId),
+      }),
     ]);
 
     if (!tree) return reply.status(404).send({ error: "Tree not found" });
+
+    const memoryPerspectives =
+      memories.length > 0
+        ? await db.query.memoryPerspectives.findMany({
+            where: (perspective, { inArray }) =>
+              inArray(
+                perspective.memoryId,
+                memories.map((memory) => memory.id),
+              ),
+            with: {
+              contributor: {
+                columns: {
+                  id: true,
+                  name: true,
+                  email: true,
+                },
+              },
+              contributorPerson: {
+                columns: {
+                  id: true,
+                  displayName: true,
+                },
+              },
+            },
+          })
+        : [];
+    const perspectivesByMemoryId = new Map<string, typeof memoryPerspectives>();
+    for (const perspective of memoryPerspectives) {
+      const current = perspectivesByMemoryId.get(perspective.memoryId) ?? [];
+      current.push(perspective);
+      perspectivesByMemoryId.set(perspective.memoryId, current);
+    }
 
     // Build the export data structure
     const exportData = {
@@ -61,12 +96,31 @@ export async function exportPlugin(app: FastifyInstance): Promise<void> {
         kind: m.kind,
         dateOfEventText: m.dateOfEventText,
         mediaKey: m.media?.objectKey ?? null,
+        mediaKeys:
+          m.mediaItems?.flatMap((item) => (item.media?.objectKey ? [item.media.objectKey] : [])) ?? [],
+        perspectives:
+          perspectivesByMemoryId.get(m.id)?.map((perspective) => ({
+            id: perspective.id,
+            body: perspective.body,
+            createdAt: perspective.createdAt.toISOString(),
+            contributorName:
+              perspective.contributorPerson?.displayName ??
+              perspective.contributor?.name ??
+              perspective.contributor?.email ??
+              null,
+          })) ?? [],
       })),
       relationships: relationships.map((r) => ({
         id: r.id,
         fromPersonId: r.fromPersonId,
         toPersonId: r.toPersonId,
         type: r.type,
+      })),
+      personCuration: personCuration.map((item) => ({
+        personId: item.personId,
+        memoryId: item.memoryId,
+        isFeatured: item.isFeatured,
+        sortOrder: item.sortOrder,
       })),
     };
 
@@ -80,6 +134,11 @@ export async function exportPlugin(app: FastifyInstance): Promise<void> {
     for (const memory of memories) {
       if (memory.media?.objectKey) {
         mediaKeys.add(memory.media.objectKey);
+      }
+      for (const item of memory.mediaItems ?? []) {
+        if (item.media?.objectKey) {
+          mediaKeys.add(item.media.objectKey);
+        }
       }
     }
 
@@ -140,11 +199,24 @@ function buildOfflineViewer(data: {
     dateOfEventText: string | null;
     body: string | null;
     mediaKey: string | null;
+    mediaKeys: string[];
+    perspectives: Array<{
+      id: string;
+      body: string;
+      createdAt: string;
+      contributorName: string | null;
+    }>;
   }>;
   relationships: Array<{
     fromPersonId: string;
     toPersonId: string;
     type: string;
+  }>;
+  personCuration: Array<{
+    personId: string;
+    memoryId: string;
+    isFeatured: boolean;
+    sortOrder: number;
   }>;
   exportedAt: string;
 }): string {

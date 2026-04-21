@@ -11,6 +11,10 @@ export function isCanonicalPersonId(personId: string): boolean {
   return UUID_PATTERN.test(personId);
 }
 
+export function isCanonicalMemoryId(memoryId: string): boolean {
+  return UUID_PATTERN.test(memoryId);
+}
+
 export async function resolveCanonicalTreeId(
   apiBase: string,
   routeTreeId: string,

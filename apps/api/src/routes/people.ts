@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import * as schema from "@familytree/database";
 import { getIdentityStatusForUser } from "../lib/account-identity-service.js";
 import {
@@ -100,6 +100,17 @@ const UpdatePersonMemorySuppressionBody = z.object({
   suppressed: z.boolean(),
 });
 
+const UpdatePersonMemoryCurationBody = z.object({
+  items: z
+    .array(
+      z.object({
+        memoryId: z.string().uuid(),
+        isFeatured: z.boolean().optional(),
+      }),
+    )
+    .max(200),
+});
+
 async function verifyMembership(treeId: string, userId: string) {
   return db.query.treeMemberships.findFirst({
     where: (t, { and, eq }) =>
@@ -179,6 +190,12 @@ function serializeMemoryForPersonSurface<
 >(
   memory: TMemory,
   personId: string,
+  curation?:
+    | {
+        isFeatured: boolean;
+        sortOrder: number;
+      }
+    | null,
 ) {
   const isDirectSubject = memory.personTags.some((tag) => tag.personId === personId);
 
@@ -191,7 +208,34 @@ function serializeMemoryForPersonSurface<
     memoryReasonLabel: isDirectSubject
       ? "Tagged directly"
       : describeReachRule(memory.reachRules[0]),
+    featuredOnPersonPage: curation?.isFeatured ?? false,
+    curatedSortOrder: curation?.sortOrder ?? null,
   };
+}
+
+function sortPersonSurfaceMemories<
+  TMemory extends {
+    id: string;
+    featuredOnPersonPage?: boolean;
+    curatedSortOrder?: number | null;
+    createdAt: string | Date;
+    memoryContext?: string;
+  },
+>(memories: TMemory[]) {
+  return [...memories].sort((left, right) => {
+    if ((left.featuredOnPersonPage ?? false) !== (right.featuredOnPersonPage ?? false)) {
+      return left.featuredOnPersonPage ? -1 : 1;
+    }
+    const leftHasOrder = typeof left.curatedSortOrder === "number";
+    const rightHasOrder = typeof right.curatedSortOrder === "number";
+    if (leftHasOrder && rightHasOrder && left.curatedSortOrder !== right.curatedSortOrder) {
+      return (left.curatedSortOrder ?? 0) - (right.curatedSortOrder ?? 0);
+    }
+    if (leftHasOrder !== rightHasOrder) {
+      return leftHasOrder ? -1 : 1;
+    }
+    return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
+  });
 }
 
 function serializeTreeVisibility(
@@ -443,22 +487,47 @@ export async function peoplePlugin(app: FastifyInstance): Promise<void> {
     const visibilityById = new Map(
       visibilityRows.map((visibility) => [visibility.memoryId, visibility]),
     );
+    const curationRows =
+      allMemories.length > 0
+        ? await db.query.personMemoryCuration.findMany({
+            where: (curation, { and, eq, inArray }) =>
+              and(
+                eq(curation.treeId, treeId),
+                eq(curation.personId, personId),
+                inArray(
+                  curation.memoryId,
+                  allMemories.map((memory) => memory.id),
+                ),
+              ),
+          })
+        : [];
+    const curationByMemoryId = new Map(
+      curationRows.map((curation) => [curation.memoryId, curation]),
+    );
 
-    const serializedMemories = memories.map((memory) =>
+    const serializedMemories = sortPersonSurfaceMemories(memories.map((memory) =>
       ({
-        ...serializeMemoryForPersonSurface(memory, personId),
+        ...serializeMemoryForPersonSurface(
+          memory,
+          personId,
+          curationByMemoryId.get(memory.id) ?? null,
+        ),
         ...serializeTreeVisibility(visibilityById.get(memory.id)),
       }),
-    );
+    ));
     const visibleMemoryIds = new Set(serializedMemories.map((memory) => memory.id));
     const suppressedContextualMemories = personPermission.allowed
-      ? allMemories
+      ? sortPersonSurfaceMemories(allMemories
           .filter((memory) => !visibleMemoryIds.has(memory.id))
           .map((memory) => ({
-            ...serializeMemoryForPersonSurface(memory, personId),
+            ...serializeMemoryForPersonSurface(
+              memory,
+              personId,
+              curationByMemoryId.get(memory.id) ?? null,
+            ),
             ...serializeTreeVisibility(visibilityById.get(memory.id)),
           }))
-          .filter((memory) => memory.memoryContext === "contextual")
+          .filter((memory) => memory.memoryContext === "contextual"))
       : [];
 
     return reply.send({
@@ -477,6 +546,90 @@ export async function peoplePlugin(app: FastifyInstance): Promise<void> {
       relationships,
     });
   });
+
+  app.patch(
+    "/api/trees/:treeId/people/:personId/memory-curation",
+    async (request, reply) => {
+      const session = await getSession(request.headers);
+      if (!session) return reply.status(401).send({ error: "Unauthorized" });
+
+      const { treeId, personId } = request.params as {
+        treeId: string;
+        personId: string;
+      };
+
+      const membership = await verifyMembership(treeId, session.user.id);
+      if (!membership) {
+        return reply.status(403).send({ error: "Not a member of this tree" });
+      }
+
+      const parsed = UpdatePersonMemoryCurationBody.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid request body" });
+      }
+
+      const [personInScope, permission, personMemories] = await Promise.all([
+        isPersonInTreeScope(treeId, personId),
+        canEditPerson(session.user.id, personId),
+        getTreeMemories(treeId, {
+          personId,
+          viewerUserId: session.user.id,
+          includeSuppressed: true,
+        }),
+      ]);
+
+      if (!personInScope) {
+        return reply.status(404).send({ error: "Person not found" });
+      }
+      if (!permission.allowed) {
+        return reply.status(403).send({ error: permission.reason });
+      }
+
+      const directMemoryIds = personMemories
+        .filter((memory) => memory.personTags.some((tag) => tag.personId === personId))
+        .map((memory) => memory.id);
+      const directMemoryIdSet = new Set(directMemoryIds);
+
+      const requestedIds = parsed.data.items.map((item) => item.memoryId);
+      if (new Set(requestedIds).size !== requestedIds.length) {
+        return reply.status(400).send({ error: "Duplicate memory IDs are not allowed" });
+      }
+      if (requestedIds.some((memoryId) => !directMemoryIdSet.has(memoryId))) {
+        return reply.status(400).send({
+          error: "Only direct memories on this person page can be curated here",
+        });
+      }
+
+      await db.transaction(async (tx) => {
+        if (directMemoryIds.length > 0) {
+          await tx
+            .delete(schema.personMemoryCuration)
+            .where(
+              and(
+                eq(schema.personMemoryCuration.treeId, treeId),
+                eq(schema.personMemoryCuration.personId, personId),
+                inArray(schema.personMemoryCuration.memoryId, directMemoryIds),
+              ),
+            );
+        }
+
+        if (parsed.data.items.length > 0) {
+          await tx.insert(schema.personMemoryCuration).values(
+            parsed.data.items.map((item, index) => ({
+              treeId,
+              personId,
+              memoryId: item.memoryId,
+              isFeatured: item.isFeatured ?? false,
+              sortOrder: index,
+              updatedByUserId: session.user.id,
+            })),
+          );
+        }
+      });
+
+      return reply.send({ ok: true });
+    },
+  );
 
   app.patch(
     "/api/trees/:treeId/people/:personId/memories/:memoryId/suppression",

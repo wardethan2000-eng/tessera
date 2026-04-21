@@ -40,6 +40,7 @@ const ReplyBody = z.object({
   title: z.string().min(1).max(200),
   body: z.string().optional(),
   mediaId: z.string().uuid().optional(),
+  mediaIds: z.array(z.string().uuid()).max(24).optional(),
   linkedMedia: z
     .object({
       provider: z.literal("google_drive"),
@@ -346,6 +347,7 @@ export async function promptsPlugin(app: FastifyInstance): Promise<void> {
       title,
       body,
       mediaId,
+      mediaIds,
       linkedMedia,
       dateOfEventText,
       placeId,
@@ -354,29 +356,40 @@ export async function promptsPlugin(app: FastifyInstance): Promise<void> {
     if (kind === "story" && !body) {
       return reply.status(400).send({ error: "Story memories require a body" });
     }
-    if (mediaId && linkedMedia) {
+    if ((mediaId || mediaIds?.length) && linkedMedia) {
       return reply.status(400).send({
         error: "Use either an uploaded file or linked media, not both.",
+      });
+    }
+    if (mediaId && mediaIds?.length) {
+      return reply.status(400).send({
+        error: "Use mediaIds for multiple uploads or mediaId for a single upload, not both.",
       });
     }
     if (linkedMedia && kind === "voice") {
       return reply.status(400).send({ error: "Voice memories do not support linked media yet." });
     }
-    if (kind === "photo" && !mediaId && !linkedMedia) {
-      return reply.status(400).send({ error: "Photo memories require a mediaId or linked media" });
+    if (kind === "photo" && !mediaId && !mediaIds?.length && !linkedMedia) {
+      return reply.status(400).send({ error: "Photo memories require uploaded media or linked media" });
     }
-    if (kind === "voice" && !mediaId) {
-      return reply.status(400).send({ error: "voice memories require a mediaId" });
+    if (kind === "voice" && !mediaId && !mediaIds?.length) {
+      return reply.status(400).send({ error: "voice memories require uploaded media" });
     }
-    if (kind === "document" && !mediaId && !linkedMedia) {
-      return reply.status(400).send({ error: "Document memories require a mediaId or linked media" });
+    if (kind === "voice" && (mediaIds?.length ?? 0) > 1) {
+      return reply.status(400).send({ error: "voice memories support only one media item" });
     }
-    if (mediaId) {
-      const mediaRecord = await db.query.media.findFirst({
-        where: (m) => and(eq(m.id, mediaId), eq(m.treeId, treeId)),
-      });
-      if (!mediaRecord) {
-        return reply.status(400).send({ error: "Media not found in this tree" });
+    if (kind === "document" && !mediaId && !mediaIds?.length && !linkedMedia) {
+      return reply.status(400).send({ error: "Document memories require uploaded media or linked media" });
+    }
+    const resolvedMediaIds = mediaIds?.length ? mediaIds : mediaId ? [mediaId] : [];
+    if (resolvedMediaIds.length > 0) {
+      for (const resolvedMediaId of resolvedMediaIds) {
+        const mediaRecord = await db.query.media.findFirst({
+          where: (m) => and(eq(m.id, resolvedMediaId), eq(m.treeId, treeId)),
+        });
+        if (!mediaRecord) {
+          return reply.status(400).send({ error: "Media not found in this tree" });
+        }
       }
     }
 
@@ -400,7 +413,8 @@ export async function promptsPlugin(app: FastifyInstance): Promise<void> {
         kind,
         title,
         body,
-        mediaId,
+        mediaId: resolvedMediaIds[0] ?? null,
+        mediaIds: resolvedMediaIds,
         linkedMedia: normalizedLinkedMedia,
         promptId,
         dateOfEventText,
@@ -421,19 +435,30 @@ export async function promptsPlugin(app: FastifyInstance): Promise<void> {
 
     const full = await db.query.memories.findFirst({
       where: (m, { eq }) => eq(m.id, memory.id),
-      with: { media: true },
+      with: {
+        media: true,
+        mediaItems: {
+          with: {
+            media: true,
+          },
+          orderBy: (memoryMediaItem, { asc }) => [asc(memoryMediaItem.sortOrder)],
+        },
+      },
     });
 
+    const primaryMediaItem = full?.mediaItems?.[0];
     return reply.status(201).send({
       ...full,
-      mediaUrl: full?.media
-        ? mediaUrl(full.media.objectKey)
-        : full?.linkedMediaPreviewUrl ?? null,
-      mimeType: full?.media?.mimeType ?? null,
-      linkedMediaProvider: full?.linkedMediaProvider ?? null,
-      linkedMediaOpenUrl: full?.linkedMediaOpenUrl ?? null,
-      linkedMediaSourceUrl: full?.linkedMediaSourceUrl ?? null,
-      linkedMediaLabel: full?.linkedMediaLabel ?? null,
+      mediaUrl: primaryMediaItem?.media
+        ? mediaUrl(primaryMediaItem.media.objectKey)
+        : full?.media
+          ? mediaUrl(full.media.objectKey)
+          : full?.linkedMediaPreviewUrl ?? null,
+      mimeType: primaryMediaItem?.media?.mimeType ?? full?.media?.mimeType ?? null,
+      linkedMediaProvider: primaryMediaItem?.linkedMediaProvider ?? full?.linkedMediaProvider ?? null,
+      linkedMediaOpenUrl: primaryMediaItem?.linkedMediaOpenUrl ?? full?.linkedMediaOpenUrl ?? null,
+      linkedMediaSourceUrl: primaryMediaItem?.linkedMediaSourceUrl ?? full?.linkedMediaSourceUrl ?? null,
+      linkedMediaLabel: primaryMediaItem?.linkedMediaLabel ?? full?.linkedMediaLabel ?? null,
     });
   });
 
@@ -618,20 +643,36 @@ export async function promptsPlugin(app: FastifyInstance): Promise<void> {
     const parsed = PublicReplyBody.safeParse(request.body);
     if (!parsed.success) return reply.status(400).send({ error: "Invalid request body" });
 
-    const { kind, title, body, mediaId, dateOfEventText, placeId, placeLabelOverride, submitterName } = parsed.data;
+    const {
+      kind,
+      title,
+      body,
+      mediaId,
+      mediaIds,
+      dateOfEventText,
+      placeId,
+      placeLabelOverride,
+      submitterName,
+    } = parsed.data;
     if (kind === "story" && !body) {
       return reply.status(400).send({ error: "Story memories require a body" });
     }
-    if ((kind === "photo" || kind === "voice" || kind === "document") && !mediaId) {
-      return reply.status(400).send({ error: `${kind} memories require a mediaId` });
+    if ((kind === "photo" || kind === "voice" || kind === "document") && !mediaId && !mediaIds?.length) {
+      return reply.status(400).send({ error: `${kind} memories require uploaded media` });
+    }
+    if (kind === "voice" && (mediaIds?.length ?? 0) > 1) {
+      return reply.status(400).send({ error: "voice memories support only one media item" });
     }
 
-    if (mediaId) {
-      const mediaRecord = await db.query.media.findFirst({
-        where: (m) => and(eq(m.id, mediaId), eq(m.treeId, resolved.link.treeId)),
-      });
-      if (!mediaRecord) {
-        return reply.status(400).send({ error: "Media not found in this tree" });
+    const resolvedMediaIds = mediaIds?.length ? mediaIds : mediaId ? [mediaId] : [];
+    if (resolvedMediaIds.length > 0) {
+      for (const resolvedMediaId of resolvedMediaIds) {
+        const mediaRecord = await db.query.media.findFirst({
+          where: (m) => and(eq(m.id, resolvedMediaId), eq(m.treeId, resolved.link.treeId)),
+        });
+        if (!mediaRecord) {
+          return reply.status(400).send({ error: "Media not found in this tree" });
+        }
       }
     }
     if (placeId) {
@@ -691,7 +732,8 @@ export async function promptsPlugin(app: FastifyInstance): Promise<void> {
           kind,
           title,
           body,
-          mediaId,
+          mediaId: resolvedMediaIds[0] ?? null,
+          mediaIds: resolvedMediaIds,
           promptId: resolved.link.promptId,
           dateOfEventText,
           placeId,
@@ -730,14 +772,27 @@ export async function promptsPlugin(app: FastifyInstance): Promise<void> {
     const full = createdMemoryId
       ? await db.query.memories.findFirst({
           where: (m, { eq }) => eq(m.id, createdMemoryId),
-          with: { media: true },
+          with: {
+            media: true,
+            mediaItems: {
+              with: {
+                media: true,
+              },
+              orderBy: (memoryMediaItem, { asc }) => [asc(memoryMediaItem.sortOrder)],
+            },
+          },
         })
       : null;
 
+    const primaryMediaItem = full?.mediaItems?.[0];
     return reply.status(201).send({
       ...full,
-      mediaUrl: full?.media ? mediaUrl(full.media.objectKey) : null,
-      mimeType: full?.media?.mimeType ?? null,
+      mediaUrl: primaryMediaItem?.media
+        ? mediaUrl(primaryMediaItem.media.objectKey)
+        : full?.media
+          ? mediaUrl(full.media.objectKey)
+          : null,
+      mimeType: primaryMediaItem?.media?.mimeType ?? full?.media?.mimeType ?? null,
     });
   });
 

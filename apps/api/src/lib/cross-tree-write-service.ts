@@ -28,6 +28,7 @@ type CreateTaggedMemoryInput = {
   title: string;
   body?: string | null;
   mediaId?: string | null;
+  mediaIds?: string[];
   linkedMedia?: {
     provider: "google_drive";
     providerItemId: string;
@@ -194,7 +195,7 @@ export async function createMemoryWithPrimaryTag(
       kind: input.kind,
       title: input.title,
       body: input.body ?? null,
-      mediaId: input.mediaId ?? null,
+      mediaId: input.mediaId ?? input.mediaIds?.[0] ?? null,
       linkedMediaProvider: input.linkedMedia?.provider ?? null,
       linkedMediaProviderItemId: input.linkedMedia?.providerItemId ?? null,
       linkedMediaSourceUrl: input.linkedMedia?.sourceUrl ?? null,
@@ -210,6 +211,28 @@ export async function createMemoryWithPrimaryTag(
 
   if (!memory) {
     throw new Error("Failed to create memory");
+  }
+
+  const uniqueMediaIds = [...new Set(input.mediaIds ?? (input.mediaId ? [input.mediaId] : []))];
+  if (uniqueMediaIds.length > 0) {
+    await tx.insert(schema.memoryMedia).values(
+      uniqueMediaIds.map((mediaId, index) => ({
+        memoryId: memory.id,
+        mediaId,
+        sortOrder: index,
+      })),
+    );
+  } else if (input.linkedMedia) {
+    await tx.insert(schema.memoryMedia).values({
+      memoryId: memory.id,
+      linkedMediaProvider: input.linkedMedia.provider,
+      linkedMediaProviderItemId: input.linkedMedia.providerItemId,
+      linkedMediaSourceUrl: input.linkedMedia.sourceUrl,
+      linkedMediaOpenUrl: input.linkedMedia.openUrl,
+      linkedMediaPreviewUrl: input.linkedMedia.previewUrl,
+      linkedMediaLabel: input.linkedMedia.label ?? null,
+      sortOrder: 0,
+    });
   }
 
   const taggedPersonIds = [

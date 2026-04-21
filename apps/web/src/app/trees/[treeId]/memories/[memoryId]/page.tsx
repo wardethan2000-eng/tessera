@@ -1,0 +1,1717 @@
+"use client";
+
+import { use, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { useSession } from "@/lib/auth-client";
+import {
+  MemoryLightbox,
+  type LightboxMemory,
+} from "@/components/tree/MemoryLightbox";
+import {
+  MemoryVisibilityControl,
+  describeTreeVisibility,
+  type TreeVisibilityLevel,
+} from "@/components/tree/MemoryVisibilityControl";
+import { getProxiedMediaUrl } from "@/lib/media-url";
+import {
+  isCanonicalMemoryId,
+  isCanonicalTreeId,
+  resolveCanonicalTreeId,
+} from "@/lib/tree-route";
+import { usePendingVoiceTranscriptionRefresh } from "@/lib/usePendingVoiceTranscriptionRefresh";
+
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+
+type MemoryKind = "story" | "photo" | "voice" | "document" | "other";
+
+type ResolvedPlace = {
+  id: string;
+  label: string;
+  latitude: number;
+  longitude: number;
+  countryCode?: string | null;
+  adminRegion?: string | null;
+  locality?: string | null;
+};
+
+type MemoryMediaItem = {
+  id: string;
+  sortOrder: number;
+  mediaId: string | null;
+  mediaUrl: string | null;
+  mimeType?: string | null;
+  linkedMediaProvider?: "google_drive" | null;
+  linkedMediaOpenUrl?: string | null;
+  linkedMediaSourceUrl?: string | null;
+  linkedMediaLabel?: string | null;
+};
+
+type MemoryPerspective = {
+  id: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+  contributor: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
+  contributorPerson: {
+    id: string;
+    displayName: string;
+    portraitUrl: string | null;
+  } | null;
+};
+
+type MemoryDetail = {
+  id: string;
+  kind: MemoryKind;
+  title: string;
+  body: string | null;
+  transcriptText?: string | null;
+  transcriptLanguage?: string | null;
+  transcriptStatus?: "none" | "queued" | "processing" | "completed" | "failed";
+  transcriptError?: string | null;
+  dateOfEventText: string | null;
+  createdAt: string;
+  mediaUrl: string | null;
+  mimeType?: string | null;
+  linkedMediaProvider?: "google_drive" | null;
+  linkedMediaOpenUrl?: string | null;
+  linkedMediaSourceUrl?: string | null;
+  linkedMediaLabel?: string | null;
+  mediaItems: MemoryMediaItem[];
+  place?: ResolvedPlace | null;
+  primaryPerson: {
+    id: string;
+    displayName: string;
+    portraitUrl: string | null;
+  } | null;
+  contributor: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
+  prompt: {
+    id: string;
+    questionText: string;
+    status: "pending" | "answered" | "dismissed";
+    fromUserName: string | null;
+    toPerson: {
+      id: string;
+      displayName: string;
+    } | null;
+  } | null;
+  perspectives: MemoryPerspective[];
+  perspectiveSummary?: {
+    totalCount: number;
+  };
+  directSubjects: Array<{
+    id: string;
+    displayName: string;
+  }>;
+  reachRules: Array<{
+    kind: "immediate_family" | "ancestors" | "descendants" | "whole_tree";
+    seedPersonId: string | null;
+    seedPersonName: string | null;
+    scopeTreeId: string | null;
+  }>;
+  treeVisibilityLevel?: TreeVisibilityLevel;
+  treeVisibilityIsOverride?: boolean;
+  treeVisibilityUnlockDate?: string | null;
+  relatedMemories: Array<{
+    id: string;
+    kind: MemoryKind;
+    title: string;
+    body: string | null;
+    transcriptText?: string | null;
+    transcriptStatus?: "none" | "queued" | "processing" | "completed" | "failed";
+    transcriptError?: string | null;
+    dateOfEventText: string | null;
+    mediaUrl: string | null;
+    mimeType?: string | null;
+    linkedMediaProvider?: "google_drive" | null;
+    linkedMediaOpenUrl?: string | null;
+    linkedMediaSourceUrl?: string | null;
+    linkedMediaLabel?: string | null;
+    primaryPerson: {
+      id: string;
+      displayName: string;
+      portraitUrl: string | null;
+    } | null;
+  }>;
+  relatedMemorySummary?: {
+    directSubjectCount: number;
+    hasPromptThread: boolean;
+  };
+  viewerCanAddPerspective: boolean;
+  viewerCanManageVisibility: boolean;
+};
+
+function getKindLabel(kind: MemoryKind): string {
+  switch (kind) {
+    case "story":
+      return "Story";
+    case "photo":
+      return "Photo";
+    case "voice":
+      return "Voice";
+    case "document":
+      return "Document";
+    default:
+      return "Memory";
+  }
+}
+
+function getReachLabel(rule: MemoryDetail["reachRules"][number]): string {
+  switch (rule.kind) {
+    case "immediate_family":
+      return rule.seedPersonName
+        ? `Shared through ${rule.seedPersonName}'s immediate family`
+        : "Shared through immediate family";
+    case "ancestors":
+      return rule.seedPersonName
+        ? `Shared through ${rule.seedPersonName}'s ancestor line`
+        : "Shared through ancestors";
+    case "descendants":
+      return rule.seedPersonName
+        ? `Shared through ${rule.seedPersonName}'s descendant line`
+        : "Shared through descendants";
+    case "whole_tree":
+      return "Shared with this whole tree";
+    default:
+      return "Shared through family context";
+  }
+}
+
+function getTranscriptLabel(memory: MemoryDetail): string | null {
+  if (memory.kind !== "voice") return null;
+  if (memory.transcriptStatus === "completed" && memory.transcriptText) {
+    return memory.transcriptText;
+  }
+  if (memory.transcriptStatus === "completed") {
+    return "Transcript unavailable.";
+  }
+  if (memory.transcriptStatus === "failed") {
+    return memory.transcriptError ?? "Transcription failed.";
+  }
+  if (memory.transcriptStatus === "queued" || memory.transcriptStatus === "processing") {
+    return "Transcribing…";
+  }
+  return null;
+}
+
+function getRelatedMemoryPreviewText(memory: MemoryDetail["relatedMemories"][number]): string | null {
+  const body = memory.body?.trim();
+  if (body) {
+    return body;
+  }
+
+  const transcript = memory.transcriptText?.trim();
+  if (transcript) {
+    return transcript;
+  }
+
+  const linkedLabel = memory.linkedMediaLabel?.trim();
+  if (linkedLabel) {
+    return linkedLabel;
+  }
+
+  return null;
+}
+
+function toLightboxMemory(memory: MemoryDetail, mediaItem?: MemoryMediaItem | null): LightboxMemory {
+  const selectedMedia = mediaItem ?? memory.mediaItems[0] ?? null;
+  return {
+    id: memory.id,
+    kind: memory.kind,
+    title: memory.title,
+    body: memory.body,
+    transcriptText: memory.transcriptText,
+    transcriptLanguage: memory.transcriptLanguage,
+    transcriptStatus: memory.transcriptStatus,
+    transcriptError: memory.transcriptError,
+    dateOfEventText: memory.dateOfEventText,
+    mediaUrl: selectedMedia?.mediaUrl ?? memory.mediaUrl,
+    mimeType: selectedMedia?.mimeType ?? memory.mimeType,
+    linkedMediaProvider: selectedMedia?.linkedMediaProvider ?? memory.linkedMediaProvider,
+    linkedMediaOpenUrl: selectedMedia?.linkedMediaOpenUrl ?? memory.linkedMediaOpenUrl,
+    linkedMediaSourceUrl: selectedMedia?.linkedMediaSourceUrl ?? memory.linkedMediaSourceUrl,
+    linkedMediaLabel: selectedMedia?.linkedMediaLabel ?? memory.linkedMediaLabel,
+    treeVisibilityLevel: memory.treeVisibilityLevel,
+    treeVisibilityIsOverride: memory.treeVisibilityIsOverride,
+  };
+}
+
+function MetadataPill({ children }: { children: ReactNode }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        borderRadius: 999,
+        border: "1px solid var(--rule)",
+        background: "var(--paper)",
+        color: "var(--ink-faded)",
+        fontFamily: "var(--font-ui)",
+        fontSize: 11,
+        letterSpacing: "0.06em",
+        padding: "6px 10px",
+        textTransform: "uppercase",
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function RelatedMemoryCard({
+  treeId,
+  memory,
+}: {
+  treeId: string;
+  memory: MemoryDetail["relatedMemories"][number];
+}) {
+  const previewText = getRelatedMemoryPreviewText(memory);
+  const resolvedMediaUrl = getProxiedMediaUrl(memory.mediaUrl);
+  const mime = memory.mimeType?.toLowerCase() ?? "";
+  const isVideo = mime.startsWith("video/");
+
+  return (
+    <a
+      href={`/trees/${treeId}/memories/${memory.id}`}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        borderRadius: 18,
+        overflow: "hidden",
+        border: "1px solid var(--rule)",
+        background: "var(--paper)",
+        textDecoration: "none",
+      }}
+    >
+      {resolvedMediaUrl && !isVideo && (
+        <img
+          src={resolvedMediaUrl}
+          alt={memory.title}
+          style={{
+            width: "100%",
+            height: 180,
+            objectFit: "cover",
+            display: "block",
+          }}
+        />
+      )}
+      {resolvedMediaUrl && isVideo && (
+        <video
+          src={resolvedMediaUrl}
+          style={{
+            width: "100%",
+            height: 180,
+            objectFit: "cover",
+            display: "block",
+            background: "var(--ink)",
+          }}
+          muted
+          playsInline
+          preload="metadata"
+        />
+      )}
+      <div style={{ padding: "18px 20px 20px" }}>
+        <h3
+          style={{
+            margin: "0 0 8px",
+            fontFamily: "var(--font-display)",
+            fontSize: 24,
+            fontWeight: 400,
+            lineHeight: 1.15,
+            color: "var(--ink)",
+          }}
+        >
+          {memory.title}
+        </h3>
+        {(memory.dateOfEventText || memory.primaryPerson?.displayName) && (
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 10,
+              marginBottom: previewText ? 10 : 0,
+              fontFamily: "var(--font-ui)",
+              fontSize: 12,
+              color: "var(--ink-faded)",
+            }}
+          >
+            {memory.primaryPerson?.displayName && <span>{memory.primaryPerson.displayName}</span>}
+            {memory.dateOfEventText && <span>{memory.dateOfEventText}</span>}
+          </div>
+        )}
+        {previewText && (
+          <p
+            style={{
+              margin: 0,
+              fontFamily: "var(--font-body)",
+              fontSize: 16,
+              lineHeight: 1.75,
+              color: "var(--ink-soft)",
+              display: "-webkit-box",
+              WebkitLineClamp: 3,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+            }}
+          >
+            {previewText}
+          </p>
+        )}
+      </div>
+    </a>
+  );
+}
+
+export default function MemoryPage({
+  params,
+}: {
+  params: Promise<{ treeId: string; memoryId: string }>;
+}) {
+  const { treeId, memoryId } = use(params);
+  const router = useRouter();
+  const { data: session, isPending } = useSession();
+  const [memory, setMemory] = useState<MemoryDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [selectedMediaIndex, setSelectedMediaIndex] = useState(0);
+  const [perspectiveDraft, setPerspectiveDraft] = useState("");
+  const [perspectiveError, setPerspectiveError] = useState<string | null>(null);
+  const [submittingPerspective, setSubmittingPerspective] = useState(false);
+  const [updatingVisibilityId, setUpdatingVisibilityId] = useState<string | null>(null);
+  const normalizingTreeId = !isCanonicalTreeId(treeId);
+
+  useEffect(() => {
+    if (!isPending && !session) router.replace("/auth/signin");
+  }, [isPending, router, session]);
+
+  useEffect(() => {
+    if (!session || !normalizingTreeId) return;
+
+    let cancelled = false;
+    void (async () => {
+      const resolvedTreeId = await resolveCanonicalTreeId(API, treeId);
+      if (cancelled) return;
+      if (resolvedTreeId && resolvedTreeId !== treeId) {
+        router.replace(`/trees/${resolvedTreeId}/memories/${memoryId}`);
+        return;
+      }
+      if (!resolvedTreeId) {
+        setLoadError("This tree link is invalid or no longer points to an available tree.");
+        setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [memoryId, normalizingTreeId, router, session, treeId]);
+
+  const loadMemory = useCallback(async () => {
+    if (!isCanonicalMemoryId(memoryId)) {
+      setLoadError("This memory link is invalid or no longer points to an available memory.");
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const response = await fetch(`${API}/api/trees/${treeId}/memories/${memoryId}`, {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        setLoadError("This memory could not be opened in the current tree.");
+        setMemory(null);
+        return;
+      }
+      setMemory((await response.json()) as MemoryDetail);
+    } catch (error) {
+      setLoadError(
+        error instanceof Error ? error.message : "Failed to load this memory.",
+      );
+      setMemory(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [memoryId, treeId]);
+
+  useEffect(() => {
+    if (session && isCanonicalTreeId(treeId)) {
+      void (async () => {
+        await loadMemory();
+      })();
+    }
+  }, [loadMemory, session, treeId]);
+
+  usePendingVoiceTranscriptionRefresh({
+    items: memory
+      ? [
+          {
+            id: memory.id,
+            kind: memory.kind,
+            transcriptStatus: memory.transcriptStatus,
+          },
+        ]
+      : [],
+    refresh: loadMemory,
+    enabled: Boolean(session && memory),
+  });
+
+  useEffect(() => {
+    setSelectedMediaIndex(0);
+    setPerspectiveDraft("");
+    setPerspectiveError(null);
+  }, [memory?.id]);
+
+  const setMemoryTreeVisibility = useCallback(
+    async (visibility: TreeVisibilityLevel | null) => {
+      if (!memory) return;
+
+      setUpdatingVisibilityId(memory.id);
+      const response = await fetch(`${API}/api/trees/${treeId}/memories/${memory.id}/visibility`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          visibilityOverride: visibility,
+        }),
+      });
+
+      if (response.ok) {
+        setMemory((current) =>
+          current
+            ? {
+                ...current,
+                treeVisibilityLevel: visibility ?? current.treeVisibilityLevel,
+                treeVisibilityIsOverride: visibility !== null,
+              }
+            : current,
+        );
+        await loadMemory();
+      }
+
+      setUpdatingVisibilityId(null);
+    },
+    [loadMemory, memory, treeId],
+  );
+
+  const lightboxMemories = useMemo(
+    () =>
+      memory
+        ? [toLightboxMemory(memory, memory.mediaItems[selectedMediaIndex] ?? memory.mediaItems[0] ?? null)]
+        : [],
+    [memory, selectedMediaIndex],
+  );
+
+  const handleAddPerspective = useCallback(async () => {
+    if (!memory || !memory.viewerCanAddPerspective) return;
+
+    const nextBody = perspectiveDraft.trim();
+    if (!nextBody) {
+      setPerspectiveError("Write a short reflection before adding it.");
+      return;
+    }
+
+    setSubmittingPerspective(true);
+    setPerspectiveError(null);
+    try {
+      const response = await fetch(`${API}/api/trees/${treeId}/memories/${memory.id}/perspectives`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          body: nextBody,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(data?.error ?? "Failed to add perspective.");
+      }
+
+      const createdPerspective = (await response.json()) as MemoryPerspective;
+      setMemory((current) =>
+        current
+          ? {
+              ...current,
+              perspectives: [...current.perspectives, createdPerspective],
+              perspectiveSummary: {
+                totalCount: (current.perspectiveSummary?.totalCount ?? current.perspectives.length) + 1,
+              },
+            }
+          : current,
+      );
+      setPerspectiveDraft("");
+    } catch (error) {
+      setPerspectiveError(
+        error instanceof Error ? error.message : "Failed to add perspective.",
+      );
+    } finally {
+      setSubmittingPerspective(false);
+    }
+  }, [memory, perspectiveDraft, treeId]);
+
+  if (isPending || loading || normalizingTreeId) {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          background: "var(--paper)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {[220, 320, 280].map((width, index) => (
+            <div
+              key={index}
+              style={{
+                width,
+                height: 12,
+                borderRadius: 4,
+                background: "var(--paper-deep)",
+                backgroundImage:
+                  "linear-gradient(90deg, var(--paper-deep) 25%, var(--rule) 50%, var(--paper-deep) 75%)",
+                backgroundSize: "400px 100%",
+                animation: "shimmer 1.5s infinite",
+              }}
+            />
+          ))}
+        </div>
+      </main>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          background: "var(--paper)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24,
+        }}
+      >
+        <div
+          style={{
+            maxWidth: 560,
+            width: "100%",
+            borderRadius: 16,
+            border: "1px solid var(--rule)",
+            background: "var(--paper)",
+            padding: 28,
+          }}
+        >
+          <h1
+            style={{
+              margin: "0 0 12px",
+              fontFamily: "var(--font-display)",
+              fontSize: 32,
+              fontWeight: 400,
+              color: "var(--ink)",
+            }}
+          >
+            This memory could not be opened.
+          </h1>
+          <p
+            style={{
+              margin: 0,
+              fontFamily: "var(--font-body)",
+              fontSize: 18,
+              lineHeight: 1.7,
+              color: "var(--ink-soft)",
+            }}
+          >
+            {loadError}
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!memory) return null;
+
+  const selectedMedia = memory.mediaItems[selectedMediaIndex] ?? memory.mediaItems[0] ?? null;
+  const resolvedMediaUrl = getProxiedMediaUrl(selectedMedia?.mediaUrl ?? memory.mediaUrl);
+  const mime = (selectedMedia?.mimeType ?? memory.mimeType ?? "").toLowerCase();
+  const isPhoto = memory.kind === "photo" || mime.startsWith("image/");
+  const isVideo = mime.startsWith("video/");
+  const isPdf = mime === "application/pdf";
+  const isVoice = memory.kind === "voice" && !isVideo;
+  const selectedLinkedMediaOpenUrl = selectedMedia?.linkedMediaOpenUrl ?? memory.linkedMediaOpenUrl;
+  const selectedLinkedMediaProvider = selectedMedia?.linkedMediaProvider ?? memory.linkedMediaProvider;
+  const hasFocusedViewer = Boolean(resolvedMediaUrl || selectedLinkedMediaOpenUrl);
+  const transcriptLabel = getTranscriptLabel(memory);
+  const perspectiveCount = memory.perspectiveSummary?.totalCount ?? memory.perspectives.length;
+  const visibleSubjects = memory.directSubjects.filter(
+    (subject) => subject.id !== memory.primaryPerson?.id,
+  );
+  const hasContextSection =
+    Boolean(memory.contributor) ||
+    Boolean(memory.prompt) ||
+    memory.relatedMemories.length > 0;
+
+  return (
+    <main style={{ minHeight: "100vh", background: "var(--paper)" }}>
+      <header
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 20,
+          backdropFilter: "blur(8px)",
+          background: "rgba(246,241,231,0.88)",
+          borderBottom: "1px solid var(--rule)",
+          padding: "16px 24px",
+          display: "flex",
+          alignItems: "center",
+          gap: 14,
+          flexWrap: "wrap",
+        }}
+      >
+        <a
+          href={`/trees/${treeId}`}
+          style={{
+            fontFamily: "var(--font-ui)",
+            fontSize: 14,
+            color: "var(--ink-faded)",
+            textDecoration: "none",
+          }}
+        >
+          ← Tree
+        </a>
+        {memory.primaryPerson && (
+          <>
+            <span style={{ color: "var(--rule)" }}>·</span>
+            <a
+              href={`/trees/${treeId}/people/${memory.primaryPerson.id}`}
+              style={{
+                fontFamily: "var(--font-ui)",
+                fontSize: 14,
+                color: "var(--ink-faded)",
+                textDecoration: "none",
+              }}
+            >
+              {memory.primaryPerson.displayName}
+            </a>
+          </>
+        )}
+        <span style={{ color: "var(--rule)" }}>·</span>
+        <span
+          style={{
+            fontFamily: "var(--font-display)",
+            fontSize: 18,
+            color: "var(--ink-soft)",
+          }}
+        >
+          {memory.title}
+        </span>
+      </header>
+
+      <div
+        style={{
+          maxWidth: 1180,
+          margin: "0 auto",
+          padding: "40px 24px 56px",
+          display: "grid",
+          gap: 28,
+        }}
+      >
+        <section
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1.7fr) minmax(320px, 0.9fr)",
+            gap: 28,
+            alignItems: "start",
+          }}
+        >
+          <div
+            style={{
+              borderRadius: 22,
+              overflow: "hidden",
+              border: "1px solid var(--rule)",
+              background: "var(--paper-deep)",
+            }}
+          >
+            {isPhoto && resolvedMediaUrl && (
+              <img
+                src={resolvedMediaUrl}
+                alt={memory.title}
+                style={{
+                  width: "100%",
+                  display: "block",
+                  maxHeight: 620,
+                  objectFit: "cover",
+                  cursor: hasFocusedViewer ? "zoom-in" : "default",
+                }}
+                onClick={() => {
+                  if (hasFocusedViewer) setLightboxOpen(true);
+                }}
+              />
+            )}
+            {isVideo && resolvedMediaUrl && (
+              <video
+                src={resolvedMediaUrl}
+                controls
+                style={{
+                  width: "100%",
+                  display: "block",
+                  maxHeight: 620,
+                  background: "var(--ink)",
+                }}
+              />
+            )}
+            {isPdf && resolvedMediaUrl && (
+              <iframe
+                src={resolvedMediaUrl}
+                title={memory.title}
+                style={{
+                  width: "100%",
+                  minHeight: 620,
+                  border: "none",
+                  background: "white",
+                }}
+              />
+            )}
+            {isVoice && resolvedMediaUrl && (
+              <div style={{ padding: 32 }}>
+                <div
+                  style={{
+                    height: 120,
+                    borderRadius: 18,
+                    background: "var(--ink)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 4,
+                    marginBottom: 20,
+                  }}
+                >
+                  {Array.from({ length: 34 }, (_, index) => (
+                    <div
+                      key={index}
+                      style={{
+                        width: 4,
+                        height: 20 + Math.abs(Math.sin(index * 0.65) * 56),
+                        borderRadius: 999,
+                        background: "rgba(246,241,231,0.34)",
+                      }}
+                    />
+                  ))}
+                </div>
+                <audio controls src={resolvedMediaUrl} style={{ width: "100%" }} />
+              </div>
+            )}
+            {!resolvedMediaUrl && !selectedLinkedMediaOpenUrl && (
+              <div
+                style={{
+                  minHeight: 320,
+                  padding: 36,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  textAlign: "center",
+                }}
+              >
+                <div>
+                  <p
+                    style={{
+                      margin: "0 0 8px",
+                      fontFamily: "var(--font-display)",
+                      fontSize: 28,
+                      color: "var(--ink)",
+                    }}
+                  >
+                    {getKindLabel(memory.kind)}
+                  </p>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontFamily: "var(--font-body)",
+                      fontSize: 17,
+                      lineHeight: 1.7,
+                      color: "var(--ink-faded)",
+                    }}
+                  >
+                    This memory is primarily textual and lives as a full archival entry.
+                  </p>
+                </div>
+              </div>
+            )}
+            {memory.mediaItems.length > 1 && (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+                  gap: 10,
+                  padding: 14,
+                  borderTop: "1px solid var(--rule)",
+                  background: "rgba(255,255,255,0.35)",
+                }}
+              >
+                {memory.mediaItems.map((item, index) => {
+                  const itemUrl = getProxiedMediaUrl(item.mediaUrl);
+                  const itemMime = item.mimeType?.toLowerCase() ?? "";
+                  const itemIsVideo = itemMime.startsWith("video/");
+                  const isSelected = index === selectedMediaIndex;
+
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setSelectedMediaIndex(index)}
+                      style={{
+                        borderRadius: 12,
+                        overflow: "hidden",
+                        border: isSelected ? "2px solid var(--moss)" : "1px solid var(--rule)",
+                        background: "var(--paper)",
+                        cursor: "pointer",
+                        padding: 0,
+                        textAlign: "left",
+                      }}
+                    >
+                      {itemUrl && !itemIsVideo ? (
+                        <img
+                          src={itemUrl}
+                          alt={`${memory.title} item ${index + 1}`}
+                          style={{
+                            width: "100%",
+                            height: 88,
+                            objectFit: "cover",
+                            display: "block",
+                          }}
+                        />
+                      ) : itemUrl && itemIsVideo ? (
+                        <video
+                          src={itemUrl}
+                          style={{
+                            width: "100%",
+                            height: 88,
+                            objectFit: "cover",
+                            display: "block",
+                            background: "var(--ink)",
+                          }}
+                          muted
+                          playsInline
+                          preload="metadata"
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            height: 88,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            padding: 10,
+                            fontFamily: "var(--font-ui)",
+                            fontSize: 12,
+                            color: "var(--ink-faded)",
+                          }}
+                        >
+                          {item.linkedMediaLabel || `Item ${index + 1}`}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <aside
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 18,
+            }}
+          >
+            <div
+              style={{
+                borderRadius: 22,
+                border: "1px solid var(--rule)",
+                background: "var(--paper)",
+                padding: 24,
+                display: "flex",
+                flexDirection: "column",
+                gap: 18,
+              }}
+            >
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                <MetadataPill>{getKindLabel(memory.kind)}</MetadataPill>
+                <MetadataPill>{describeTreeVisibility(memory)}</MetadataPill>
+                {selectedLinkedMediaProvider === "google_drive" && (
+                  <MetadataPill>Linked from Drive</MetadataPill>
+                )}
+                {memory.mediaItems.length > 1 && <MetadataPill>{memory.mediaItems.length} items</MetadataPill>}
+                {perspectiveCount > 0 && (
+                  <MetadataPill>{perspectiveCount} perspective{perspectiveCount === 1 ? "" : "s"}</MetadataPill>
+                )}
+              </div>
+
+              <div>
+                <h1
+                  style={{
+                    margin: "0 0 10px",
+                    fontFamily: "var(--font-display)",
+                    fontSize: 44,
+                    fontWeight: 400,
+                    lineHeight: 1.05,
+                    color: "var(--ink)",
+                  }}
+                >
+                  {memory.title}
+                </h1>
+                {memory.dateOfEventText && (
+                  <p
+                    style={{
+                      margin: "0 0 8px",
+                      fontFamily: "var(--font-ui)",
+                      fontSize: 14,
+                      color: "var(--ink-faded)",
+                    }}
+                  >
+                    {memory.dateOfEventText}
+                  </p>
+                )}
+                {memory.place?.label && (
+                  <p
+                    style={{
+                      margin: 0,
+                      fontFamily: "var(--font-body)",
+                      fontSize: 18,
+                      color: "var(--ink-soft)",
+                    }}
+                  >
+                    {memory.place.label}
+                  </p>
+                )}
+              </div>
+
+              {memory.primaryPerson && (
+                <div>
+                  <p
+                    style={{
+                      margin: "0 0 8px",
+                      fontFamily: "var(--font-ui)",
+                      fontSize: 11,
+                      color: "var(--ink-faded)",
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Narrative anchor
+                  </p>
+                  <a
+                    href={`/trees/${treeId}/people/${memory.primaryPerson.id}`}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      textDecoration: "none",
+                      color: "inherit",
+                    }}
+                  >
+                    {memory.primaryPerson.portraitUrl && (
+                      <img
+                        src={memory.primaryPerson.portraitUrl}
+                        alt={memory.primaryPerson.displayName}
+                        style={{
+                          width: 44,
+                          height: 44,
+                          borderRadius: "50%",
+                          objectFit: "cover",
+                          border: "1px solid var(--rule)",
+                        }}
+                      />
+                    )}
+                    <span
+                      style={{
+                        fontFamily: "var(--font-body)",
+                        fontSize: 18,
+                        color: "var(--ink-soft)",
+                      }}
+                    >
+                      {memory.primaryPerson.displayName}
+                    </span>
+                  </a>
+                </div>
+              )}
+
+              {hasFocusedViewer && (
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={() => setLightboxOpen(true)}
+                    style={{
+                      borderRadius: 999,
+                      border: "1px solid var(--moss)",
+                      background: "none",
+                      color: "var(--moss)",
+                      cursor: "pointer",
+                      fontFamily: "var(--font-ui)",
+                      fontSize: 13,
+                      padding: "10px 16px",
+                    }}
+                  >
+                    Open focused viewer
+                  </button>
+                  {selectedLinkedMediaOpenUrl && (
+                    <a
+                      href={selectedLinkedMediaOpenUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{
+                        borderRadius: 999,
+                        border: "1px solid var(--rule)",
+                        color: "var(--ink-faded)",
+                        fontFamily: "var(--font-ui)",
+                        fontSize: 13,
+                        padding: "10px 16px",
+                        textDecoration: "none",
+                      }}
+                    >
+                      Open source file
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {memory.viewerCanManageVisibility && (
+                <div
+                  style={{
+                    paddingTop: 18,
+                    borderTop: "1px solid var(--rule)",
+                  }}
+                >
+                  <p
+                    style={{
+                      margin: "0 0 10px",
+                      fontFamily: "var(--font-ui)",
+                      fontSize: 11,
+                      color: "var(--ink-faded)",
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Memory settings
+                  </p>
+                  <MemoryVisibilityControl
+                    memory={memory}
+                    disabled={updatingVisibilityId === memory.id}
+                    onChange={(visibility) => void setMemoryTreeVisibility(visibility)}
+                  />
+                </div>
+              )}
+            </div>
+
+            <div
+              style={{
+                borderRadius: 22,
+                border: "1px solid var(--rule)",
+                background: "var(--paper)",
+                padding: 24,
+                display: "flex",
+                flexDirection: "column",
+                gap: 18,
+              }}
+            >
+              <div>
+                <p
+                  style={{
+                    margin: "0 0 10px",
+                    fontFamily: "var(--font-ui)",
+                    fontSize: 11,
+                    color: "var(--ink-faded)",
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Direct subjects
+                </p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {memory.primaryPerson && (
+                    <a
+                      href={`/trees/${treeId}/people/${memory.primaryPerson.id}`}
+                      style={{
+                        border: "1px solid var(--rule)",
+                        borderRadius: 999,
+                        padding: "7px 12px",
+                        textDecoration: "none",
+                        fontFamily: "var(--font-ui)",
+                        fontSize: 13,
+                        color: "var(--ink-soft)",
+                      }}
+                    >
+                      {memory.primaryPerson.displayName}
+                    </a>
+                  )}
+                  {visibleSubjects.map((subject) => (
+                    <a
+                      key={subject.id}
+                      href={`/trees/${treeId}/people/${subject.id}`}
+                      style={{
+                        border: "1px solid var(--rule)",
+                        borderRadius: 999,
+                        padding: "7px 12px",
+                        textDecoration: "none",
+                        fontFamily: "var(--font-ui)",
+                        fontSize: 13,
+                        color: "var(--ink-soft)",
+                      }}
+                    >
+                      {subject.displayName}
+                    </a>
+                  ))}
+                  {!memory.primaryPerson && visibleSubjects.length === 0 && (
+                    <p
+                      style={{
+                        margin: 0,
+                        fontFamily: "var(--font-body)",
+                        fontSize: 16,
+                        lineHeight: 1.7,
+                        color: "var(--ink-faded)",
+                      }}
+                    >
+                      No directly tagged people are visible in this tree.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <p
+                  style={{
+                    margin: "0 0 10px",
+                    fontFamily: "var(--font-ui)",
+                    fontSize: 11,
+                    color: "var(--ink-faded)",
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Why it appears here
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div
+                    style={{
+                      fontFamily: "var(--font-body)",
+                      fontSize: 16,
+                      lineHeight: 1.7,
+                      color: "var(--ink-soft)",
+                    }}
+                  >
+                    Tagged directly through the people listed above.
+                  </div>
+                  {memory.reachRules.map((rule, index) => (
+                    <div
+                      key={`${rule.kind}-${rule.seedPersonId ?? "tree"}-${index}`}
+                      style={{
+                        fontFamily: "var(--font-body)",
+                        fontSize: 16,
+                        lineHeight: 1.7,
+                        color: "var(--ink-soft)",
+                      }}
+                    >
+                      {getReachLabel(rule)}
+                    </div>
+                  ))}
+                  {memory.reachRules.length === 0 && (
+                    <div
+                      style={{
+                        fontFamily: "var(--font-body)",
+                        fontSize: 16,
+                        lineHeight: 1.7,
+                        color: "var(--ink-faded)",
+                      }}
+                    >
+                      This memory currently travels through direct subject tagging only.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </aside>
+        </section>
+
+        <section
+          style={{
+            borderRadius: 22,
+            border: "1px solid var(--rule)",
+            background: "var(--paper)",
+            padding: 32,
+            display: "grid",
+            gap: 28,
+          }}
+        >
+          {(memory.body || (transcriptLabel && memory.kind !== "voice")) && (
+            <div>
+              <p
+                style={{
+                  margin: "0 0 12px",
+                  fontFamily: "var(--font-ui)",
+                  fontSize: 11,
+                  color: "var(--ink-faded)",
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                }}
+              >
+                Narrative
+              </p>
+              {memory.body && (
+                <div
+                  style={{
+                    fontFamily: "var(--font-body)",
+                    fontSize: 20,
+                    lineHeight: 1.95,
+                    color: "var(--ink-soft)",
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  {memory.body}
+                </div>
+              )}
+              {!memory.body && transcriptLabel && memory.kind !== "voice" && (
+                <div
+                  style={{
+                    fontFamily: "var(--font-body)",
+                    fontSize: 20,
+                    lineHeight: 1.95,
+                    color: "var(--ink-soft)",
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  {transcriptLabel}
+                </div>
+              )}
+            </div>
+          )}
+
+          {memory.kind === "voice" && transcriptLabel && (
+            <div
+              style={{
+                paddingTop: 24,
+                borderTop: "1px solid var(--rule)",
+              }}
+            >
+              <p
+                style={{
+                  margin: "0 0 12px",
+                  fontFamily: "var(--font-ui)",
+                  fontSize: 11,
+                  color: "var(--ink-faded)",
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                }}
+              >
+                Transcript
+              </p>
+              <div
+                style={{
+                  fontFamily: "var(--font-body)",
+                  fontSize: 18,
+                  lineHeight: 1.85,
+                  color: "var(--ink-soft)",
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {transcriptLabel}
+              </div>
+            </div>
+          )}
+
+          {(memory.perspectives.length > 0 || memory.viewerCanAddPerspective) && (
+            <div
+              style={{
+                paddingTop: 24,
+                borderTop: "1px solid var(--rule)",
+                display: "grid",
+                gap: 18,
+              }}
+            >
+              <div>
+                <p
+                  style={{
+                    margin: "0 0 12px",
+                    fontFamily: "var(--font-ui)",
+                    fontSize: 11,
+                    color: "var(--ink-faded)",
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Perspectives
+                </p>
+                <p
+                  style={{
+                    margin: 0,
+                    fontFamily: "var(--font-body)",
+                    fontSize: 17,
+                    lineHeight: 1.8,
+                    color: "var(--ink-soft)",
+                  }}
+                >
+                  Reflections and additions from other family members can live alongside the original memory.
+                </p>
+              </div>
+
+              {memory.perspectives.length > 0 && (
+                <div style={{ display: "grid", gap: 14 }}>
+                  {memory.perspectives.map((perspective) => (
+                    <article
+                      key={perspective.id}
+                      style={{
+                        borderRadius: 18,
+                        border: "1px solid var(--rule)",
+                        background: "var(--paper-deep)",
+                        padding: 20,
+                        display: "grid",
+                        gap: 10,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                          {perspective.contributorPerson?.portraitUrl && (
+                            <img
+                              src={perspective.contributorPerson.portraitUrl}
+                              alt={perspective.contributorPerson.displayName}
+                              style={{
+                                width: 42,
+                                height: 42,
+                                borderRadius: "50%",
+                                objectFit: "cover",
+                                border: "1px solid var(--rule)",
+                              }}
+                            />
+                          )}
+                          <div>
+                            <div
+                              style={{
+                                fontFamily: "var(--font-body)",
+                                fontSize: 18,
+                                lineHeight: 1.4,
+                                color: "var(--ink)",
+                              }}
+                            >
+                              {perspective.contributorPerson?.displayName ??
+                                perspective.contributor?.name ??
+                                perspective.contributor?.email ??
+                                "Family member"}
+                            </div>
+                            <div
+                              style={{
+                                fontFamily: "var(--font-ui)",
+                                fontSize: 12,
+                                color: "var(--ink-faded)",
+                              }}
+                            >
+                              Added{" "}
+                              {new Date(perspective.createdAt).toLocaleDateString(undefined, {
+                                year: "numeric",
+                                month: "long",
+                                day: "numeric",
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          fontFamily: "var(--font-body)",
+                          fontSize: 18,
+                          lineHeight: 1.85,
+                          color: "var(--ink-soft)",
+                          whiteSpace: "pre-wrap",
+                        }}
+                      >
+                        {perspective.body}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+
+              {memory.viewerCanAddPerspective && (
+                <div
+                  style={{
+                    borderRadius: 18,
+                    border: "1px solid var(--rule)",
+                    background: "var(--paper)",
+                    padding: 20,
+                    display: "grid",
+                    gap: 12,
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        fontFamily: "var(--font-display)",
+                        fontSize: 28,
+                        lineHeight: 1.2,
+                        color: "var(--ink)",
+                        marginBottom: 6,
+                      }}
+                    >
+                      Add your perspective
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: "var(--font-body)",
+                        fontSize: 16,
+                        lineHeight: 1.75,
+                        color: "var(--ink-soft)",
+                      }}
+                    >
+                      Add a reflection, correction, or additional detail as{" "}
+                      {session?.user.name ?? session?.user.email ?? "a family member"}.
+                    </div>
+                  </div>
+                  <textarea
+                    value={perspectiveDraft}
+                    onChange={(event) => setPerspectiveDraft(event.target.value)}
+                    rows={5}
+                    placeholder="What else should this memory hold?"
+                    style={{
+                      width: "100%",
+                      resize: "vertical",
+                      borderRadius: 14,
+                      border: "1px solid var(--rule)",
+                      background: "var(--paper-deep)",
+                      padding: "14px 16px",
+                      fontFamily: "var(--font-body)",
+                      fontSize: 17,
+                      lineHeight: 1.7,
+                      color: "var(--ink)",
+                    }}
+                  />
+                  {perspectiveError && (
+                    <div
+                      style={{
+                        fontFamily: "var(--font-ui)",
+                        fontSize: 13,
+                        color: "#9b3d2e",
+                      }}
+                    >
+                      {perspectiveError}
+                    </div>
+                  )}
+                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <button
+                      type="button"
+                      onClick={() => void handleAddPerspective()}
+                      disabled={submittingPerspective}
+                      style={{
+                        borderRadius: 999,
+                        border: "1px solid var(--moss)",
+                        background: submittingPerspective ? "var(--paper-deep)" : "var(--moss)",
+                        color: submittingPerspective ? "var(--ink-faded)" : "var(--paper)",
+                        cursor: submittingPerspective ? "default" : "pointer",
+                        fontFamily: "var(--font-ui)",
+                        fontSize: 13,
+                        padding: "10px 16px",
+                      }}
+                    >
+                      {submittingPerspective ? "Adding…" : "Add perspective"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div
+            style={{
+              paddingTop: 24,
+              borderTop: "1px solid var(--rule)",
+              display: "grid",
+              gap: 10,
+            }}
+          >
+            <p
+              style={{
+                margin: 0,
+                fontFamily: "var(--font-ui)",
+                fontSize: 11,
+                color: "var(--ink-faded)",
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+              }}
+            >
+              Archive notes
+            </p>
+            <div
+              style={{
+                fontFamily: "var(--font-body)",
+                fontSize: 17,
+                lineHeight: 1.8,
+                color: "var(--ink-soft)",
+              }}
+            >
+              Added to the archive on{" "}
+              {new Date(memory.createdAt).toLocaleDateString(undefined, {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+              })}
+              .
+            </div>
+          </div>
+
+          {hasContextSection && (
+            <div
+              style={{
+                paddingTop: 24,
+                borderTop: "1px solid var(--rule)",
+                display: "grid",
+                gap: 24,
+              }}
+            >
+              <div>
+                <p
+                  style={{
+                    margin: "0 0 12px",
+                    fontFamily: "var(--font-ui)",
+                    fontSize: 11,
+                    color: "var(--ink-faded)",
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Provenance
+                </p>
+                <div style={{ display: "grid", gap: 12 }}>
+                  {memory.contributor && (
+                    <div
+                      style={{
+                        fontFamily: "var(--font-body)",
+                        fontSize: 17,
+                        lineHeight: 1.8,
+                        color: "var(--ink-soft)",
+                      }}
+                    >
+                      Added by <strong>{memory.contributor.name}</strong>.
+                    </div>
+                  )}
+                  {memory.prompt && (
+                    <div
+                      style={{
+                        borderRadius: 16,
+                        border: "1px solid var(--rule)",
+                        background: "var(--paper-deep)",
+                        padding: 18,
+                        display: "grid",
+                        gap: 10,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontFamily: "var(--font-ui)",
+                          fontSize: 12,
+                          color: "var(--ink-faded)",
+                        }}
+                      >
+                        {memory.prompt.fromUserName
+                          ? `Prompted by ${memory.prompt.fromUserName}`
+                          : "Prompted memory"}
+                        {memory.prompt.toPerson?.displayName
+                          ? ` for ${memory.prompt.toPerson.displayName}`
+                          : ""}
+                      </div>
+                      <blockquote
+                        style={{
+                          margin: 0,
+                          fontFamily: "var(--font-body)",
+                          fontSize: 18,
+                          lineHeight: 1.8,
+                          color: "var(--ink-soft)",
+                          borderLeft: "3px solid var(--gilt)",
+                          paddingLeft: 14,
+                        }}
+                      >
+                        {memory.prompt.questionText}
+                      </blockquote>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {memory.relatedMemories.length > 0 && (
+                <div>
+                  <p
+                    style={{
+                      margin: "0 0 12px",
+                      fontFamily: "var(--font-ui)",
+                      fontSize: 11,
+                      color: "var(--ink-faded)",
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Related context
+                  </p>
+                  <p
+                    style={{
+                      margin: "0 0 16px",
+                      fontFamily: "var(--font-body)",
+                      fontSize: 17,
+                      lineHeight: 1.75,
+                      color: "var(--ink-soft)",
+                    }}
+                  >
+                    Nearby memories that share the same people, narrative anchor, or prompt thread.
+                  </p>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+                      gap: 16,
+                    }}
+                  >
+                    {memory.relatedMemories.map((relatedMemory) => (
+                      <RelatedMemoryCard
+                        key={relatedMemory.id}
+                        treeId={treeId}
+                        memory={relatedMemory}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      </div>
+
+      {lightboxOpen && (
+        <MemoryLightbox
+          memories={lightboxMemories}
+          initialIndex={0}
+          onClose={() => setLightboxOpen(false)}
+          canManageTreeVisibility={memory.viewerCanManageVisibility}
+          updatingTreeVisibilityId={updatingVisibilityId}
+          onSetTreeVisibility={(_memoryId, visibility) =>
+            void setMemoryTreeVisibility(visibility)
+          }
+        />
+      )}
+    </main>
+  );
+}

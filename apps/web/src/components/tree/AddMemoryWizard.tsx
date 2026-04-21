@@ -34,7 +34,7 @@ interface Step1State {
 interface Step2State {
   title: string;
   body: string;
-  file: File | null;
+  files: File[];
   voiceInputMode: "upload" | "record";
   attachmentMode: "upload" | "drive_link";
   driveUrl: string;
@@ -80,7 +80,7 @@ export function AddMemoryWizard({
   const [step2, setStep2] = useState<Step2State>({
     title: "",
     body: "",
-    file: null,
+    files: [],
     voiceInputMode: "upload",
     attachmentMode: "upload",
     driveUrl: "",
@@ -124,16 +124,17 @@ export function AddMemoryWizard({
   const isVoiceMemory = step1.kind === "voice";
   const needsFile =
     step1.kind === "photo" || step1.kind === "voice" || step1.kind === "document";
+  const allowMultipleUploads = step1.kind === "photo" || step1.kind === "document";
   const usingDriveLink = supportsDriveLink && step2.attachmentMode === "drive_link";
   const usingVoiceRecorder = isVoiceMemory && step2.voiceInputMode === "record";
 
   const canProceedStep2 = useCallback(() => {
     if (!step2.title.trim()) return false;
     if (step1.kind === "story" && !step2.body.trim()) return false;
-    if (needsFile && !usingDriveLink && !step2.file) return false;
+    if (needsFile && !usingDriveLink && step2.files.length === 0) return false;
     if (usingDriveLink && !step2.driveUrl.trim()) return false;
     return true;
-  }, [step1.kind, step2.title, step2.body, step2.file, step2.driveUrl, needsFile, usingDriveLink]);
+  }, [step1.kind, step2.title, step2.body, step2.files, step2.driveUrl, needsFile, usingDriveLink]);
 
   const handleSubmit = async () => {
     if (!promptId && !step3.personId) return;
@@ -141,26 +142,28 @@ export function AddMemoryWizard({
     setError(null);
 
     try {
-      let resolvedMediaId: string | undefined;
+      let resolvedMediaIds: string[] = [];
 
-      if (step2.file && needsFile && !usingDriveLink) {
-        const presignRes = await fetch(`${apiBase_}/api/trees/${treeId}/media/presign`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            filename: step2.file.name,
-            contentType: step2.file.type || "application/octet-stream",
-            sizeBytes: step2.file.size,
-          }),
-        });
-        if (!presignRes.ok) throw new Error("Failed to get upload URL");
-        const { mediaId, uploadUrl } = (await presignRes.json()) as {
-          mediaId: string;
-          uploadUrl: string;
-        };
-        await fetch(uploadUrl, { method: "PUT", body: step2.file });
-        resolvedMediaId = mediaId;
+      if (step2.files.length > 0 && needsFile && !usingDriveLink) {
+        for (const file of step2.files) {
+          const presignRes = await fetch(`${apiBase_}/api/trees/${treeId}/media/presign`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              filename: file.name,
+              contentType: file.type || "application/octet-stream",
+              sizeBytes: file.size,
+            }),
+          });
+          if (!presignRes.ok) throw new Error("Failed to get upload URL");
+          const { mediaId, uploadUrl } = (await presignRes.json()) as {
+            mediaId: string;
+            uploadUrl: string;
+          };
+          await fetch(uploadUrl, { method: "PUT", body: file });
+          resolvedMediaIds.push(mediaId);
+        }
       }
 
       const body: Record<string, unknown> = {
@@ -170,7 +173,12 @@ export function AddMemoryWizard({
         placeId: step3.placeId || undefined,
       };
       if (step2.body.trim()) body.body = step2.body.trim();
-      if (resolvedMediaId) body.mediaId = resolvedMediaId;
+      if (resolvedMediaIds.length === 1) {
+        body.mediaId = resolvedMediaIds[0];
+      }
+      if (resolvedMediaIds.length > 0) {
+        body.mediaIds = resolvedMediaIds;
+      }
       if (usingDriveLink) {
         body.linkedMedia = {
           provider: "google_drive",
@@ -573,7 +581,7 @@ export function AddMemoryWizard({
                       setStep2((current) => ({
                         ...current,
                         attachmentMode: "drive_link",
-                        file: null,
+                        files: [],
                       }))
                     }
                     style={{
@@ -629,7 +637,7 @@ export function AddMemoryWizard({
                       setStep2((current) => ({
                         ...current,
                         voiceInputMode: "record",
-                        file: null,
+                        files: [],
                       }))
                     }
                     style={{
@@ -656,7 +664,7 @@ export function AddMemoryWizard({
                       setStep2((current) => ({
                         ...current,
                         voiceInputMode: "upload",
-                        file: null,
+                        files: [],
                       }))
                     }
                     style={{
@@ -698,16 +706,16 @@ export function AddMemoryWizard({
                 <div
                   onClick={() => fileRef.current?.click()}
                   style={{
-                    border: `1.5px dashed ${step2.file ? "var(--moss)" : "var(--rule)"}`,
+                    border: `1.5px dashed ${step2.files.length > 0 ? "var(--moss)" : "var(--rule)"}`,
                     borderRadius: 8,
                     padding: "20px 16px",
                     textAlign: "center",
                     cursor: "pointer",
-                    background: step2.file ? "rgba(78,93,66,0.06)" : "none",
+                    background: step2.files.length > 0 ? "rgba(78,93,66,0.06)" : "none",
                     transition: "border-color 150ms, background 150ms",
                   }}
                 >
-                  {step2.file ? (
+                  {step2.files.length > 0 ? (
                     <div>
                       <div
                         style={{
@@ -716,7 +724,9 @@ export function AddMemoryWizard({
                           color: "var(--ink-soft)",
                         }}
                       >
-                        {step2.file.name}
+                        {step2.files.length === 1
+                          ? step2.files[0]?.name
+                          : `${step2.files.length} files selected`}
                       </div>
                       <div
                         style={{
@@ -726,7 +736,7 @@ export function AddMemoryWizard({
                           marginTop: 2,
                         }}
                       >
-                        {(step2.file.size / 1024 / 1024).toFixed(1)} MB · Click to replace
+                        {`${(step2.files.reduce((total, file) => total + file.size, 0) / 1024 / 1024).toFixed(1)} MB · Click to ${allowMultipleUploads ? "change selection" : "replace"}`}
                       </div>
                     </div>
                   ) : (
@@ -748,7 +758,7 @@ export function AddMemoryWizard({
                           marginTop: 4,
                         }}
                       >
-                        Click to choose a file
+                          {allowMultipleUploads ? "Click to choose one or more files" : "Click to choose a file"}
                       </div>
                     </div>
                   )}
@@ -757,10 +767,11 @@ export function AddMemoryWizard({
                   ref={fileRef}
                   type="file"
                   accept={acceptType}
+                  multiple={allowMultipleUploads}
                   style={{ display: "none" }}
                   onChange={(e) => {
-                    const f = e.target.files?.[0] ?? null;
-                    setStep2((s) => ({ ...s, file: f }));
+                    const files = Array.from(e.target.files ?? []);
+                    setStep2((s) => ({ ...s, files }));
                   }}
                 />
               </div>
@@ -780,12 +791,12 @@ export function AddMemoryWizard({
                   Recording *
                 </label>
                 <VoiceRecorderField
-                  value={step2.file}
+                  value={step2.files[0] ?? null}
                   onChange={(file) => {
                     if (fileRef.current) {
                       fileRef.current.value = "";
                     }
-                    setStep2((current) => ({ ...current, file }));
+                    setStep2((current) => ({ ...current, files: file ? [file] : [] }));
                   }}
                 />
               </div>

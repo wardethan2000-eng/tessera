@@ -228,6 +228,12 @@ export async function getTreeMemories(
     where: (memory, { inArray }) => inArray(memory.id, finalMemoryIds),
     with: {
       media: true,
+      mediaItems: {
+        with: {
+          media: true,
+        },
+        orderBy: (memoryMediaItem, { asc }) => [asc(memoryMediaItem.sortOrder)],
+      },
       place: true,
       primaryPerson: { with: { portraitMedia: true } },
       personTags: {
