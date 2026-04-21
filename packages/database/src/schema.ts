@@ -643,7 +643,10 @@ export const memoryPerspectives = pgTable(
     contributorPersonId: uuid("contributor_person_id").references(() => people.id, {
       onDelete: "set null",
     }),
-    body: text("body").notNull(),
+    body: text("body"),
+    mediaId: uuid("media_id").references(() => media.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -652,6 +655,7 @@ export const memoryPerspectives = pgTable(
     index("memory_perspectives_tree_idx").on(table.treeId),
     index("memory_perspectives_contributor_idx").on(table.contributorUserId),
     index("memory_perspectives_person_idx").on(table.contributorPersonId),
+    index("memory_perspectives_media_idx").on(table.mediaId),
     index("memory_perspectives_memory_created_idx").on(table.memoryId, table.createdAt),
   ],
 );
@@ -904,6 +908,7 @@ export const mediaRelations = relations(media, ({ one, many }) => ({
   portraitForPeople: many(people),
   memories: many(memories),
   memoryItems: many(memoryMedia),
+  memoryPerspectives: many(memoryPerspectives),
 }));
 
 export const placesRelations = relations(places, ({ one, many }) => ({
@@ -1183,6 +1188,10 @@ export const memoryPerspectivesRelations = relations(memoryPerspectives, ({ one 
   contributorPerson: one(people, {
     fields: [memoryPerspectives.contributorPersonId],
     references: [people.id],
+  }),
+  media: one(media, {
+    fields: [memoryPerspectives.mediaId],
+    references: [media.id],
   }),
 }));
 

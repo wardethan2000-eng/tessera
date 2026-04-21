@@ -4,6 +4,7 @@ import {
   createRecordedAudioFile,
   getAudioFileExtension,
   getPreferredAudioRecordingMimeType,
+  getVoiceRecordingSupportState,
   hasPendingVoiceTranscriptions,
   normalizeMimeType,
 } from "./voice-recording";
@@ -48,6 +49,36 @@ describe("voice recording helpers", () => {
         { id: "1", kind: "voice", transcriptStatus: "completed" },
       ]),
       false,
+    );
+  });
+
+  it("distinguishes secure-context failures from unsupported browsers", () => {
+    assert.deepEqual(
+      getVoiceRecordingSupportState({
+        hasWindow: true,
+        hasNavigator: true,
+        hasMediaRecorder: true,
+        hasGetUserMedia: false,
+        isSecureContext: false,
+      }),
+      {
+        supported: false,
+        reason: "secure_context_required",
+      },
+    );
+
+    assert.deepEqual(
+      getVoiceRecordingSupportState({
+        hasWindow: true,
+        hasNavigator: true,
+        hasMediaRecorder: false,
+        hasGetUserMedia: false,
+        isSecureContext: true,
+      }),
+      {
+        supported: false,
+        reason: "unsupported_browser",
+      },
     );
   });
 });

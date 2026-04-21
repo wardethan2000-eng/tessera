@@ -13,6 +13,16 @@ type MediaRecorderSupport = {
   isTypeSupported?: (mimeType: string) => boolean;
 };
 
+export type VoiceRecordingSupportState =
+  | {
+      supported: true;
+      reason: null;
+    }
+  | {
+      supported: false;
+      reason: "secure_context_required" | "unsupported_browser";
+    };
+
 export type VoiceTranscriptRefreshItem = {
   id: string;
   kind: string;
@@ -26,6 +36,40 @@ export const PREFERRED_AUDIO_RECORDING_MIME_TYPES = [
   "audio/ogg;codecs=opus",
   "audio/ogg",
 ] as const;
+
+export function getVoiceRecordingSupportState(options: {
+  hasWindow: boolean;
+  hasNavigator: boolean;
+  hasMediaRecorder: boolean;
+  hasGetUserMedia: boolean;
+  isSecureContext: boolean;
+}): VoiceRecordingSupportState {
+  if (
+    !options.hasWindow ||
+    !options.hasNavigator ||
+    !options.hasMediaRecorder ||
+    !options.hasGetUserMedia
+  ) {
+    return {
+      supported: false,
+      reason: options.hasWindow && options.hasNavigator && !options.isSecureContext
+        ? "secure_context_required"
+        : "unsupported_browser",
+    };
+  }
+
+  if (!options.isSecureContext) {
+    return {
+      supported: false,
+      reason: "secure_context_required",
+    };
+  }
+
+  return {
+    supported: true,
+    reason: null,
+  };
+}
 
 export function normalizeMimeType(mimeType: string | null | undefined): string {
   return (mimeType?.toLowerCase().split(";")[0] ?? "").trim();

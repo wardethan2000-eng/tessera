@@ -62,9 +62,14 @@ const PatchMemoryBody = z.object({
   placeLabelOverride: z.string().max(200).nullable().optional(),
 });
 
-const CreateMemoryPerspectiveBody = z.object({
-  body: z.string().trim().min(1).max(8000),
-});
+const CreateMemoryPerspectiveBody = z
+  .object({
+    body: z.string().trim().max(8000).optional(),
+    mediaId: z.string().uuid().optional(),
+  })
+  .refine((value) => Boolean(value.body?.trim() || value.mediaId), {
+    message: "A perspective needs text or a voice recording.",
+  });
 
 function serializePlace(place: {
   id: string;
@@ -106,7 +111,7 @@ function serializeTreeVisibility(
 
 function serializePerspective(perspective: {
   id: string;
-  body: string;
+  body: string | null;
   createdAt: Date;
   updatedAt: Date;
   contributor: {
@@ -121,10 +126,16 @@ function serializePerspective(perspective: {
       objectKey: string;
     } | null;
   } | null;
+  media?: {
+    objectKey: string;
+    mimeType: string;
+  } | null;
 }) {
   return {
     id: perspective.id,
     body: perspective.body,
+    mediaUrl: perspective.media ? mediaUrl(perspective.media.objectKey) : null,
+    mimeType: perspective.media?.mimeType ?? null,
     createdAt: perspective.createdAt.toISOString(),
     updatedAt: perspective.updatedAt.toISOString(),
     contributor: perspective.contributor
@@ -652,6 +663,12 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
                 },
               },
             },
+            media: {
+              columns: {
+                objectKey: true,
+                mimeType: true,
+              },
+            },
           },
           orderBy: (perspective, { asc: orderAsc }) => [orderAsc(perspective.createdAt)],
         },
@@ -823,7 +840,9 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
 
       const parsed = CreateMemoryPerspectiveBody.safeParse(request.body);
       if (!parsed.success) {
-        return reply.status(400).send({ error: "Invalid request body" });
+        return reply.status(400).send({
+          error: parsed.error.issues[0]?.message ?? "Invalid request body",
+        });
       }
 
       const inScope = await isMemoryInTreeScope(treeId, memoryId);
@@ -835,6 +854,27 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
         treeId,
         session.user.id,
       );
+      let perspectiveMediaId: string | null = null;
+      if (parsed.data.mediaId) {
+        const uploadedMedia = await db.query.media.findFirst({
+          where: (candidate, { and: mediaAnd, eq: mediaEq }) =>
+            mediaAnd(mediaEq(candidate.id, parsed.data.mediaId!), mediaEq(candidate.treeId, treeId)),
+          columns: {
+            id: true,
+            mimeType: true,
+          },
+        });
+
+        if (!uploadedMedia) {
+          return reply.status(400).send({ error: "Voice recording not found in this tree" });
+        }
+
+        if (!uploadedMedia.mimeType.toLowerCase().startsWith("audio/")) {
+          return reply.status(400).send({ error: "Perspective recordings must be audio files" });
+        }
+
+        perspectiveMediaId = uploadedMedia.id;
+      }
       const [createdPerspective] = await db
         .insert(schema.memoryPerspectives)
         .values({
@@ -842,7 +882,8 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
           treeId,
           contributorUserId: session.user.id,
           contributorPersonId: linkedContributorPerson?.id ?? null,
-          body: parsed.data.body,
+          body: parsed.data.body?.trim() || null,
+          mediaId: perspectiveMediaId,
         })
         .returning({ id: schema.memoryPerspectives.id });
 
@@ -871,6 +912,12 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
                   objectKey: true,
                 },
               },
+            },
+          },
+          media: {
+            columns: {
+              objectKey: true,
+              mimeType: true,
             },
           },
         },

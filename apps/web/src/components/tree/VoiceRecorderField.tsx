@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   createRecordedAudioFile,
+  getVoiceRecordingSupportState,
   getPreferredAudioRecordingMimeType,
   type VoiceRecorderStage,
 } from "@/lib/voice-recording";
@@ -21,7 +22,15 @@ export function VoiceRecorderField({
   baseName = "voice-note",
 }: VoiceRecorderFieldProps) {
   const [supportChecked, setSupportChecked] = useState(false);
-  const [isSupported, setIsSupported] = useState(false);
+  const [supportState, setSupportState] = useState(
+    getVoiceRecordingSupportState({
+      hasWindow: false,
+      hasNavigator: false,
+      hasMediaRecorder: false,
+      hasGetUserMedia: false,
+      isSecureContext: false,
+    }),
+  );
   const [stage, setStage] = useState<VoiceRecorderStage>("idle");
   const [error, setError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -35,15 +44,17 @@ export function VoiceRecorderField({
   const accumulatedMsRef = useRef(0);
 
   useEffect(() => {
-    const supported =
-      typeof window !== "undefined" &&
-      typeof MediaRecorder !== "undefined" &&
-      typeof navigator !== "undefined" &&
-      !!navigator.mediaDevices?.getUserMedia;
+    const nextSupportState = getVoiceRecordingSupportState({
+      hasWindow: typeof window !== "undefined",
+      hasNavigator: typeof navigator !== "undefined",
+      hasMediaRecorder: typeof MediaRecorder !== "undefined",
+      hasGetUserMedia: typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia,
+      isSecureContext: typeof window !== "undefined" ? window.isSecureContext : false,
+    });
 
-    setIsSupported(supported);
+    setSupportState(nextSupportState);
     setSupportChecked(true);
-    if (!supported) {
+    if (!nextSupportState.supported) {
       setStage("unsupported");
     }
   }, []);
@@ -113,7 +124,7 @@ export function VoiceRecorderField({
     if (!value) {
       clearPreviewUrl();
       if (stage === "recorded") {
-        setStage(isSupported ? "idle" : "unsupported");
+        setStage(supportState.supported ? "idle" : "unsupported");
         resetElapsedTimer();
       }
       return;
@@ -129,7 +140,7 @@ export function VoiceRecorderField({
     if (stage !== "recording" && stage !== "paused") {
       setStage("recorded");
     }
-  }, [clearPreviewUrl, isSupported, resetElapsedTimer, stage, value]);
+  }, [clearPreviewUrl, resetElapsedTimer, stage, supportState.supported, value]);
 
   useEffect(() => {
     return () => {
@@ -146,7 +157,7 @@ export function VoiceRecorderField({
   }, [durationMs]);
 
   const handleStartRecording = useCallback(async () => {
-    if (disabled || !isSupported) {
+    if (disabled || !supportState.supported) {
       return;
     }
 
@@ -205,11 +216,11 @@ export function VoiceRecorderField({
     clearPreviewUrl,
     clearRecorder,
     disabled,
-    isSupported,
     onChange,
     pauseElapsedTimer,
     resetElapsedTimer,
     startElapsedTimer,
+    supportState.supported,
   ]);
 
   const handlePauseResume = useCallback(() => {
@@ -246,9 +257,9 @@ export function VoiceRecorderField({
     clearRecorder();
     resetElapsedTimer();
     setError(null);
-    setStage(isSupported ? "idle" : "unsupported");
+    setStage(supportState.supported ? "idle" : "unsupported");
     onChange(null);
-  }, [clearPreviewUrl, clearRecorder, isSupported, onChange, resetElapsedTimer]);
+  }, [clearPreviewUrl, clearRecorder, onChange, resetElapsedTimer, supportState.supported]);
 
   if (!supportChecked) {
     return (
@@ -258,12 +269,13 @@ export function VoiceRecorderField({
     );
   }
 
-  if (!isSupported) {
+  if (!supportState.supported) {
     return (
       <div style={containerStyle}>
         <p style={supportTextStyle}>
-          This browser does not support in-browser audio recording here. Upload an
-          audio file instead.
+          {supportState.reason === "secure_context_required"
+            ? "Microphone recording requires HTTPS or localhost. This page is running without a secure browser context, so upload an audio file instead."
+            : "This browser does not support in-browser audio recording here. Upload an audio file instead."}
         </p>
       </div>
     );

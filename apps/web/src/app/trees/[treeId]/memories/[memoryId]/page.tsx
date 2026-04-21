@@ -2,6 +2,7 @@
 
 import { use, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { VoiceRecorderField } from "@/components/tree/VoiceRecorderField";
 import { useSession } from "@/lib/auth-client";
 import {
   MemoryLightbox,
@@ -48,7 +49,9 @@ type MemoryMediaItem = {
 
 type MemoryPerspective = {
   id: string;
-  body: string;
+  body: string | null;
+  mediaUrl: string | null;
+  mimeType?: string | null;
   createdAt: string;
   updatedAt: string;
   contributor: {
@@ -161,6 +164,10 @@ function getKindLabel(kind: MemoryKind): string {
     default:
       return "Memory";
   }
+}
+
+function isAudioMimeType(mimeType?: string | null): boolean {
+  return (mimeType?.toLowerCase() ?? "").startsWith("audio/");
 }
 
 function getReachLabel(rule: MemoryDetail["reachRules"][number]): string {
@@ -382,6 +389,11 @@ export default function MemoryPage({
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [selectedMediaIndex, setSelectedMediaIndex] = useState(0);
   const [perspectiveDraft, setPerspectiveDraft] = useState("");
+  const [perspectiveMode, setPerspectiveMode] = useState<"text" | "voice">("text");
+  const [perspectiveVoiceInputMode, setPerspectiveVoiceInputMode] = useState<"record" | "upload">(
+    "record",
+  );
+  const [perspectiveFile, setPerspectiveFile] = useState<File | null>(null);
   const [perspectiveError, setPerspectiveError] = useState<string | null>(null);
   const [submittingPerspective, setSubmittingPerspective] = useState(false);
   const [updatingVisibilityId, setUpdatingVisibilityId] = useState<string | null>(null);
@@ -467,6 +479,9 @@ export default function MemoryPage({
   useEffect(() => {
     setSelectedMediaIndex(0);
     setPerspectiveDraft("");
+    setPerspectiveMode("text");
+    setPerspectiveVoiceInputMode("record");
+    setPerspectiveFile(null);
     setPerspectiveError(null);
   }, [memory?.id]);
 
@@ -514,14 +529,55 @@ export default function MemoryPage({
     if (!memory || !memory.viewerCanAddPerspective) return;
 
     const nextBody = perspectiveDraft.trim();
-    if (!nextBody) {
+    if (perspectiveMode === "text" && !nextBody) {
       setPerspectiveError("Write a short reflection before adding it.");
+      return;
+    }
+    if (perspectiveMode === "voice" && !perspectiveFile && !nextBody) {
+      setPerspectiveError("Record or upload a voice note, or switch back to text.");
       return;
     }
 
     setSubmittingPerspective(true);
     setPerspectiveError(null);
     try {
+      let perspectiveMediaId: string | undefined;
+
+      if (perspectiveFile) {
+        const presignRes = await fetch(`${API}/api/trees/${treeId}/media/presign`, {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            filename: perspectiveFile.name,
+            contentType: perspectiveFile.type || "application/octet-stream",
+            sizeBytes: perspectiveFile.size,
+          }),
+        });
+
+        if (!presignRes.ok) {
+          const data = (await presignRes.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(data?.error ?? "Failed to prepare the voice upload.");
+        }
+
+        const { mediaId, uploadUrl } = (await presignRes.json()) as {
+          mediaId: string;
+          uploadUrl: string;
+        };
+        const uploadRes = await fetch(uploadUrl, {
+          method: "PUT",
+          body: perspectiveFile,
+        });
+
+        if (!uploadRes.ok) {
+          throw new Error("Failed to upload the voice recording.");
+        }
+
+        perspectiveMediaId = mediaId;
+      }
+
       const response = await fetch(`${API}/api/trees/${treeId}/memories/${memory.id}/perspectives`, {
         method: "POST",
         credentials: "include",
@@ -529,7 +585,8 @@ export default function MemoryPage({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          body: nextBody,
+          body: nextBody || undefined,
+          mediaId: perspectiveMediaId,
         }),
       });
 
@@ -551,6 +608,9 @@ export default function MemoryPage({
           : current,
       );
       setPerspectiveDraft("");
+      setPerspectiveMode("text");
+      setPerspectiveVoiceInputMode("record");
+      setPerspectiveFile(null);
     } catch (error) {
       setPerspectiveError(
         error instanceof Error ? error.message : "Failed to add perspective.",
@@ -558,7 +618,7 @@ export default function MemoryPage({
     } finally {
       setSubmittingPerspective(false);
     }
-  }, [memory, perspectiveDraft, treeId]);
+  }, [memory, perspectiveDraft, perspectiveFile, perspectiveMode, treeId]);
 
   if (isPending || loading || normalizingTreeId) {
     return (
@@ -1367,85 +1427,98 @@ export default function MemoryPage({
 
               {memory.perspectives.length > 0 && (
                 <div style={{ display: "grid", gap: 14 }}>
-                  {memory.perspectives.map((perspective) => (
-                    <article
-                      key={perspective.id}
-                      style={{
-                        borderRadius: 18,
-                        border: "1px solid var(--rule)",
-                        background: "var(--paper-deep)",
-                        padding: 20,
-                        display: "grid",
-                        gap: 10,
-                      }}
-                    >
-                      <div
+                  {memory.perspectives.map((perspective) => {
+                    const perspectiveAudioUrl = perspective.mediaUrl
+                      ? getProxiedMediaUrl(perspective.mediaUrl)
+                      : null;
+
+                    return (
+                      <article
+                        key={perspective.id}
                         style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          gap: 12,
-                          flexWrap: "wrap",
+                          borderRadius: 18,
+                          border: "1px solid var(--rule)",
+                          background: "var(--paper-deep)",
+                          padding: 20,
+                          display: "grid",
+                          gap: 10,
                         }}
                       >
-                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                          {perspective.contributorPerson?.portraitUrl && (
-                            <img
-                              src={perspective.contributorPerson.portraitUrl}
-                              alt={perspective.contributorPerson.displayName}
-                              style={{
-                                width: 42,
-                                height: 42,
-                                borderRadius: "50%",
-                                objectFit: "cover",
-                                border: "1px solid var(--rule)",
-                              }}
-                            />
-                          )}
-                          <div>
-                            <div
-                              style={{
-                                fontFamily: "var(--font-body)",
-                                fontSize: 18,
-                                lineHeight: 1.4,
-                                color: "var(--ink)",
-                              }}
-                            >
-                              {perspective.contributorPerson?.displayName ??
-                                perspective.contributor?.name ??
-                                perspective.contributor?.email ??
-                                "Family member"}
-                            </div>
-                            <div
-                              style={{
-                                fontFamily: "var(--font-ui)",
-                                fontSize: 12,
-                                color: "var(--ink-faded)",
-                              }}
-                            >
-                              Added{" "}
-                              {new Date(perspective.createdAt).toLocaleDateString(undefined, {
-                                year: "numeric",
-                                month: "long",
-                                day: "numeric",
-                              })}
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 12,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                            {perspective.contributorPerson?.portraitUrl && (
+                              <img
+                                src={perspective.contributorPerson.portraitUrl}
+                                alt={perspective.contributorPerson.displayName}
+                                style={{
+                                  width: 42,
+                                  height: 42,
+                                  borderRadius: "50%",
+                                  objectFit: "cover",
+                                  border: "1px solid var(--rule)",
+                                }}
+                              />
+                            )}
+                            <div>
+                              <div
+                                style={{
+                                  fontFamily: "var(--font-body)",
+                                  fontSize: 18,
+                                  lineHeight: 1.4,
+                                  color: "var(--ink)",
+                                }}
+                              >
+                                {perspective.contributorPerson?.displayName ??
+                                  perspective.contributor?.name ??
+                                  perspective.contributor?.email ??
+                                  "Family member"}
+                              </div>
+                              <div
+                                style={{
+                                  fontFamily: "var(--font-ui)",
+                                  fontSize: 12,
+                                  color: "var(--ink-faded)",
+                                }}
+                              >
+                                Added{" "}
+                                {new Date(perspective.createdAt).toLocaleDateString(undefined, {
+                                  year: "numeric",
+                                  month: "long",
+                                  day: "numeric",
+                                })}
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                      <div
-                        style={{
-                          fontFamily: "var(--font-body)",
-                          fontSize: 18,
-                          lineHeight: 1.85,
-                          color: "var(--ink-soft)",
-                          whiteSpace: "pre-wrap",
-                        }}
-                      >
-                        {perspective.body}
-                      </div>
-                    </article>
-                  ))}
+                        {perspective.body && (
+                          <div
+                            style={{
+                              fontFamily: "var(--font-body)",
+                              fontSize: 18,
+                              lineHeight: 1.85,
+                              color: "var(--ink-soft)",
+                              whiteSpace: "pre-wrap",
+                            }}
+                          >
+                            {perspective.body}
+                          </div>
+                        )}
+                        {perspectiveAudioUrl && isAudioMimeType(perspective.mimeType) && (
+                          <audio controls src={perspectiveAudioUrl} style={{ width: "100%" }}>
+                            Your browser does not support audio playback.
+                          </audio>
+                        )}
+                      </article>
+                    );
+                  })}
                 </div>
               )}
 
@@ -1484,11 +1557,60 @@ export default function MemoryPage({
                       {session?.user.name ?? session?.user.email ?? "a family member"}.
                     </div>
                   </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPerspectiveMode("text");
+                        setPerspectiveError(null);
+                        setPerspectiveFile(null);
+                      }}
+                      disabled={submittingPerspective}
+                      style={{
+                        borderRadius: 999,
+                        border: "1px solid var(--rule)",
+                        background:
+                          perspectiveMode === "text" ? "var(--paper-deep)" : "transparent",
+                        color: "var(--ink)",
+                        cursor: submittingPerspective ? "default" : "pointer",
+                        fontFamily: "var(--font-ui)",
+                        fontSize: 13,
+                        padding: "8px 14px",
+                      }}
+                    >
+                      Write it
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPerspectiveMode("voice");
+                        setPerspectiveError(null);
+                      }}
+                      disabled={submittingPerspective}
+                      style={{
+                        borderRadius: 999,
+                        border: "1px solid var(--rule)",
+                        background:
+                          perspectiveMode === "voice" ? "var(--paper-deep)" : "transparent",
+                        color: "var(--ink)",
+                        cursor: submittingPerspective ? "default" : "pointer",
+                        fontFamily: "var(--font-ui)",
+                        fontSize: 13,
+                        padding: "8px 14px",
+                      }}
+                    >
+                      Add a voice note
+                    </button>
+                  </div>
                   <textarea
                     value={perspectiveDraft}
                     onChange={(event) => setPerspectiveDraft(event.target.value)}
                     rows={5}
-                    placeholder="What else should this memory hold?"
+                    placeholder={
+                      perspectiveMode === "voice"
+                        ? "Optional note or transcript to go with the voice perspective"
+                        : "What else should this memory hold?"
+                    }
                     style={{
                       width: "100%",
                       resize: "vertical",
@@ -1502,6 +1624,107 @@ export default function MemoryPage({
                       color: "var(--ink)",
                     }}
                   />
+                  {perspectiveMode === "voice" && (
+                    <div
+                      style={{
+                        display: "grid",
+                        gap: 12,
+                        borderRadius: 16,
+                        border: "1px solid var(--rule)",
+                        background: "var(--paper-deep)",
+                        padding: 16,
+                      }}
+                    >
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPerspectiveVoiceInputMode("record");
+                            setPerspectiveError(null);
+                            setPerspectiveFile(null);
+                          }}
+                          disabled={submittingPerspective}
+                          style={{
+                            borderRadius: 999,
+                            border: "1px solid var(--rule)",
+                            background:
+                              perspectiveVoiceInputMode === "record"
+                                ? "var(--paper)"
+                                : "transparent",
+                            color: "var(--ink)",
+                            cursor: submittingPerspective ? "default" : "pointer",
+                            fontFamily: "var(--font-ui)",
+                            fontSize: 13,
+                            padding: "8px 14px",
+                          }}
+                        >
+                          Record here
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPerspectiveVoiceInputMode("upload");
+                            setPerspectiveError(null);
+                            setPerspectiveFile(null);
+                          }}
+                          disabled={submittingPerspective}
+                          style={{
+                            borderRadius: 999,
+                            border: "1px solid var(--rule)",
+                            background:
+                              perspectiveVoiceInputMode === "upload"
+                                ? "var(--paper)"
+                                : "transparent",
+                            color: "var(--ink)",
+                            cursor: submittingPerspective ? "default" : "pointer",
+                            fontFamily: "var(--font-ui)",
+                            fontSize: 13,
+                            padding: "8px 14px",
+                          }}
+                        >
+                          Upload audio
+                        </button>
+                      </div>
+                      {perspectiveVoiceInputMode === "record" ? (
+                        <VoiceRecorderField
+                          value={perspectiveFile}
+                          onChange={(file) => {
+                            setPerspectiveFile(file);
+                            setPerspectiveError(null);
+                          }}
+                          disabled={submittingPerspective}
+                          baseName={`memory-perspective-${memory.id}`}
+                        />
+                      ) : (
+                        <label
+                          style={{
+                            display: "grid",
+                            gap: 8,
+                            fontFamily: "var(--font-ui)",
+                            fontSize: 13,
+                            color: "var(--ink-soft)",
+                          }}
+                        >
+                          <span>Choose an audio file</span>
+                          <input
+                            type="file"
+                            accept="audio/*"
+                            disabled={submittingPerspective}
+                            onChange={(event) => {
+                              setPerspectiveFile(event.target.files?.[0] ?? null);
+                              setPerspectiveError(null);
+                            }}
+                            style={{
+                              borderRadius: 12,
+                              border: "1px solid var(--rule)",
+                              background: "var(--paper)",
+                              padding: 12,
+                            }}
+                          />
+                        </label>
+                      )}
+                    </div>
+                  )}
                   {perspectiveError && (
                     <div
                       style={{
@@ -1529,7 +1752,11 @@ export default function MemoryPage({
                         padding: "10px 16px",
                       }}
                     >
-                      {submittingPerspective ? "Adding…" : "Add perspective"}
+                      {submittingPerspective
+                        ? "Adding…"
+                        : perspectiveMode === "voice"
+                        ? "Add voice perspective"
+                        : "Add perspective"}
                     </button>
                   </div>
                 </div>

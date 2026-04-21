@@ -66,6 +66,12 @@ export async function exportPlugin(app: FastifyInstance): Promise<void> {
                   displayName: true,
                 },
               },
+              media: {
+                columns: {
+                  objectKey: true,
+                  mimeType: true,
+                },
+              },
             },
           })
         : [];
@@ -98,10 +104,12 @@ export async function exportPlugin(app: FastifyInstance): Promise<void> {
         mediaKey: m.media?.objectKey ?? null,
         mediaKeys:
           m.mediaItems?.flatMap((item) => (item.media?.objectKey ? [item.media.objectKey] : [])) ?? [],
-        perspectives:
+          perspectives:
           perspectivesByMemoryId.get(m.id)?.map((perspective) => ({
             id: perspective.id,
             body: perspective.body,
+            mediaKey: perspective.media?.objectKey ?? null,
+            mimeType: perspective.media?.mimeType ?? null,
             createdAt: perspective.createdAt.toISOString(),
             contributorName:
               perspective.contributorPerson?.displayName ??
@@ -138,6 +146,11 @@ export async function exportPlugin(app: FastifyInstance): Promise<void> {
       for (const item of memory.mediaItems ?? []) {
         if (item.media?.objectKey) {
           mediaKeys.add(item.media.objectKey);
+        }
+      }
+      for (const perspective of perspectivesByMemoryId.get(memory.id) ?? []) {
+        if (perspective.media?.objectKey) {
+          mediaKeys.add(perspective.media.objectKey);
         }
       }
     }
@@ -202,7 +215,9 @@ function buildOfflineViewer(data: {
     mediaKeys: string[];
     perspectives: Array<{
       id: string;
-      body: string;
+      body: string | null;
+      mediaKey: string | null;
+      mimeType: string | null;
       createdAt: string;
       contributorName: string | null;
     }>;
