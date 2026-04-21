@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signOut, useSession } from "@/lib/auth-client";
 import { TreeArchiveCard } from "@/components/home/TreeArchiveCard";
-import type { TreeHomeCoverage, TreeHomeMemory, TreeHomeStats } from "@/components/home/homeTypes";
+import type { TreeHomePayload } from "@/components/home/homeTypes";
 import { readLastOpenedTreeId } from "@/lib/last-opened-tree";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -18,16 +18,9 @@ type TreeMembership = {
 
 type DashboardTreeSummary = {
   tree: TreeMembership;
-  stats: TreeHomeStats;
-  coverage: TreeHomeCoverage;
-  heroCandidates: TreeHomeMemory[];
-};
-
-type HomePayload = {
-  tree: TreeMembership;
-  stats: TreeHomeStats;
-  coverage: TreeHomeCoverage;
-  heroCandidates: TreeHomeMemory[];
+  stats: TreeHomePayload["stats"];
+  coverage: TreeHomePayload["coverage"];
+  heroCandidates: TreeHomePayload["heroCandidates"];
 };
 
 function DashboardContent() {
@@ -71,7 +64,7 @@ function DashboardContent() {
               credentials: "include",
             });
             if (!res.ok) return null;
-            const payload = (await res.json()) as HomePayload;
+            const payload = (await res.json()) as TreeHomePayload;
             return {
               tree,
               stats: payload.stats,
@@ -340,6 +333,76 @@ function DashboardContent() {
           </section>
         )}
 
+        {primarySummary && primarySummary.stats.memoryCount === 0 && (
+          <section style={{ marginBottom: 26 }}>
+            <div
+              style={{
+                border: "1px solid rgba(128,107,82,0.14)",
+                borderRadius: 18,
+                background: "rgba(252,248,242,0.84)",
+                padding: "20px 22px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 16,
+                flexWrap: "wrap",
+              }}
+            >
+              <div style={{ maxWidth: 640 }}>
+                <div
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    fontSize: 24,
+                    lineHeight: 1.15,
+                    color: "var(--ink)",
+                    marginBottom: 8,
+                  }}
+                >
+                  This archive is still in its first chapter.
+                </div>
+                <div
+                  style={{
+                    fontFamily: "var(--font-body)",
+                    fontSize: 15,
+                    lineHeight: 1.7,
+                    color: "rgba(53,44,33,0.74)",
+                  }}
+                >
+                  Enter the atrium to add the first memory, or start by shaping the family branch
+                  it will belong to.
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <a
+                  href={`/trees/${primarySummary.tree.id}/atrium`}
+                  style={{
+                    fontFamily: "var(--font-ui)",
+                    fontSize: 13,
+                    color: "white",
+                    background: "var(--ink)",
+                    borderRadius: 999,
+                    padding: "10px 16px",
+                    textDecoration: "none",
+                  }}
+                >
+                  Open atrium
+                </a>
+                <a
+                  href={`/trees/${primarySummary.tree.id}/people/new`}
+                  style={{
+                    fontFamily: "var(--font-ui)",
+                    fontSize: 13,
+                    color: "var(--moss)",
+                    textDecoration: "none",
+                  }}
+                >
+                  Add a person →
+                </a>
+              </div>
+            </div>
+          </section>
+        )}
+
         {secondarySummaries.length > 0 && (
           <section>
             <div
@@ -391,6 +454,25 @@ function DashboardContent() {
                   href={`/trees/${summary.tree.id}/atrium`}
                 />
               ))}
+            </div>
+          </section>
+        )}
+
+        {primarySummary && secondarySummaries.length === 0 && (
+          <section>
+            <div
+              style={{
+                borderTop: "1px solid rgba(128,107,82,0.12)",
+                paddingTop: 20,
+                fontFamily: "var(--font-body)",
+                fontSize: 15,
+                lineHeight: 1.75,
+                color: "rgba(53,44,33,0.68)",
+                maxWidth: 720,
+              }}
+            >
+              Only one archive is open right now. If more family branches are added later, they
+              will surface here as companion archives in the foyer.
             </div>
           </section>
         )}

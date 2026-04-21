@@ -9,7 +9,13 @@ import { EraRibbon } from "@/components/home/EraRibbon";
 import { HomeSummaryBand } from "@/components/home/HomeSummaryBand";
 import { MemoryLane } from "@/components/home/MemoryLane";
 import { TreeHomeHero } from "@/components/home/TreeHomeHero";
-import type { TreeHomeRelationship } from "@/components/home/homeTypes";
+import type {
+  TreeHomeCoverage,
+  TreeHomePayload,
+  TreeHomePersonRecord,
+  TreeHomeRelationship,
+  TreeHomeStats,
+} from "@/components/home/homeTypes";
 import { DriftMode } from "@/components/tree/DriftMode";
 import { AddMemoryWizard } from "@/components/tree/AddMemoryWizard";
 import { SearchOverlay } from "@/components/tree/SearchOverlay";
@@ -22,12 +28,6 @@ import { extractYearFromText, memoryMatchesDecade } from "@/components/home/home
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 const EASE = "cubic-bezier(0.22, 0.61, 0.36, 1)";
-
-interface Tree {
-  id: string;
-  name: string;
-  role?: string;
-}
 
 interface Person {
   id: string;
@@ -57,45 +57,22 @@ interface Memory {
   createdAt?: string;
 }
 
-interface HomeStats {
-  peopleCount: number;
-  memoryCount: number;
-  generationCount: number;
-  peopleWithoutPortraitCount: number;
-  peopleWithoutDirectMemoriesCount: number;
-}
-
-interface HomeCoverage {
-  earliestYear: number | null;
-  latestYear: number | null;
-  decadeBuckets: Array<{
-    startYear: number;
-    label: string;
-    count: number;
-  }>;
-}
-
-interface HomePayload {
-  tree: Tree;
-  people: Array<
-    Person & {
-      displayName?: string;
-      birthDateText?: string | null;
-      deathDateText?: string | null;
-    }
-  >;
-  memories: Memory[];
-  heroCandidates: Memory[];
-  inboxCount: number;
-  curationCount: number;
-  currentUserPersonId: string | null;
-  stats: HomeStats;
-  coverage: HomeCoverage;
-  relationships: TreeHomeRelationship[];
-}
+type Tree = TreeHomePayload["tree"];
 
 function extractYear(text?: string | null): number | null {
   return extractYearFromText(text);
+}
+
+function mapHomePerson(person: TreeHomePersonRecord): Person {
+  return {
+    id: person.id,
+    name: person.displayName ?? person.name ?? "",
+    portraitUrl: person.portraitUrl,
+    essenceLine: person.essenceLine,
+    birthYear: extractYear(person.birthDateText ?? null),
+    deathYear: extractYear(person.deathDateText ?? null),
+    linkedUserId: person.linkedUserId,
+  };
 }
 
 function PersonCard({ person, onClick }: { person: Person; onClick: () => void }) {
@@ -191,8 +168,8 @@ export default function AtriumPage() {
   const [people, setPeople] = useState<Person[]>([]);
   const [memories, setMemories] = useState<Memory[]>([]);
   const [heroCandidates, setHeroCandidates] = useState<Memory[]>([]);
-  const [homeStats, setHomeStats] = useState<HomeStats | null>(null);
-  const [coverage, setCoverage] = useState<HomeCoverage | null>(null);
+  const [homeStats, setHomeStats] = useState<TreeHomeStats | null>(null);
+  const [coverage, setCoverage] = useState<TreeHomeCoverage | null>(null);
   const [relationships, setRelationships] = useState<TreeHomeRelationship[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -216,6 +193,24 @@ export default function AtriumPage() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  const applyHomePayload = useCallback((data: TreeHomePayload) => {
+    setTree(data.tree);
+    setPeople(data.people.map(mapHomePerson));
+    setMemories(data.memories);
+    setHeroIndex(0);
+    setHeroCandidates(data.heroCandidates);
+    setHomeStats(data.stats);
+    setCoverage(data.coverage);
+    setRelationships(data.relationships);
+    setSelectedEra((current) =>
+      current === "all" || data.coverage.decadeBuckets.some((bucket) => bucket.startYear === current)
+        ? current
+        : "all",
+    );
+    setInboxCount(data.inboxCount);
+    setCurationCount(data.curationCount);
   }, []);
 
   useEffect(() => {
@@ -256,32 +251,8 @@ export default function AtriumPage() {
         if (!res.ok) {
           throw new Error("Failed to load this tree.");
         }
-        const data = (await res.json()) as HomePayload;
-        setTree(data.tree);
-        setPeople(
-          data.people.map((p) => ({
-            id: p.id,
-            name: p.displayName ?? p.name ?? "",
-            portraitUrl: p.portraitUrl,
-            essenceLine: p.essenceLine,
-            birthYear: extractYear(p.birthDateText ?? null),
-            deathYear: extractYear(p.deathDateText ?? null),
-            linkedUserId: p.linkedUserId,
-          })),
-        );
-        setMemories(data.memories);
-        setHeroIndex(0);
-        setHeroCandidates(data.heroCandidates);
-        setHomeStats(data.stats);
-        setCoverage(data.coverage);
-        setRelationships(data.relationships);
-        setSelectedEra((current) =>
-          current === "all" || data.coverage.decadeBuckets.some((bucket) => bucket.startYear === current)
-            ? current
-            : "all",
-        );
-        setInboxCount(data.inboxCount);
-        setCurationCount(data.curationCount);
+        const data = (await res.json()) as TreeHomePayload;
+        applyHomePayload(data);
       } catch (error) {
         setLoadError(
           error instanceof Error ? error.message : "Failed to load this tree.",
@@ -291,7 +262,7 @@ export default function AtriumPage() {
       }
     };
     void fetchHome();
-  }, [session, treeId]);
+  }, [applyHomePayload, session, treeId]);
 
   useEffect(() => {
     if (!session || !isCanonicalTreeId(treeId)) return;
@@ -310,33 +281,9 @@ export default function AtriumPage() {
       credentials: "include",
     });
     if (!res.ok) return;
-    const data = (await res.json()) as HomePayload;
-    setTree(data.tree);
-    setPeople(
-      data.people.map((p) => ({
-        id: p.id,
-        name: p.displayName ?? p.name ?? "",
-        portraitUrl: p.portraitUrl,
-        essenceLine: p.essenceLine,
-        birthYear: extractYear(p.birthDateText ?? null),
-        deathYear: extractYear(p.deathDateText ?? null),
-        linkedUserId: p.linkedUserId,
-      })),
-    );
-    setMemories(data.memories);
-    setHeroIndex(0);
-    setHeroCandidates(data.heroCandidates);
-    setHomeStats(data.stats);
-    setCoverage(data.coverage);
-    setRelationships(data.relationships);
-    setSelectedEra((current) =>
-      current === "all" || data.coverage.decadeBuckets.some((bucket) => bucket.startYear === current)
-        ? current
-        : "all",
-    );
-    setInboxCount(data.inboxCount);
-    setCurationCount(data.curationCount);
-  }, [treeId]);
+    const data = (await res.json()) as TreeHomePayload;
+    applyHomePayload(data);
+  }, [applyHomePayload, treeId]);
 
   usePendingVoiceTranscriptionRefresh({
     items: memories.map((memory) => ({
@@ -797,20 +744,115 @@ export default function AtriumPage() {
         </section>
       )}
 
-      <MemoryLane
-        title="Resurfacing now"
-        countLabel={`${recentMemories.length} memories${selectedEra === "all" ? "" : ` from ${selectedEraLabel}`}`}
-        memories={recentMemories}
-        onMemoryClick={(memory) => {
-          router.push(`/trees/${treeId}/memories/${memory.id}`);
-        }}
-        viewAllHref={`/trees/${treeId}`}
-        viewAllLabel={
-          memories.length > recentMemories.length
-            ? `+${memories.length - recentMemories.length} more in the constellation`
-            : undefined
-        }
-      />
+      {memories.length === 0 ? (
+        <section
+          style={{
+            padding: "28px max(24px, 5vw) 0",
+          }}
+        >
+          <div
+            style={{
+              border: "1px solid var(--rule)",
+              borderRadius: 18,
+              background:
+                "linear-gradient(180deg, rgba(255,250,244,0.98) 0%, rgba(242,235,224,0.98) 100%)",
+              padding: "28px clamp(20px, 3vw, 34px)",
+              boxShadow: "0 12px 28px rgba(40,30,18,0.05)",
+            }}
+          >
+            <div
+              style={{
+                fontFamily: "var(--font-ui)",
+                fontSize: 11,
+                textTransform: "uppercase",
+                letterSpacing: "0.1em",
+                color: "var(--ink-faded)",
+                marginBottom: 10,
+              }}
+            >
+              First chapter
+            </div>
+            <h2
+              style={{
+                margin: "0 0 10px",
+                fontFamily: "var(--font-display)",
+                fontSize: "clamp(26px, 3vw, 34px)",
+                fontWeight: 400,
+                lineHeight: 1.08,
+                color: "var(--ink)",
+                maxWidth: "16ch",
+              }}
+            >
+              This atrium is ready for its first memory.
+            </h2>
+            <p
+              style={{
+                margin: 0,
+                maxWidth: 620,
+                fontFamily: "var(--font-body)",
+                fontSize: 16,
+                lineHeight: 1.75,
+                color: "var(--ink-soft)",
+              }}
+            >
+              Add a story, photo, or voice note to give this archive something to surface. If the
+              tree is still taking shape, add a person first so memories have someone to gather
+              around.
+            </p>
+            <div
+              style={{
+                marginTop: 18,
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <button
+                onClick={() => setWizardOpen(true)}
+                style={{
+                  fontFamily: "var(--font-ui)",
+                  fontSize: 13,
+                  color: "white",
+                  background: "var(--ink)",
+                  border: "none",
+                  borderRadius: 999,
+                  padding: "10px 16px",
+                  cursor: "pointer",
+                }}
+              >
+                Add the first memory
+              </button>
+              <a
+                href={`/trees/${treeId}/people/new`}
+                style={{
+                  fontFamily: "var(--font-ui)",
+                  fontSize: 13,
+                  color: "var(--moss)",
+                  textDecoration: "none",
+                }}
+              >
+                Add the first person →
+              </a>
+            </div>
+          </div>
+        </section>
+      ) : (
+        <MemoryLane
+          title="Resurfacing now"
+          countLabel={`${recentMemories.length} memories${selectedEra === "all" ? "" : ` from ${selectedEraLabel}`}`}
+          memories={recentMemories}
+          onMemoryClick={(memory) => {
+            router.push(`/trees/${treeId}/memories/${memory.id}`);
+          }}
+          viewAllHref={`/trees/${treeId}`}
+          viewAllLabel={
+            memories.length > recentMemories.length
+              ? `+${memories.length - recentMemories.length} more in the constellation`
+              : undefined
+          }
+        />
+      )}
 
       {/* Divider */}
       {recentMemories.length > 0 && (

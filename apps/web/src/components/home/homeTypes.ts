@@ -1,5 +1,23 @@
 export type MemoryKind = "story" | "photo" | "voice" | "document" | "other";
 
+export interface TreeHomeTree {
+  id: string;
+  name: string;
+  role?: string;
+  createdAt?: string;
+}
+
+export interface TreeHomePersonRecord {
+  id: string;
+  name?: string;
+  displayName?: string;
+  portraitUrl: string | null;
+  essenceLine: string | null;
+  birthDateText?: string | null;
+  deathDateText?: string | null;
+  linkedUserId: string | null;
+}
+
 export interface TreeHomeMemory {
   id: string;
   kind: MemoryKind;
@@ -44,4 +62,17 @@ export interface TreeHomeRelationship {
   spouseStatus?: "active" | "former" | "deceased_partner" | null;
   startDateText?: string | null;
   endDateText?: string | null;
+}
+
+export interface TreeHomePayload {
+  tree: TreeHomeTree;
+  people: TreeHomePersonRecord[];
+  memories: TreeHomeMemory[];
+  heroCandidates: TreeHomeMemory[];
+  inboxCount: number;
+  curationCount: number;
+  currentUserPersonId: string | null;
+  stats: TreeHomeStats;
+  coverage: TreeHomeCoverage;
+  relationships: TreeHomeRelationship[];
 }
