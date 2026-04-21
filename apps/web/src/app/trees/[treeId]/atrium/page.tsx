@@ -7,6 +7,7 @@ import { AnimatePresence } from "framer-motion";
 import { ConstellationPreview } from "@/components/home/ConstellationPreview";
 import { EraRibbon } from "@/components/home/EraRibbon";
 import { HomeSummaryBand } from "@/components/home/HomeSummaryBand";
+import { AtriumSkeleton } from "@/components/home/HomeSurfaceSkeletons";
 import { MemoryLane } from "@/components/home/MemoryLane";
 import { TreeHomeHero } from "@/components/home/TreeHomeHero";
 import type {
@@ -19,7 +20,6 @@ import type {
 import { DriftMode } from "@/components/tree/DriftMode";
 import { AddMemoryWizard } from "@/components/tree/AddMemoryWizard";
 import { SearchOverlay } from "@/components/tree/SearchOverlay";
-import { Shimmer } from "@/components/ui/Shimmer";
 import { writeLastOpenedTreeId } from "@/lib/last-opened-tree";
 import { isCanonicalTreeId, resolveCanonicalTreeId } from "@/lib/tree-route";
 import { usePendingVoiceTranscriptionRefresh } from "@/lib/usePendingVoiceTranscriptionRefresh";
@@ -77,11 +77,15 @@ function mapHomePerson(person: TreeHomePersonRecord): Person {
 
 function PersonCard({ person, onClick }: { person: Person; onClick: () => void }) {
   const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const active = hovered || focused;
   return (
     <button
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
       style={{
         border: "none",
         cursor: "pointer",
@@ -91,8 +95,10 @@ function PersonCard({ person, onClick }: { person: Person; onClick: () => void }
         gap: 8,
         padding: "8px 12px",
         borderRadius: 8,
-        background: hovered ? "var(--paper-deep)" : "none",
-        transition: `background 150ms ${EASE}`,
+        background: active ? "var(--paper-deep)" : "none",
+        transform: active ? "translateY(-1px)" : "none",
+        outline: "none",
+        transition: `background 150ms ${EASE}, transform 150ms ${EASE}`,
       } as React.CSSProperties}
     >
       <div
@@ -138,6 +144,7 @@ function PersonCard({ person, onClick }: { person: Person; onClick: () => void }
           textAlign: "center",
           lineHeight: 1.3,
           maxWidth: 80,
+          transition: `color 150ms ${EASE}`,
         }}
       >
         {person.name.split(" ")[0]}
@@ -345,22 +352,7 @@ export default function AtriumPage() {
   const previewFocusPersonId = currentUserPersonIdFromPeople(people, session?.user.id) ?? featuredMemory?.primaryPersonId ?? people[0]?.id ?? null;
 
   if (isPending || loading || (needsNormalization && !loadError)) {
-    return (
-      <main
-        style={{
-          minHeight: "100vh",
-          background: "var(--paper)",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 16,
-        }}
-      >
-        <Shimmer width={180} height={14} />
-        <Shimmer width={280} height={10} />
-      </main>
-    );
+    return <AtriumSkeleton />;
   }
 
   if (loadError) {

@@ -1,8 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { getProxiedMediaUrl } from "@/lib/media-url";
 import type { TreeHomeCoverage, TreeHomeMemory, TreeHomeStats } from "./homeTypes";
-import { getCoverageRangeLabel, getHeroExcerpt } from "./homeUtils";
+import { EASE, getCoverageRangeLabel, getHeroExcerpt } from "./homeUtils";
 
 export function TreeArchiveCard({
   treeName,
@@ -21,24 +22,39 @@ export function TreeArchiveCard({
   href: string;
   variant?: "primary" | "secondary";
 }) {
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
   const heroImage = getProxiedMediaUrl(heroMemory?.mediaUrl);
   const heroExcerpt = getHeroExcerpt(heroMemory);
   const isPrimary = variant === "primary";
+  const active = hovered || focused;
 
   return (
     <article
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocusCapture={() => setFocused(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setFocused(false);
+        }
+      }}
       style={{
         position: "relative",
         overflow: "hidden",
         borderRadius: isPrimary ? 28 : 20,
-        border: "1px solid rgba(124,108,84,0.2)",
+        border: active ? "1px solid rgba(78,93,66,0.3)" : "1px solid rgba(124,108,84,0.2)",
         background: isPrimary
           ? "linear-gradient(180deg, rgba(247,242,233,0.98) 0%, rgba(238,229,216,0.98) 100%)"
           : "linear-gradient(180deg, rgba(247,242,233,1) 0%, rgba(242,235,224,1) 100%)",
         minHeight: isPrimary ? 430 : 340,
-        boxShadow: isPrimary
-          ? "0 24px 60px rgba(40,30,18,0.12)"
-          : "0 12px 30px rgba(40,30,18,0.08)",
+        boxShadow: active
+          ? "0 28px 66px rgba(40,30,18,0.14)"
+          : isPrimary
+            ? "0 24px 60px rgba(40,30,18,0.12)"
+            : "0 12px 30px rgba(40,30,18,0.08)",
+        transform: active ? "translateY(-3px)" : "none",
+        transition: `box-shadow 220ms ${EASE}, transform 220ms ${EASE}, border-color 220ms ${EASE}`,
       }}
     >
       {heroImage && (
@@ -247,6 +263,23 @@ export function TreeArchiveCard({
               textDecoration: "none",
               display: "inline-flex",
               alignItems: "center",
+              transition: `transform 200ms ${EASE}, opacity 200ms ${EASE}`,
+            }}
+            onMouseEnter={(event) => {
+              event.currentTarget.style.transform = "translateY(-1px)";
+              event.currentTarget.style.opacity = "0.92";
+            }}
+            onMouseLeave={(event) => {
+              event.currentTarget.style.transform = "translateY(0)";
+              event.currentTarget.style.opacity = "1";
+            }}
+            onFocus={(event) => {
+              event.currentTarget.style.transform = "translateY(-1px)";
+              event.currentTarget.style.opacity = "0.92";
+            }}
+            onBlur={(event) => {
+              event.currentTarget.style.transform = "translateY(0)";
+              event.currentTarget.style.opacity = "1";
             }}
           >
             Enter atrium →
@@ -258,6 +291,23 @@ export function TreeArchiveCard({
               fontSize: 13,
               color: "var(--moss)",
               textDecoration: "none",
+              transition: `color 200ms ${EASE}, transform 200ms ${EASE}`,
+            }}
+            onMouseEnter={(event) => {
+              event.currentTarget.style.color = "var(--ink)";
+              event.currentTarget.style.transform = "translateX(1px)";
+            }}
+            onMouseLeave={(event) => {
+              event.currentTarget.style.color = "var(--moss)";
+              event.currentTarget.style.transform = "translateX(0)";
+            }}
+            onFocus={(event) => {
+              event.currentTarget.style.color = "var(--ink)";
+              event.currentTarget.style.transform = "translateX(1px)";
+            }}
+            onBlur={(event) => {
+              event.currentTarget.style.color = "var(--moss)";
+              event.currentTarget.style.transform = "translateX(0)";
             }}
           >
             Open constellation

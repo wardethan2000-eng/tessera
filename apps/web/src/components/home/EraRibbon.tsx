@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import type { TreeHomeCoverage } from "./homeTypes";
+import { EASE } from "./homeUtils";
 
 type EraValue = "all" | number;
 
@@ -104,23 +106,33 @@ function EraChip({
   active: boolean;
   onClick: () => void;
 }) {
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const highlighted = active || hovered || focused;
+
   return (
     <button
       type="button"
       onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
       style={{
-        border: active ? "1px solid var(--moss)" : "1px solid var(--rule)",
-        background: active ? "rgba(78,93,66,0.08)" : "var(--paper-deep)",
-        color: active ? "var(--ink)" : "var(--ink-faded)",
+        border: highlighted ? "1px solid var(--moss)" : "1px solid var(--rule)",
+        background: highlighted ? "rgba(78,93,66,0.08)" : "var(--paper-deep)",
+        color: highlighted ? "var(--ink)" : "var(--ink-faded)",
         borderRadius: 999,
         padding: "10px 14px",
         minWidth: "fit-content",
         cursor: "pointer",
         textAlign: "left",
         scrollSnapAlign: "start",
-        boxShadow: active ? "0 8px 18px rgba(78,93,66,0.08)" : "none",
+        outline: "none",
+        boxShadow: highlighted ? "0 8px 18px rgba(78,93,66,0.08)" : "none",
         transition:
-          "background 220ms cubic-bezier(0.22, 0.61, 0.36, 1), border-color 220ms cubic-bezier(0.22, 0.61, 0.36, 1), box-shadow 220ms cubic-bezier(0.22, 0.61, 0.36, 1), color 220ms cubic-bezier(0.22, 0.61, 0.36, 1)",
+          `background 220ms ${EASE}, border-color 220ms ${EASE}, box-shadow 220ms ${EASE}, color 220ms ${EASE}, transform 220ms ${EASE}`,
+        transform: hovered ? "translateY(-1px)" : "none",
       }}
     >
       <div

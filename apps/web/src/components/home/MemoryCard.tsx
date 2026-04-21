@@ -15,7 +15,9 @@ export function MemoryCard({
   extraControls?: React.ReactNode;
 }) {
   const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
   const resolvedMediaUrl = getProxiedMediaUrl(memory.mediaUrl);
+  const active = hovered || focused;
 
   return (
     <article
@@ -30,17 +32,20 @@ export function MemoryCard({
         flexShrink: 0,
         width: "min(240px, calc(100vw - 72px))",
         overflow: "hidden",
-        boxShadow: hovered
-          ? "0 10px 28px rgba(28,25,21,0.12)"
+        boxShadow: active
+          ? "0 12px 30px rgba(28,25,21,0.14)"
           : "0 3px 10px rgba(28,25,21,0.06)",
-        transform: hovered ? "translateY(-3px)" : "none",
-        transition: `box-shadow 200ms ${EASE}, transform 200ms ${EASE}`,
+        transform: active ? "translateY(-3px)" : "none",
+        transition: `box-shadow 200ms ${EASE}, transform 200ms ${EASE}, border-color 200ms ${EASE}`,
         scrollSnapAlign: "start",
+        borderColor: active ? "rgba(78,93,66,0.34)" : "var(--rule)",
       }}
     >
       <button
         type="button"
         onClick={onClick}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         style={{
           background: "none",
           border: "none",
@@ -48,6 +53,7 @@ export function MemoryCard({
           width: "100%",
           cursor: "pointer",
           textAlign: "left",
+          outline: "none",
         }}
       >
         {memory.kind === "photo" && resolvedMediaUrl ? (
@@ -56,7 +62,13 @@ export function MemoryCard({
             <img
               src={resolvedMediaUrl}
               alt={memory.title}
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                transform: active ? "scale(1.03)" : "scale(1)",
+                transition: `transform 240ms ${EASE}`,
+              }}
             />
           </div>
         ) : (
@@ -86,13 +98,14 @@ export function MemoryCard({
             style={{
               fontFamily: "var(--font-display)",
               fontSize: 14,
-              color: "var(--ink)",
+              color: active ? "var(--moss)" : "var(--ink)",
               lineHeight: 1.3,
               marginBottom: 4,
               display: "-webkit-box",
               WebkitLineClamp: 2,
               WebkitBoxOrient: "vertical",
               overflow: "hidden",
+              transition: `color 200ms ${EASE}`,
             }}
           >
             {memory.title}

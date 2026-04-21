@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signOut, useSession } from "@/lib/auth-client";
+import { DashboardSkeleton } from "@/components/home/HomeSurfaceSkeletons";
 import { TreeArchiveCard } from "@/components/home/TreeArchiveCard";
 import type { TreeHomePayload } from "@/components/home/homeTypes";
 import { readLastOpenedTreeId } from "@/lib/last-opened-tree";
@@ -119,27 +120,7 @@ function DashboardContent() {
   );
 
   if (isPending || loading) {
-    return (
-      <main
-        style={{
-          minHeight: "100vh",
-          background: "linear-gradient(180deg, #f7f2e9 0%, #efe7da 100%)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <p
-          style={{
-            fontFamily: "var(--font-ui)",
-            fontSize: 13,
-            color: "var(--ink-faded)",
-          }}
-        >
-          Opening your archives…
-        </p>
-      </main>
-    );
+    return <DashboardSkeleton />;
   }
 
   if (loadError) {
