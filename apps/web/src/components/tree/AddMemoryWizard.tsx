@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PlacePicker } from "@/components/tree/PlacePicker";
+import { VoiceRecorderField } from "@/components/tree/VoiceRecorderField";
 
 type MemoryKind = "story" | "photo" | "voice" | "document" | "other";
 
@@ -21,6 +22,7 @@ interface AddMemoryWizardProps {
   onMemoryAdded?: () => void;
   defaultPersonId?: string;
   defaultKind?: MemoryKind;
+  subjectName?: string;
   promptId?: string;
   promptQuestion?: string;
 }
@@ -33,6 +35,7 @@ interface Step2State {
   title: string;
   body: string;
   file: File | null;
+  voiceInputMode: "upload" | "record";
   attachmentMode: "upload" | "drive_link";
   driveUrl: string;
 }
@@ -49,7 +52,7 @@ interface Step3State {
 }
 
 const KIND_OPTIONS: { id: MemoryKind; icon: string; label: string; description: string }[] = [
-  { id: "photo", icon: "◻", label: "Photo", description: "A photograph from the archive" },
+  { id: "photo", icon: "◻", label: "Photo or video", description: "A photograph, scanned image, or short video clip" },
   { id: "story", icon: "✦", label: "Story", description: "A written memory or reflection" },
   { id: "voice", icon: "◉", label: "Voice", description: "An audio recording or voice memo" },
   { id: "document", icon: "▤", label: "Document", description: "A letter, certificate, or document" },
@@ -68,15 +71,17 @@ export function AddMemoryWizard({
   onMemoryAdded,
   defaultPersonId,
   defaultKind,
+  subjectName,
   promptId,
   promptQuestion,
 }: AddMemoryWizardProps) {
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(defaultKind ? 2 : 1);
   const [step1, setStep1] = useState<Step1State>({ kind: defaultKind ?? "photo" });
   const [step2, setStep2] = useState<Step2State>({
     title: "",
     body: "",
     file: null,
+    voiceInputMode: "upload",
     attachmentMode: "upload",
     driveUrl: "",
   });
@@ -112,12 +117,15 @@ export function AddMemoryWizard({
   }, [step]);
 
   const apiBase_ = apiBase ?? (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000");
+  const memoryKindLabel = step1.kind === "photo" ? "photo or video" : step1.kind;
 
   const supportsDriveLink =
     step1.kind === "photo" || step1.kind === "document" || step1.kind === "other";
+  const isVoiceMemory = step1.kind === "voice";
   const needsFile =
     step1.kind === "photo" || step1.kind === "voice" || step1.kind === "document";
   const usingDriveLink = supportsDriveLink && step2.attachmentMode === "drive_link";
+  const usingVoiceRecorder = isVoiceMemory && step2.voiceInputMode === "record";
 
   const canProceedStep2 = useCallback(() => {
     if (!step2.title.trim()) return false;
@@ -215,7 +223,7 @@ export function AddMemoryWizard({
   };
 
   const acceptType = step1.kind === "photo"
-    ? "image/*"
+    ? "image/*,video/*"
     : step1.kind === "voice"
     ? "audio/*"
     : step1.kind === "document"
@@ -278,7 +286,11 @@ export function AddMemoryWizard({
                 color: "var(--ink)",
               }}
             >
-              {promptQuestion ? "Reply to a question" : "Add a memory"}
+              {promptQuestion
+                ? "Reply to a question"
+                : subjectName
+                ? `Add to ${subjectName}'s chapter`
+                : "Add a memory"}
             </div>
             {promptQuestion && (
               <div
@@ -359,7 +371,7 @@ export function AddMemoryWizard({
                 marginBottom: 14,
               }}
             >
-              What kind of memory is this?
+              {subjectName ? `What would you like to add to ${subjectName}'s chapter?` : "What kind of memory is this?"}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {KIND_OPTIONS.map(({ id, icon, label, description }) => {
@@ -455,8 +467,8 @@ export function AddMemoryWizard({
             >
               {step1.kind === "photo"
                 ? usingDriveLink
-                  ? "Link a Google Drive photograph"
-                  : "Upload a photograph"
+                  ? "Link a Google Drive photo or video"
+                  : "Upload a photo or video"
                 : step1.kind === "voice"
                 ? "Upload a voice recording"
                 : step1.kind === "document"
@@ -588,8 +600,7 @@ export function AddMemoryWizard({
               </div>
             )}
 
-            {/* File upload (photo/voice/document) */}
-            {needsFile && !usingDriveLink && (
+            {isVoiceMemory && (
               <div style={{ marginBottom: 14 }}>
                 <label
                   style={{
@@ -600,7 +611,89 @@ export function AddMemoryWizard({
                     marginBottom: 6,
                   }}
                 >
-                  {step1.kind === "photo" ? "Photograph *" : step1.kind === "voice" ? "Audio file *" : "Document file *"}
+                  Voice source
+                </label>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    padding: 4,
+                    borderRadius: 8,
+                    border: "1px solid var(--rule)",
+                    background: "var(--paper-deep)",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setStep2((current) => ({
+                        ...current,
+                        voiceInputMode: "record",
+                        file: null,
+                      }))
+                    }
+                    style={{
+                      flex: 1,
+                      border: "none",
+                      borderRadius: 6,
+                      padding: "9px 12px",
+                      cursor: "pointer",
+                      background:
+                        step2.voiceInputMode === "record" ? "var(--paper)" : "transparent",
+                      color:
+                        step2.voiceInputMode === "record"
+                          ? "var(--ink)"
+                          : "var(--ink-faded)",
+                      fontFamily: "var(--font-ui)",
+                      fontSize: 12,
+                    }}
+                  >
+                    Record in browser
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setStep2((current) => ({
+                        ...current,
+                        voiceInputMode: "upload",
+                        file: null,
+                      }))
+                    }
+                    style={{
+                      flex: 1,
+                      border: "none",
+                      borderRadius: 6,
+                      padding: "9px 12px",
+                      cursor: "pointer",
+                      background:
+                        step2.voiceInputMode === "upload" ? "var(--paper)" : "transparent",
+                      color:
+                        step2.voiceInputMode === "upload"
+                          ? "var(--ink)"
+                          : "var(--ink-faded)",
+                      fontFamily: "var(--font-ui)",
+                      fontSize: 12,
+                    }}
+                  >
+                    Upload file
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* File upload (photo/voice/document) */}
+            {needsFile && !usingDriveLink && !usingVoiceRecorder && (
+              <div style={{ marginBottom: 14 }}>
+                <label
+                  style={{
+                    display: "block",
+                    fontFamily: "var(--font-ui)",
+                    fontSize: 12,
+                    color: "var(--ink-faded)",
+                    marginBottom: 6,
+                  }}
+                >
+                  {step1.kind === "photo" ? "Photo or video *" : step1.kind === "voice" ? "Audio file *" : "Document file *"}
                 </label>
                 <div
                   onClick={() => fileRef.current?.click()}
@@ -655,7 +748,7 @@ export function AddMemoryWizard({
                           marginTop: 4,
                         }}
                       >
-                        Click to choose file
+                        Click to choose a file
                       </div>
                     </div>
                   )}
@@ -668,6 +761,31 @@ export function AddMemoryWizard({
                   onChange={(e) => {
                     const f = e.target.files?.[0] ?? null;
                     setStep2((s) => ({ ...s, file: f }));
+                  }}
+                />
+              </div>
+            )}
+
+            {usingVoiceRecorder && (
+              <div style={{ marginBottom: 14 }}>
+                <label
+                  style={{
+                    display: "block",
+                    fontFamily: "var(--font-ui)",
+                    fontSize: 12,
+                    color: "var(--ink-faded)",
+                    marginBottom: 6,
+                  }}
+                >
+                  Recording *
+                </label>
+                <VoiceRecorderField
+                  value={step2.file}
+                  onChange={(file) => {
+                    if (fileRef.current) {
+                      fileRef.current.value = "";
+                    }
+                    setStep2((current) => ({ ...current, file }));
                   }}
                 />
               </div>
@@ -1208,7 +1326,7 @@ export function AddMemoryWizard({
                   lineHeight: 1.5,
                 }}
               >
-                A <strong style={{ color: "var(--ink)" }}>{step1.kind}</strong> memory titled{" "}
+                 A <strong style={{ color: "var(--ink)" }}>{memoryKindLabel}</strong> memory titled{" "}
                 <em style={{ color: "var(--ink)" }}>"{step2.title}"</em>
                 {step3.personId && people.find((p) => p.id === step3.personId) && (
                   <>

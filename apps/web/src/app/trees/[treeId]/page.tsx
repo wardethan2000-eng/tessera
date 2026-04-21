@@ -9,6 +9,7 @@ import { DriftMode } from "@/components/tree/DriftMode";
 import { AddMemoryWizard } from "@/components/tree/AddMemoryWizard";
 import { SearchOverlay } from "@/components/tree/SearchOverlay";
 import { Shimmer } from "@/components/ui/Shimmer";
+import { usePendingVoiceTranscriptionRefresh } from "@/lib/usePendingVoiceTranscriptionRefresh";
 import type { ApiPerson, ApiRelationship } from "@/components/tree/treeTypes";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -30,6 +31,7 @@ interface TreeMemory {
   title: string;
   body?: string | null;
   transcriptText?: string | null;
+  transcriptStatus?: "none" | "queued" | "processing" | "completed" | "failed";
   dateOfEventText?: string | null;
   mediaUrl?: string | null;
   personName?: string | null;
@@ -131,6 +133,16 @@ export default function TreePage() {
     });
     if (res.ok) setMemories(await res.json());
   }, [treeId]);
+
+  usePendingVoiceTranscriptionRefresh({
+    items: memories.map((memory) => ({
+      id: memory.id,
+      kind: memory.kind,
+      transcriptStatus: memory.transcriptStatus,
+    })),
+    refresh: refreshMemories,
+    enabled: Boolean(session),
+  });
 
   const refreshConstellation = useCallback(async () => {
     const [peopleResResult, relsResResult] = await Promise.allSettled([

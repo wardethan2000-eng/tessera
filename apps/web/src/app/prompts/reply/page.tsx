@@ -2,6 +2,7 @@
 
 import {
   Suspense,
+  useCallback,
   useEffect,
   useMemo,
   useState,
@@ -9,6 +10,8 @@ import {
   type FormEvent,
 } from "react";
 import { useSearchParams } from "next/navigation";
+import { VoiceRecorderField } from "@/components/tree/VoiceRecorderField";
+import { usePendingVoiceTranscriptionRefresh } from "@/lib/usePendingVoiceTranscriptionRefresh";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -23,6 +26,36 @@ interface PromptReplyDetails {
   fromUserName: string;
   email: string;
   expiresAt: string;
+}
+
+interface SubmittedReplyMemory {
+  id: string;
+  kind: MemoryKind;
+  title: string;
+  body?: string | null;
+  mediaUrl?: string | null;
+  mimeType?: string | null;
+  transcriptText?: string | null;
+  transcriptLanguage?: string | null;
+  transcriptStatus?: "none" | "queued" | "processing" | "completed" | "failed";
+  transcriptError?: string | null;
+}
+
+function getVoiceTranscriptLabel(memory: SubmittedReplyMemory | null): string | null {
+  if (!memory || memory.kind !== "voice") return null;
+  if (memory.transcriptStatus === "completed" && memory.transcriptText) {
+    return memory.transcriptText;
+  }
+  if (memory.transcriptStatus === "completed") {
+    return "Transcript unavailable.";
+  }
+  if (memory.transcriptStatus === "failed") {
+    return memory.transcriptError ?? "Transcription failed.";
+  }
+  if (memory.transcriptStatus === "queued" || memory.transcriptStatus === "processing") {
+    return "Transcribing…";
+  }
+  return null;
 }
 
 export default function PromptReplyPage() {
@@ -47,9 +80,11 @@ function PromptReplyContent() {
   const [dateOfEventText, setDateOfEventText] = useState("");
   const [submitterName, setSubmitterName] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [voiceInputMode, setVoiceInputMode] = useState<"upload" | "record">("upload");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [submittedMemory, setSubmittedMemory] = useState<SubmittedReplyMemory | null>(null);
 
   useEffect(() => {
     if (!token) {
@@ -77,6 +112,7 @@ function PromptReplyContent() {
   }, [token]);
 
   const needsFile = kind === "photo" || kind === "voice" || kind === "document";
+  const usingVoiceRecorder = kind === "voice" && voiceInputMode === "record";
 
   const acceptedFileType = useMemo(() => {
     if (kind === "photo") return "image/*";
@@ -84,6 +120,23 @@ function PromptReplyContent() {
     if (kind === "document") return ".pdf,.doc,.docx,application/pdf,application/msword";
     return undefined;
   }, [kind]);
+
+  const refreshSubmittedMemory = useCallback(async () => {
+    if (!token || !submittedMemory?.id) return;
+
+    const res = await fetch(
+      `${API}/api/prompt-replies/${encodeURIComponent(token)}/reply-status?memoryId=${encodeURIComponent(submittedMemory.id)}`,
+    );
+    if (res.ok) {
+      setSubmittedMemory((await res.json()) as SubmittedReplyMemory);
+    }
+  }, [submittedMemory?.id, token]);
+
+  usePendingVoiceTranscriptionRefresh({
+    items: submittedMemory ? [submittedMemory] : [],
+    refresh: refreshSubmittedMemory,
+    enabled: submitted && !!submittedMemory,
+  });
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -157,6 +210,7 @@ function PromptReplyContent() {
         throw new Error(err.error ?? "Could not submit reply");
       }
 
+      setSubmittedMemory((await res.json()) as SubmittedReplyMemory);
       setSubmitted(true);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Could not submit reply");
@@ -185,6 +239,7 @@ function PromptReplyContent() {
   }
 
   if (submitted) {
+    const transcriptLabel = getVoiceTranscriptLabel(submittedMemory);
     return (
       <main style={pageStyle}>
         <div style={cardStyle}>
@@ -192,6 +247,27 @@ function PromptReplyContent() {
           <p style={bodyStyle}>
             Your reply has been added to <em>{details.treeName}</em>.
           </p>
+          {submittedMemory?.kind === "voice" && (
+            <div style={submissionDetailStyle}>
+              {submittedMemory.mediaUrl && (
+                <audio controls src={submittedMemory.mediaUrl} style={{ width: "100%" }}>
+                  Your browser does not support audio playback.
+                </audio>
+              )}
+              <div style={transcriptCardStyle}>
+                <div style={transcriptLabelStyle}>Transcript</div>
+                <div style={transcriptBodyStyle}>
+                  {transcriptLabel ?? "Your recording was saved."}
+                </div>
+                {submittedMemory.transcriptLanguage &&
+                  submittedMemory.transcriptStatus === "completed" && (
+                    <div style={transcriptMetaStyle}>
+                      Language: {submittedMemory.transcriptLanguage}
+                    </div>
+                  )}
+              </div>
+            </div>
+          )}
         </div>
       </main>
     );
@@ -228,6 +304,7 @@ function PromptReplyContent() {
             onChange={(e) => {
               setKind(e.target.value as MemoryKind);
               setFile(null);
+              setVoiceInputMode("upload");
             }}
             style={inputStyle}
           >
@@ -276,7 +353,41 @@ function PromptReplyContent() {
           </label>
         )}
 
-        {needsFile && (
+        {kind === "voice" && needsFile && (
+          <div style={labelStyle}>
+            Voice source
+            <div style={toggleGroupStyle}>
+              <button
+                type="button"
+                onClick={() => {
+                  setVoiceInputMode("record");
+                  setFile(null);
+                }}
+                style={{
+                  ...toggleButtonStyle,
+                  ...(voiceInputMode === "record" ? toggleButtonActiveStyle : null),
+                }}
+              >
+                Record in browser
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setVoiceInputMode("upload");
+                  setFile(null);
+                }}
+                style={{
+                  ...toggleButtonStyle,
+                  ...(voiceInputMode === "upload" ? toggleButtonActiveStyle : null),
+                }}
+              >
+                Upload file
+              </button>
+            </div>
+          </div>
+        )}
+
+        {needsFile && !usingVoiceRecorder && (
           <label style={labelStyle}>
             Upload file
             <input
@@ -287,6 +398,13 @@ function PromptReplyContent() {
               style={inputStyle}
             />
           </label>
+        )}
+
+        {usingVoiceRecorder && (
+          <div style={labelStyle}>
+            Recording
+            <VoiceRecorderField value={file} onChange={setFile} />
+          </div>
         )}
 
         {submitError && (
@@ -379,10 +497,74 @@ const inputStyle: CSSProperties = {
   fontSize: 14,
 };
 
+const toggleGroupStyle: CSSProperties = {
+  display: "flex",
+  gap: 8,
+  padding: 4,
+  borderRadius: 8,
+  border: "1px solid var(--rule)",
+  background: "var(--paper)",
+};
+
+const toggleButtonStyle: CSSProperties = {
+  flex: 1,
+  border: "none",
+  borderRadius: 6,
+  padding: "9px 10px",
+  background: "transparent",
+  color: "var(--ink-faded)",
+  fontFamily: "var(--font-ui)",
+  fontSize: 12,
+  cursor: "pointer",
+};
+
+const toggleButtonActiveStyle: CSSProperties = {
+  background: "var(--paper-deep)",
+  color: "var(--ink)",
+};
+
 const textAreaStyle: CSSProperties = {
   ...inputStyle,
   fontFamily: "var(--font-body)",
   resize: "vertical",
+};
+
+const submissionDetailStyle: CSSProperties = {
+  marginTop: 18,
+  display: "flex",
+  flexDirection: "column",
+  gap: 14,
+};
+
+const transcriptCardStyle: CSSProperties = {
+  borderRadius: 10,
+  border: "1px solid var(--rule)",
+  background: "var(--paper)",
+  padding: "12px 14px",
+};
+
+const transcriptLabelStyle: CSSProperties = {
+  fontFamily: "var(--font-ui)",
+  fontSize: 11,
+  textTransform: "uppercase",
+  letterSpacing: "0.08em",
+  color: "var(--ink-faded)",
+  marginBottom: 8,
+};
+
+const transcriptBodyStyle: CSSProperties = {
+  fontFamily: "var(--font-body)",
+  fontSize: 15,
+  lineHeight: 1.65,
+  color: "var(--ink-soft)",
+  whiteSpace: "pre-wrap",
+};
+
+const transcriptMetaStyle: CSSProperties = {
+  marginTop: 8,
+  fontFamily: "var(--font-ui)",
+  fontSize: 11,
+  color: "var(--ink-faded)",
 };
 
 const buttonStyle: CSSProperties = {

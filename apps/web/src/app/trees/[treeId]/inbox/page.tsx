@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
 import { AddMemoryWizard } from "@/components/tree/AddMemoryWizard";
 import { PromptComposer } from "@/components/tree/PromptComposer";
 import { Shimmer } from "@/components/ui/Shimmer";
+import { usePendingVoiceTranscriptionRefresh } from "@/lib/usePendingVoiceTranscriptionRefresh";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -23,6 +24,9 @@ interface Reply {
   body?: string | null;
   mediaUrl?: string | null;
   dateOfEventText?: string | null;
+  transcriptText?: string | null;
+  transcriptStatus?: "none" | "queued" | "processing" | "completed" | "failed";
+  transcriptError?: string | null;
 }
 
 interface Prompt {
@@ -57,6 +61,23 @@ const STATUS_COLOR: Record<Prompt["status"], string> = {
   answered: "var(--moss)",
   dismissed: "var(--ink-faded)",
 };
+
+function getVoiceReplyTranscriptLabel(reply: Reply): string | null {
+  if (reply.kind !== "voice") return null;
+  if (reply.transcriptStatus === "completed" && reply.transcriptText) {
+    return reply.transcriptText;
+  }
+  if (reply.transcriptStatus === "completed") {
+    return "Transcript unavailable.";
+  }
+  if (reply.transcriptStatus === "failed") {
+    return reply.transcriptError ?? "Transcription failed.";
+  }
+  if (reply.transcriptStatus === "queued" || reply.transcriptStatus === "processing") {
+    return "Transcribing…";
+  }
+  return null;
+}
 
 export default function InboxPage() {
   const params = useParams();
@@ -142,6 +163,27 @@ export default function InboxPage() {
   const canSeeAll =
     membership && ["founder", "steward", "contributor"].includes(membership.role);
   const displayedPrompts = activeTab === "inbox" ? inbox : allPrompts;
+  const replyItems = useMemo(
+    () => [...inbox, ...allPrompts].flatMap((prompt) => prompt.replies ?? []),
+    [allPrompts, inbox],
+  );
+
+  const refreshPromptCollections = useCallback(async () => {
+    await fetchData();
+    if (canSeeAll) {
+      await fetchAllPrompts();
+    }
+  }, [canSeeAll, fetchAllPrompts, fetchData]);
+
+  usePendingVoiceTranscriptionRefresh({
+    items: replyItems.map((reply) => ({
+      id: reply.id,
+      kind: reply.kind,
+      transcriptStatus: reply.transcriptStatus,
+    })),
+    refresh: refreshPromptCollections,
+    enabled: !loading,
+  });
 
   const handleSendEmailLink = async () => {
     if (!emailPrompt || !emailInput.trim()) return;
@@ -616,10 +658,23 @@ function PromptCard({
                           color: "var(--ink-faded)",
                           marginLeft: 8,
                         }}
-                      >
-                        {r.dateOfEventText}
-                      </span>
-                    )}
+                        >
+                          {r.dateOfEventText}
+                        </span>
+                      )}
+                      {r.kind === "voice" && getVoiceReplyTranscriptLabel(r) && (
+                        <div
+                          style={{
+                            marginTop: 4,
+                            fontFamily: "var(--font-body)",
+                            fontSize: 12,
+                            lineHeight: 1.45,
+                            color: "var(--ink-faded)",
+                          }}
+                        >
+                          {getVoiceReplyTranscriptLabel(r)}
+                        </div>
+                      )}
                   </div>
                 </div>
               ))}

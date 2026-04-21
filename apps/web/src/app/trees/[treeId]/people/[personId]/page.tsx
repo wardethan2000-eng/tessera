@@ -11,6 +11,7 @@ import {
   type TreeVisibilityLevel,
 } from "@/components/tree/MemoryVisibilityControl";
 import { PlacePicker } from "@/components/tree/PlacePicker";
+import { usePendingVoiceTranscriptionRefresh } from "@/lib/usePendingVoiceTranscriptionRefresh";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -120,6 +121,24 @@ type CrossTreeLink = {
   memories: Memory[];
 };
 
+type EditFormState = {
+  displayName: string;
+  essenceLine: string;
+  birthDateText: string;
+  deathDateText: string;
+  birthPlace: string;
+  deathPlace: string;
+  birthPlaceId: string;
+  deathPlaceId: string;
+  isLiving: boolean;
+};
+
+type RelationshipFormState = {
+  otherPersonId: string;
+  type: RelationshipType;
+  direction: "from" | "to";
+};
+
 function relationshipLabel(r: Relationship, personId: string): string {
   const labels: Record<RelationshipType, [string, string]> = {
     parent_child: ["Parent of", "Child of"],
@@ -159,7 +178,7 @@ function getVoiceTranscriptLabel(memory: Memory): string | null {
   return null;
 }
 
-type Tab = "memories" | "stories" | "connections" | "about" | "prompts";
+type ChapterSectionId = "life" | "stories" | "archive" | "family" | "questions" | "context";
 
 export default function PersonPage({
   params,
@@ -170,15 +189,13 @@ export default function PersonPage({
   const router = useRouter();
   const { data: session, isPending } = useSession();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const mainRef = useRef<HTMLDivElement>(null);
+  const chapterSectionRefs = useRef<Map<ChapterSectionId, HTMLElement>>(new Map());
 
   const [person, setPerson] = useState<Person | null>(null);
   const [loading, setLoading] = useState(true);
   const [allPeople, setAllPeople] = useState<PersonSummary[]>([]);
   const [visibleTrees, setVisibleTrees] = useState<PersonTreeMembership[]>([]);
   const [duplicateCandidates, setDuplicateCandidates] = useState<DuplicateCandidate[]>([]);
-  const [activeTab, setActiveTab] = useState<Tab>("memories");
-  const [activeDecade, setActiveDecade] = useState<string | null>(null);
 
   // Lightbox
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
@@ -186,7 +203,7 @@ export default function PersonPage({
 
   // Edit state
   const [editing, setEditing] = useState(false);
-  const [editForm, setEditForm] = useState({
+  const [editForm, setEditForm] = useState<EditFormState>({
     displayName: "",
     essenceLine: "",
     birthDateText: "",
@@ -206,13 +223,13 @@ export default function PersonPage({
 
   // Add memory
   const [showMemoryForm, setShowMemoryForm] = useState(false);
-  const [memoryComposerKind, setMemoryComposerKind] = useState<MemoryKind>("photo");
+  const [memoryComposerKind, setMemoryComposerKind] = useState<MemoryKind | undefined>(undefined);
   const [updatingMemorySuppressionId, setUpdatingMemorySuppressionId] = useState<string | null>(null);
   const [updatingMemoryVisibilityId, setUpdatingMemoryVisibilityId] = useState<string | null>(null);
 
   // Add relationship
   const [showRelForm, setShowRelForm] = useState(false);
-  const [relForm, setRelForm] = useState({
+  const [relForm, setRelForm] = useState<RelationshipFormState>({
     otherPersonId: "",
     type: "parent_child" as RelationshipType,
     direction: "from" as "from" | "to",
@@ -247,6 +264,7 @@ export default function PersonPage({
       loadVisibleTrees();
       loadCrossTreeLinks();
       loadDuplicateCandidates();
+      loadPersonPrompts();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, treeId, personId]);
@@ -262,12 +280,14 @@ export default function PersonPage({
     }
     const data = (await res.json()) as Person;
     setPerson(data);
-    const firstYear = data.memories
-      .map((m) => extractYear(m.dateOfEventText))
-      .find((y) => y !== null);
-    if (firstYear) setActiveDecade(getDecade(firstYear));
     setLoading(false);
   }
+
+  usePendingVoiceTranscriptionRefresh({
+    items: person?.memories ?? [],
+    refresh: loadPerson,
+    enabled: Boolean(session && person),
+  });
 
   async function loadAllPeople() {
     const res = await fetch(`${API}/api/trees/${treeId}/people`, {
@@ -501,55 +521,66 @@ export default function PersonPage({
     setMergingDuplicateId(null);
   }
 
-  // Open lightbox for a list of memories at a given index
-  const openLightbox = useCallback((memories: Memory[], startIndex: number) => {
-    setLightboxMemories(memories.map((m) => ({
-      id: m.id,
-      kind: m.kind,
-      title: m.title,
-      body: m.body,
-      transcriptText: m.transcriptText,
-      transcriptLanguage: m.transcriptLanguage,
-      transcriptStatus: m.transcriptStatus,
-      transcriptError: m.transcriptError,
-      dateOfEventText: m.dateOfEventText,
-      mediaUrl: m.mediaUrl,
-      mimeType: m.mimeType,
-      linkedMediaProvider: m.linkedMediaProvider,
-      linkedMediaOpenUrl: m.linkedMediaOpenUrl,
-      linkedMediaSourceUrl: m.linkedMediaSourceUrl,
-      linkedMediaLabel: m.linkedMediaLabel,
-      treeVisibilityLevel: m.treeVisibilityLevel,
-      treeVisibilityIsOverride: m.treeVisibilityIsOverride,
-    })));
-    setLightboxIndex(startIndex);
-  }, []);
-
-  // IntersectionObserver for decade sidebar
-  const decadeSectionRefs = useRef<Map<string, HTMLElement>>(new Map());
-  const registerDecadeSection = useCallback((decade: string, el: HTMLElement | null) => {
-    if (el) decadeSectionRefs.current.set(decade, el);
-  }, []);
+  const toLightboxMemory = useCallback(
+    (memory: Memory): LightboxMemory => ({
+      id: memory.id,
+      kind: memory.kind,
+      title: memory.title,
+      body: memory.body,
+      transcriptText: memory.transcriptText,
+      transcriptLanguage: memory.transcriptLanguage,
+      transcriptStatus: memory.transcriptStatus,
+      transcriptError: memory.transcriptError,
+      dateOfEventText: memory.dateOfEventText,
+      mediaUrl: memory.mediaUrl,
+      mimeType: memory.mimeType,
+      linkedMediaProvider: memory.linkedMediaProvider,
+      linkedMediaOpenUrl: memory.linkedMediaOpenUrl,
+      linkedMediaSourceUrl: memory.linkedMediaSourceUrl,
+      linkedMediaLabel: memory.linkedMediaLabel,
+      treeVisibilityLevel: memory.treeVisibilityLevel,
+      treeVisibilityIsOverride: memory.treeVisibilityIsOverride,
+    }),
+    [],
+  );
 
   useEffect(() => {
-    const sections = Array.from(decadeSectionRefs.current.entries());
-    if (sections.length === 0) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            const decade = [...decadeSectionRefs.current.entries()].find(
-              ([, el]) => el === entry.target
-            )?.[0];
-            if (decade) setActiveDecade(decade);
-          }
-        }
-      },
-      { threshold: 0.3, root: mainRef.current }
+    if (!person || lightboxIndex === null) {
+      return;
+    }
+
+    const latestById = new Map(
+      person.memories.map((memory) => [memory.id, toLightboxMemory(memory)]),
     );
-    sections.forEach(([, el]) => observer.observe(el));
-    return () => observer.disconnect();
-  }, [person]);
+
+    setLightboxMemories((current) =>
+      current.map((memory) => latestById.get(memory.id) ?? memory),
+    );
+  }, [lightboxIndex, person, toLightboxMemory]);
+
+  // Open lightbox for a list of memories at a given index
+  const openLightbox = useCallback((memories: Memory[], startIndex: number) => {
+    setLightboxMemories(memories.map(toLightboxMemory));
+    setLightboxIndex(startIndex);
+  }, [toLightboxMemory]);
+
+  const registerChapterSection = useCallback(
+    (sectionId: ChapterSectionId, el: HTMLElement | null) => {
+      if (el) {
+        chapterSectionRefs.current.set(sectionId, el);
+      } else {
+        chapterSectionRefs.current.delete(sectionId);
+      }
+    },
+    [],
+  );
+
+  const scrollToChapterSection = useCallback((sectionId: ChapterSectionId) => {
+    chapterSectionRefs.current.get(sectionId)?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, []);
 
   if (isPending || loading) {
     return (
@@ -577,7 +608,13 @@ export default function PersonPage({
   const suppressedContextualMemories = person.suppressedContextualMemories ?? [];
 
   const decadeMap = new Map<string, Memory[]>();
-  for (const m of directMemories) {
+  const storyMemories = directMemories.filter((m) => m.kind === "story");
+  const contextualStoryMemories = contextualMemories.filter((m) => m.kind === "story");
+  const archiveMemories = directMemories.filter((memory) => memory.kind !== "story");
+  const contextualArchiveMemories = contextualMemories.filter(
+    (memory) => memory.kind !== "story",
+  );
+  for (const m of archiveMemories) {
     const year = extractYear(m.dateOfEventText);
     if (year) {
       const decade = getDecade(year);
@@ -586,9 +623,7 @@ export default function PersonPage({
     }
   }
   const decades = Array.from(decadeMap.keys()).sort();
-  const undatedMemories = directMemories.filter((m) => !extractYear(m.dateOfEventText));
-  const storyMemories = directMemories.filter((m) => m.kind === "story");
-  const contextualStoryMemories = contextualMemories.filter((m) => m.kind === "story");
+  const undatedMemories = archiveMemories.filter((m) => !extractYear(m.dateOfEventText));
 
   const dateRange =
     person.birthDateText && person.deathDateText
@@ -619,30 +654,23 @@ export default function PersonPage({
       .filter((candidate) => candidate.id !== person.id)
       .map((candidate) => ({ id: candidate.id, name: candidate.displayName })),
   ];
-
-  // Per-decade stats for the "In this chapter" sidebar
-  const decadeStats = activeDecade
-    ? (() => {
-        const mems = decadeMap.get(activeDecade) ?? [];
-        return {
-          photos: mems.filter((m) => m.kind === "photo").length,
-          voice: mems.filter((m) => m.kind === "voice").length,
-          stories: mems.filter((m) => m.kind === "story").length,
-          documents: mems.filter((m) => m.kind === "document").length,
-          total: mems.length,
-        };
-      })()
-    : null;
-
-  const TABS: { id: Tab; label: string }[] = [
-    { id: "memories", label: `Memories${person.memories.length > 0 ? ` ${person.memories.length}` : ""}` },
-    {
-      id: "stories",
-      label: `Stories${storyMemories.length + contextualStoryMemories.length > 0 ? ` ${storyMemories.length + contextualStoryMemories.length}` : ""}`,
-    },
-    { id: "connections", label: `Connections${person.relationships.length > 0 ? ` ${person.relationships.length}` : ""}` },
-    { id: "about", label: "About" },
-    { id: "prompts", label: `Questions${personPrompts.length > 0 ? ` ${personPrompts.length}` : ""}` },
+  const lifeFacts = ([
+    ["Birth", person.birthDateText],
+    ["Birthplace", person.birthPlace],
+    ["Birthplace on the map", person.birthPlaceResolved?.label ?? null],
+    ["Death", person.deathDateText],
+    ["Death place", person.deathPlace],
+    ["Death place on the map", person.deathPlaceResolved?.label ?? null],
+    ["Status", person.isLiving ? "Living" : "Deceased"],
+  ] as [string, string | null][])
+    .filter(([, value]) => value);
+  const chapterSections: Array<{ id: ChapterSectionId; label: string }> = [
+    { id: "life", label: "Life" },
+    { id: "stories", label: "Stories" },
+    { id: "archive", label: "Archive" },
+    { id: "family", label: "Family" },
+    { id: "questions", label: "Questions" },
+    ...(crossTreeLinks.length > 0 ? [{ id: "context" as const, label: "Shared context" }] : []),
   ];
 
   function renderTreeVisibilityControl(memory: Memory) {
@@ -685,6 +713,18 @@ export default function PersonPage({
     );
   }
 
+  const handleEditFormFieldChange = <K extends keyof EditFormState>(
+    field: K,
+    value: EditFormState[K],
+  ) => {
+    setEditForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const openMemoryComposer = useCallback((kind?: MemoryKind) => {
+    setMemoryComposerKind(kind);
+    setShowMemoryForm(true);
+  }, []);
+
   return (
     <div style={{ minHeight: "100vh", background: "var(--paper)", display: "flex", flexDirection: "column" }}>
 
@@ -692,12 +732,12 @@ export default function PersonPage({
       <header style={{ padding: "16px 24px", borderBottom: "1px solid var(--rule)", display: "flex", alignItems: "center", gap: 16, background: "rgba(246,241,231,0.88)", backdropFilter: "blur(8px)", position: "sticky", top: 0, zIndex: 20 }}>
         <a
           href={`/trees/${treeId}`}
-          style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-faded)", textDecoration: "none" }}
+          style={{ fontFamily: "var(--font-ui)", fontSize: 14, color: "var(--ink-faded)", textDecoration: "none" }}
         >
           ← Constellation
         </a>
         <span style={{ color: "var(--rule)" }}>·</span>
-        <span style={{ fontFamily: "var(--font-display)", fontSize: 15, color: "var(--ink-soft)" }}>
+        <span style={{ fontFamily: "var(--font-display)", fontSize: 17, color: "var(--ink-soft)" }}>
           {person.displayName}
         </span>
         <div style={{ flex: 1 }} />
@@ -705,15 +745,15 @@ export default function PersonPage({
           <>
             <button
               onClick={() => startEditing(person)}
-              style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", background: "none", border: "1px solid var(--rule)", borderRadius: 20, padding: "5px 12px", cursor: "pointer" }}
+              style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-faded)", background: "none", border: "1px solid var(--rule)", borderRadius: 999, padding: "8px 14px", cursor: "pointer" }}
             >
-              Edit this page
+              Edit biography
             </button>
             <button
               type="button"
               onClick={deletePerson}
               disabled={deletingPerson}
-              style={{ ...dangerBtnStyle, borderRadius: 20, padding: "5px 12px" }}
+              style={{ ...dangerBtnStyle, borderRadius: 999, padding: "8px 14px", fontSize: 13 }}
             >
               {deletingPerson ? "Deleting…" : "Delete person"}
             </button>
@@ -721,13 +761,13 @@ export default function PersonPage({
         )}
         <a
           href={`/trees/${treeId}/map?personId=${personId}`}
-          style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", background: "none", border: "1px solid var(--rule)", borderRadius: 20, padding: "5px 12px", cursor: "pointer", textDecoration: "none" }}
+          style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-faded)", background: "none", border: "1px solid var(--rule)", borderRadius: 999, padding: "8px 14px", cursor: "pointer", textDecoration: "none" }}
         >
           View on the map
         </a>
         <button
           onClick={() => setPromptComposerOpen(true)}
-          style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--moss)", background: "none", border: "1px solid var(--moss)", borderRadius: 20, padding: "5px 12px", cursor: "pointer", marginLeft: 8 }}
+          style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--moss)", background: "none", border: "1px solid var(--moss)", borderRadius: 999, padding: "8px 14px", cursor: "pointer", marginLeft: 8 }}
         >
           Ask a question
         </button>
@@ -749,7 +789,7 @@ export default function PersonPage({
       )}
 
       {/* Portrait header */}
-      <div style={{ position: "relative", height: 320, overflow: "hidden", flexShrink: 0 }}>
+      <div style={{ position: "relative", height: 360, overflow: "hidden", flexShrink: 0 }}>
         {person.portraitUrl ? (
           <img
             src={person.portraitUrl}
@@ -759,16 +799,16 @@ export default function PersonPage({
         ) : (
           <div style={{ width: "100%", height: "100%", background: "linear-gradient(160deg, var(--paper-deep) 0%, var(--rule) 100%)" }} />
         )}
-        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "48px 40px 32px", background: "linear-gradient(to top, rgba(28,25,21,0.7) 0%, transparent 100%)" }}>
-          <div style={{ maxWidth: 960, margin: "0 auto" }}>
-            <h1 style={{ fontFamily: "var(--font-display)", fontSize: 40, fontWeight: 400, color: "#F6F1E7", lineHeight: 1.1, margin: 0 }}>
+        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "56px 40px 36px", background: "linear-gradient(to top, rgba(28,25,21,0.7) 0%, transparent 100%)" }}>
+          <div style={{ maxWidth: 1240, margin: "0 auto" }}>
+            <h1 style={{ fontFamily: "var(--font-display)", fontSize: 54, fontWeight: 400, color: "#F6F1E7", lineHeight: 1.05, margin: 0 }}>
               {person.displayName}
             </h1>
             {dateRange && (
-              <p style={{ fontFamily: "var(--font-ui)", fontSize: 14, color: "rgba(246,241,231,0.7)", marginTop: 6 }}>{dateRange}</p>
+              <p style={{ fontFamily: "var(--font-ui)", fontSize: 16, color: "rgba(246,241,231,0.74)", marginTop: 8 }}>{dateRange}</p>
             )}
             {person.essenceLine && (
-              <p style={{ fontFamily: "var(--font-body)", fontSize: 16, fontStyle: "italic", color: "rgba(246,241,231,0.85)", marginTop: 8 }}>
+              <p style={{ fontFamily: "var(--font-body)", fontSize: 20, fontStyle: "italic", color: "rgba(246,241,231,0.88)", marginTop: 10, maxWidth: 760, lineHeight: 1.6 }}>
                 {person.essenceLine}
               </p>
             )}
@@ -801,9 +841,9 @@ export default function PersonPage({
                         cursor: isCurrentTree ? "default" : "pointer",
                       }}
                     >
-                      <span style={{ fontFamily: "var(--font-ui)", fontSize: 12 }}>
-                        {tree.name}
-                      </span>
+                         <span style={{ fontFamily: "var(--font-ui)", fontSize: 13 }}>
+                           {tree.name}
+                         </span>
                       {tree.id === person.homeTreeId && (
                         <span
                           style={{
@@ -838,7 +878,7 @@ export default function PersonPage({
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={uploadingPortrait}
-          style={{ position: "absolute", top: 16, right: 16, background: "rgba(246,241,231,0.85)", border: "1px solid var(--rule)", borderRadius: 20, padding: "5px 12px", fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-soft)", cursor: "pointer" }}
+           style={{ position: "absolute", top: 20, right: 20, background: "rgba(246,241,231,0.85)", border: "1px solid var(--rule)", borderRadius: 999, padding: "8px 14px", fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-soft)", cursor: "pointer" }}
         >
           {uploadingPortrait ? "Uploading…" : "Change portrait"}
         </button>
@@ -847,453 +887,135 @@ export default function PersonPage({
         />
       </div>
 
-      {/* Edit form */}
-      {editing && (
-        <div style={{ background: "var(--paper-deep)", borderBottom: "1px solid var(--rule)", padding: "24px 40px" }}>
-          <form onSubmit={saveEdit} style={{ maxWidth: 600, display: "flex", flexDirection: "column", gap: 12 }}>
-            <input type="text" required value={editForm.displayName}
-              onChange={(e) => setEditForm((f) => ({ ...f, displayName: e.target.value }))}
-              placeholder="Full name" style={inputStyle} />
-            <input type="text" value={editForm.essenceLine}
-              onChange={(e) => setEditForm((f) => ({ ...f, essenceLine: e.target.value }))}
-              placeholder="Essence line (one sentence)" style={inputStyle} />
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <input type="text" value={editForm.birthDateText}
-                onChange={(e) => setEditForm((f) => ({ ...f, birthDateText: e.target.value }))}
-                placeholder="Birth date" style={inputStyle} />
-              <input type="text" value={editForm.deathDateText}
-                onChange={(e) => setEditForm((f) => ({ ...f, deathDateText: e.target.value }))}
-                placeholder="Death date" style={inputStyle} />
-            </div>
-            <input type="text" value={editForm.birthPlace}
-              onChange={(e) => setEditForm((f) => ({ ...f, birthPlace: e.target.value }))}
-              placeholder="Birthplace" style={inputStyle} />
-            <PlacePicker
-              treeId={treeId}
-              apiBase={API}
-              value={editForm.birthPlaceId}
-              onChange={(birthPlaceId) => setEditForm((f) => ({ ...f, birthPlaceId }))}
-              label="Birthplace on the map"
-              emptyLabel="No mapped birthplace"
-            />
-            <input type="text" value={editForm.deathPlace}
-              onChange={(e) => setEditForm((f) => ({ ...f, deathPlace: e.target.value }))}
-              placeholder="Death place" style={inputStyle} />
-            <PlacePicker
-              treeId={treeId}
-              apiBase={API}
-              value={editForm.deathPlaceId}
-              onChange={(deathPlaceId) => setEditForm((f) => ({ ...f, deathPlaceId }))}
-              label="Death place on the map"
-              emptyLabel="No mapped death place"
-            />
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-soft)" }}>
-              <input type="checkbox" checked={editForm.isLiving}
-                onChange={(e) => setEditForm((f) => ({ ...f, isLiving: e.target.checked }))} />
-              Still living
-            </label>
-            {deleteError && (
-              <div style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "#9a4f46" }}>
-                {deleteError}
+      <BiographyDrawer
+        editing={editing}
+        person={person}
+        editForm={editForm}
+        savingEdit={savingEdit}
+        deletingPerson={deletingPerson}
+        deleteError={deleteError}
+        treeId={treeId}
+        apiBase={API}
+        onClose={() => setEditing(false)}
+        onSubmit={saveEdit}
+        onDelete={deletePerson}
+        onChangeField={handleEditFormFieldChange}
+      />
+
+      <div style={{ flex: 1, maxWidth: 1240, margin: "0 auto", width: "100%", padding: "56px 40px 120px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "220px minmax(0, 1fr)", gap: 56, alignItems: "start" }}>
+          <aside style={{ position: "sticky", top: 112, display: "flex", flexDirection: "column", gap: 20 }}>
+            <div
+              style={{
+                border: "1px solid var(--rule)",
+                borderRadius: 16,
+                background: "var(--paper-deep)",
+                padding: "18px 16px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+              }}
+            >
+              <p
+                style={{
+                  fontFamily: "var(--font-ui)",
+                  fontSize: 11,
+                  color: "var(--ink-faded)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                  margin: 0,
+                }}
+              >
+                Jump through the chapter
+              </p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {chapterSections.map((section) => (
+                  <button
+                    key={section.id}
+                    type="button"
+                    onClick={() => scrollToChapterSection(section.id)}
+                    style={{
+                      fontFamily: "var(--font-ui)",
+                      fontSize: 14,
+                      color: "var(--ink-soft)",
+                      background: "var(--paper)",
+                      border: "1px solid var(--rule)",
+                      borderRadius: 999,
+                      padding: "10px 14px",
+                      cursor: "pointer",
+                      textAlign: "left",
+                    }}
+                  >
+                    {section.label}
+                  </button>
+                ))}
               </div>
-            )}
-            <div style={{ display: "flex", gap: 10 }}>
-              <button type="submit" disabled={savingEdit} style={primaryBtnStyle}>
-                {savingEdit ? "Saving…" : "Save"}
-              </button>
-              <button type="button" onClick={() => setEditing(false)} style={secondaryBtnStyle}>
-                Cancel
-              </button>
+            </div>
+
+            <MemoryStudioRail
+              personName={person.displayName}
+              onOpenStory={() => openMemoryComposer("story")}
+              onOpenPhoto={() => openMemoryComposer("photo")}
+              onOpenVoice={() => openMemoryComposer("voice")}
+              onOpenDocument={() => openMemoryComposer("document")}
+              onOpenStudio={() => openMemoryComposer()}
+            />
+          </aside>
+
+          <main style={{ display: "flex", flexDirection: "column", gap: 96 }}>
+          <section
+            ref={(el) => registerChapterSection("life", el)}
+            style={{ scrollMarginTop: 120 }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 20, marginBottom: 30 }}>
+              <div>
+                <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 10px" }}>
+                  Chapter opening
+                </p>
+                <h2 style={{ fontFamily: "var(--font-display)", fontSize: 38, color: "var(--ink)", margin: 0, fontWeight: 400 }}>
+                  Life
+                </h2>
+              </div>
               <button
                 type="button"
-                onClick={deletePerson}
-                disabled={savingEdit || deletingPerson}
-                style={dangerBtnStyle}
+                onClick={() => startEditing(person)}
+                style={{ fontFamily: "var(--font-ui)", fontSize: 14, color: "var(--moss)", background: "none", border: "1px solid var(--moss)", borderRadius: 999, padding: "10px 18px", cursor: "pointer" }}
               >
-                {deletingPerson ? "Deleting…" : "Delete person"}
+                Edit biography
               </button>
             </div>
-            <div style={{ fontFamily: "var(--font-ui)", fontSize: 11, color: "var(--ink-faded)" }}>
-              Deleting a person also removes their relationships, memories, prompts, and cross-tree links.
-            </div>
-          </form>
-        </div>
-      )}
 
-      {/* Tabs */}
-      <div style={{ borderBottom: "1px solid var(--rule)", background: "var(--paper)", position: "sticky", top: 53, zIndex: 19 }}>
-        <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 40px", display: "flex", gap: 0 }}>
-          {TABS.map((tab) => (
-            <button key={tab.id} onClick={() => { setActiveTab(tab.id); if (tab.id === "prompts") loadPersonPrompts(); }}
-              style={{
-                fontFamily: "var(--font-ui)", fontSize: 13,
-                color: activeTab === tab.id ? "var(--ink)" : "var(--ink-faded)",
-                background: "none", border: "none",
-                borderBottom: activeTab === tab.id ? "2px solid var(--moss)" : "2px solid transparent",
-                padding: "14px 20px 12px", cursor: "pointer", transition: "color 200ms",
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Body */}
-      <div style={{ flex: 1, display: "flex", maxWidth: 1200, margin: "0 auto", width: "100%", padding: "0 40px" }}>
-
-        {/* Decade sidebar (memories tab) */}
-        <aside style={{
-          width: 110,
-          flexShrink: 0,
-          paddingTop: 40,
-          position: "sticky",
-          top: 100,
-          alignSelf: "flex-start",
-          display: decades.length > 0 && activeTab === "memories" ? "block" : "none",
-        }}>
-          {decades.map((decade) => (
-            <button key={decade}
-              onClick={() => {
-                const el = decadeSectionRefs.current.get(decade);
-                if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-                setActiveDecade(decade);
-              }}
-              style={{ display: "flex", alignItems: "center", gap: 10, background: "none", border: "none", padding: "8px 0", cursor: "pointer", width: "100%" }}
-            >
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: activeDecade === decade ? "var(--moss)" : "var(--rule)", flexShrink: 0, transition: "background 200ms" }} />
-              <span style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: activeDecade === decade ? "var(--ink)" : "var(--ink-faded)", transition: "color 200ms" }}>
-                {decade}
-              </span>
-            </button>
-          ))}
-        </aside>
-
-        {/* Main content */}
-        <main
-          ref={mainRef}
-          style={{
-            flex: 1,
-            paddingTop: 40,
-            paddingBottom: 80,
-            paddingLeft: decades.length > 0 && activeTab === "memories" ? 32 : 0,
-            paddingRight: activeTab === "memories" && activeDecade && decadeStats ? 32 : 0,
-          }}
-        >
-          {/* ── Memories tab ── */}
-          {activeTab === "memories" && (
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-                <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--ink)", margin: 0, fontWeight: 400 }}>
-                  Memories
-                </h2>
-                <button
-                  onClick={() => {
-                    setMemoryComposerKind("photo");
-                    setShowMemoryForm(true);
+            <div style={{ display: "flex", flexDirection: "column", gap: 34 }}>
+              {person.essenceLine && (
+                <p
+                  style={{
+                    fontFamily: "var(--font-body)",
+                    fontSize: 22,
+                    lineHeight: 1.75,
+                    color: "var(--ink-soft)",
+                    margin: 0,
+                    maxWidth: 760,
                   }}
-                  style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--moss)", background: "none", border: "1px solid var(--moss)", borderRadius: 20, padding: "5px 14px", cursor: "pointer" }}
                 >
-                  + Add memory
-                </button>
-              </div>
-
-              {decades.map((decade) => {
-                const mems = decadeMap.get(decade)!;
-                return (
-                  <section key={decade} ref={(el) => registerDecadeSection(decade, el)} style={{ marginBottom: 48 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
-                      <span style={{ fontFamily: "var(--font-display)", fontSize: 18, color: "var(--ink-soft)", fontStyle: "italic" }}>{decade}</span>
-                      <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
-                    </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
-                      {mems.map((m, i) => (
-                        <MemoryCard
-                          key={m.id}
-                          memory={m}
-                          extraControls={renderMemoryCardControls(m)}
-                          onClick={() => openLightbox(mems, i)}
-                        />
-                      ))}
-                    </div>
-                  </section>
-                );
-              })}
-
-              {undatedMemories.length > 0 && (
-                <section style={{ marginBottom: 48 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
-                    <span style={{ fontFamily: "var(--font-display)", fontSize: 18, color: "var(--ink-soft)", fontStyle: "italic" }}>Undated</span>
-                    <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
-                    {undatedMemories.map((m, i) => (
-                      <MemoryCard
-                        key={m.id}
-                        memory={m}
-                        extraControls={renderMemoryCardControls(m)}
-                        onClick={() => openLightbox(undatedMemories, i)}
-                      />
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {contextualMemories.length > 0 && (
-                <section style={{ marginBottom: 48 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
-                    <span style={{ fontFamily: "var(--font-display)", fontSize: 18, color: "var(--ink-soft)", fontStyle: "italic" }}>
-                      From family context
-                    </span>
-                    <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
-                  </div>
-                  <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", marginTop: 0, marginBottom: 16 }}>
-                    These memories appear here because they were shared through family or lineage context, not because this page owns them.
-                  </p>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
-                    {contextualMemories.map((memory, index) => (
-                      <MemoryCard
-                        key={memory.id}
-                        memory={memory}
-                        extraControls={renderMemoryCardControls(memory)}
-                        onClick={() => openLightbox(contextualMemories, index)}
-                      />
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {canSuppressFromSurface && suppressedContextualMemories.length > 0 && (
-                <section style={{ marginBottom: 48 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
-                    <span style={{ fontFamily: "var(--font-display)", fontSize: 18, color: "var(--ink-soft)", fontStyle: "italic" }}>
-                      Hidden from this page
-                    </span>
-                    <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
-                  </div>
-                  <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", marginTop: 0, marginBottom: 16 }}>
-                    These memories still live in the archive, but they no longer surface on this page.
-                  </p>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
-                    {suppressedContextualMemories.map((memory) => (
-                      <MemoryCard
-                        key={memory.id}
-                        memory={memory}
-                        extraControls={
-                          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                            {renderTreeVisibilityControl(memory)}
-                            <button
-                              type="button"
-                              onClick={() => setMemorySurfaceSuppression(memory.id, false)}
-                              disabled={updatingMemorySuppressionId === memory.id}
-                              style={{
-                                ...secondaryBtnStyle,
-                                padding: "6px 10px",
-                                fontSize: 12,
-                              }}
-                            >
-                              {updatingMemorySuppressionId === memory.id ? "Restoring…" : "Restore to page"}
-                            </button>
-                          </div>
-                        }
-                      />
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {person.memories.length === 0 && (
-                <p style={{ fontFamily: "var(--font-ui)", fontSize: 14, color: "var(--ink-faded)" }}>
-                  No memories recorded yet.
+                  {person.essenceLine}
                 </p>
               )}
-            </div>
-          )}
-
-          {/* ── Stories tab ── */}
-          {activeTab === "stories" && (
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-                <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--ink)", margin: 0, fontWeight: 400 }}>Stories</h2>
-                <button
-                  onClick={() => {
-                    setMemoryComposerKind("story");
-                    setShowMemoryForm(true);
-                    setActiveTab("memories");
-                  }}
-                  style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--moss)", background: "none", border: "1px solid var(--moss)", borderRadius: 20, padding: "5px 14px", cursor: "pointer" }}
-                >
-                  + Add story
-                </button>
-              </div>
-              {storyMemories.length === 0 ? (
-                contextualStoryMemories.length === 0 ? (
-                  <p style={{ fontFamily: "var(--font-ui)", fontSize: 14, color: "var(--ink-faded)" }}>No stories yet.</p>
-                ) : null
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 40 }}>
-                  {storyMemories.map((m) => (
-                    <article key={m.id} style={{ borderBottom: "1px solid var(--rule)", paddingBottom: 40 }}>
-                      <h3 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--ink)", fontWeight: 400, margin: "0 0 8px" }}>{m.title}</h3>
-                      {m.dateOfEventText && <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", marginBottom: 16 }}>{m.dateOfEventText}</p>}
-                      {m.body && <p style={{ fontFamily: "var(--font-body)", fontSize: 17, lineHeight: 1.85, color: "var(--ink-soft)", whiteSpace: "pre-wrap", margin: 0 }}>{m.body}</p>}
-                      {canManageTreeVisibility && (
-                        <div style={{ marginTop: 16, maxWidth: 240 }}>
-                          {renderTreeVisibilityControl(m)}
-                        </div>
-                      )}
-                    </article>
-                  ))}
-                </div>
-              )}
-              {contextualStoryMemories.length > 0 && (
-                <div style={{ marginTop: 40 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
-                    <span style={{ fontFamily: "var(--font-display)", fontSize: 18, color: "var(--ink-soft)", fontStyle: "italic" }}>
-                      Shared through family context
-                    </span>
-                    <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 40 }}>
-                    {contextualStoryMemories.map((m) => (
-                      <article key={m.id} style={{ borderBottom: "1px solid var(--rule)", paddingBottom: 40 }}>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <h3 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--ink)", fontWeight: 400, margin: 0 }}>
-                              {m.title}
-                            </h3>
-                            {m.memoryReasonLabel && (
-                              <span style={pillStyle}>{m.memoryReasonLabel}</span>
-                            )}
-                          </div>
-                          {canSuppressFromSurface && (
-                            <button
-                              type="button"
-                              onClick={() => setMemorySurfaceSuppression(m.id, true)}
-                              disabled={updatingMemorySuppressionId === m.id}
-                              style={{
-                                ...secondaryBtnStyle,
-                                padding: "6px 10px",
-                                fontSize: 12,
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              {updatingMemorySuppressionId === m.id ? "Hiding…" : "Hide from this page"}
-                            </button>
-                          )}
-                        </div>
-                        {m.dateOfEventText && <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", marginBottom: 16 }}>{m.dateOfEventText}</p>}
-                        {m.body && <p style={{ fontFamily: "var(--font-body)", fontSize: 17, lineHeight: 1.85, color: "var(--ink-soft)", whiteSpace: "pre-wrap", margin: 0 }}>{m.body}</p>}
-                        {(canManageTreeVisibility || canSuppressFromSurface) && (
-                          <div style={{ marginTop: 16, maxWidth: 240 }}>
-                            {renderTreeVisibilityControl(m)}
-                          </div>
-                        )}
-                      </article>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── Connections tab ── */}
-          {activeTab === "connections" && (
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-                <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--ink)", margin: 0, fontWeight: 400 }}>Connections</h2>
-                {otherPeople.length > 0 && (
-                  <button onClick={() => setShowRelForm((s) => !s)}
-                    style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--moss)", background: "none", border: "1px solid var(--moss)", borderRadius: 20, padding: "5px 14px", cursor: "pointer" }}>
-                    {showRelForm ? "Cancel" : "+ Add"}
-                  </button>
-                )}
-              </div>
-
-              {showRelForm && (
-                <form onSubmit={saveRelationship} style={{ background: "var(--paper-deep)", border: "1px solid var(--rule)", borderRadius: 8, padding: 16, marginBottom: 24, display: "flex", flexDirection: "column", gap: 12 }}>
-                  <select value={relForm.type} onChange={(e) => setRelForm((f) => ({ ...f, type: e.target.value as RelationshipType }))} style={inputStyle}>
-                    <option value="parent_child">Parent / Child</option>
-                    <option value="sibling">Sibling</option>
-                    <option value="spouse">Spouse / Partner</option>
-                  </select>
-                  {relForm.type === "parent_child" && (
-                    <select value={relForm.direction} onChange={(e) => setRelForm((f) => ({ ...f, direction: e.target.value as "from" | "to" }))} style={inputStyle}>
-                      <option value="from">{person.displayName} is the parent</option>
-                      <option value="to">{person.displayName} is the child</option>
-                    </select>
-                  )}
-                  <select required value={relForm.otherPersonId} onChange={(e) => setRelForm((f) => ({ ...f, otherPersonId: e.target.value }))} style={inputStyle}>
-                    <option value="">Select person…</option>
-                    {otherPeople.map((p) => <option key={p.id} value={p.id}>{p.displayName}</option>)}
-                  </select>
-                  <button type="submit" disabled={savingRel} style={primaryBtnStyle}>
-                    {savingRel ? "Saving…" : "Add relationship"}
-                  </button>
-                </form>
-              )}
-
-              {person.relationships.length === 0 ? (
-                <p style={{ fontFamily: "var(--font-ui)", fontSize: 14, color: "var(--ink-faded)" }}>No relationships recorded.</p>
-              ) : (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
-                  {person.relationships.map((r) => {
-                    const other = r.fromPerson.id === personId ? r.toPerson : r.fromPerson;
-                    const label = relationshipLabel(r, personId);
-                    const initials = other.displayName.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
-                    return (
-                      <a
-                        key={r.id}
-                        href={`/trees/${treeId}/people/${other.id}`}
-                        style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "20px 16px", background: "var(--paper-deep)", border: "1px solid var(--rule)", borderRadius: 8, textDecoration: "none", textAlign: "center" }}
-                      >
-                        <div style={{ width: 56, height: 56, borderRadius: "50%", background: "var(--paper)", border: "1.5px solid var(--rule)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
-                          {other.portraitUrl ? (
-                            <img src={other.portraitUrl} alt={other.displayName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                          ) : (
-                            <span style={{ fontFamily: "var(--font-display)", fontSize: 20, color: "var(--ink-faded)" }}>{initials}</span>
-                          )}
-                        </div>
-                        <div>
-                          <div style={{ fontFamily: "var(--font-display)", fontSize: 15, color: "var(--ink)", lineHeight: 1.3 }}>{other.displayName}</div>
-                          <div style={{ fontFamily: "var(--font-ui)", fontSize: 11, color: "var(--ink-faded)", marginTop: 3 }}>{label.split(" ")[0]}</div>
-                        </div>
-                      </a>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── About tab ── */}
-          {activeTab === "about" && (
-            <div>
-              <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--ink)", margin: "0 0 24px", fontWeight: 400 }}>About</h2>
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                {([
-                  ["Birth", person.birthDateText],
-                  ["Birthplace", person.birthPlace],
-                  ["Birthplace on the map", person.birthPlaceResolved?.label ?? null],
-                  ["Death", person.deathDateText],
-                  ["Death place", person.deathPlace],
-                  ["Death place on the map", person.deathPlaceResolved?.label ?? null],
-                  ["Status", person.isLiving ? "Living" : "Deceased"],
-                ] as [string, string | null][]).filter(([, v]) => v).map(([label, value]) => (
-                  <div key={label} style={{ display: "flex", gap: 24 }}>
-                    <span style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", width: 80, flexShrink: 0 }}>{label}</span>
-                    <span style={{ fontFamily: "var(--font-body)", fontSize: 15, color: "var(--ink)" }}>{value}</span>
+                {lifeFacts.map(([label, value]) => (
+                  <div key={label} style={{ display: "flex", gap: 30, alignItems: "baseline" }}>
+                    <span style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-faded)", width: 120, flexShrink: 0, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</span>
+                    <span style={{ fontFamily: "var(--font-body)", fontSize: 20, color: "var(--ink)", lineHeight: 1.5 }}>{value}</span>
                   </div>
                 ))}
                 {person.linkedUserId === session?.user.id && (
-                  <div style={{ display: "flex", gap: 24 }}>
-                    <span style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", width: 80 }}>Account</span>
-                    <span style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--moss)" }}>This is you</span>
+                  <div style={{ display: "flex", gap: 30, alignItems: "baseline" }}>
+                    <span style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-faded)", width: 120, textTransform: "uppercase", letterSpacing: "0.05em" }}>Account</span>
+                    <span style={{ fontFamily: "var(--font-ui)", fontSize: 15, color: "var(--moss)" }}>This is you</span>
                   </div>
                 )}
                 {sortedVisibleTrees.length > 0 && (
-                  <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
-                    <span style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", width: 80 }}>Trees</span>
+                  <div style={{ display: "flex", gap: 30, alignItems: "flex-start" }}>
+                    <span style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-faded)", width: 120, textTransform: "uppercase", letterSpacing: "0.05em" }}>Trees</span>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       {sortedVisibleTrees.map((tree) => (
                         <button
@@ -1311,7 +1033,7 @@ export default function PersonPage({
                             cursor: "pointer",
                           }}
                         >
-                          <span style={{ fontFamily: "var(--font-body)", fontSize: 15, color: "var(--ink)" }}>
+                          <span style={{ fontFamily: "var(--font-body)", fontSize: 18, color: "var(--ink)" }}>
                             {tree.name}
                           </span>
                           {tree.id === person.homeTreeId && (
@@ -1325,296 +1047,375 @@ export default function PersonPage({
                     </div>
                   </div>
                 )}
-                {canManageDuplicates && (
-                  <div style={{ marginTop: 28 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 12 }}>
-                      <h3 style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", textTransform: "uppercase", letterSpacing: "0.06em", margin: 0, fontWeight: 500 }}>
-                        Possible duplicates
-                      </h3>
-                      <button
-                        type="button"
-                        onClick={loadDuplicateCandidates}
-                        disabled={loadingDuplicates}
-                        style={{
-                          border: "1px solid var(--rule)",
-                          background: "var(--paper)",
-                          borderRadius: 999,
-                          padding: "5px 10px",
-                          fontFamily: "var(--font-ui)",
-                          fontSize: 12,
-                          color: "var(--ink-faded)",
-                          cursor: "pointer",
-                        }}
-                      >
-                        {loadingDuplicates ? "Checking…" : "Refresh"}
-                      </button>
-                    </div>
-                    {mergeError && (
-                      <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "#9a4f46", margin: "0 0 12px" }}>
-                        {mergeError}
-                      </p>
+                {lifeFacts.length === 0 && sortedVisibleTrees.length === 0 && !person.linkedUserId && (
+                  <p style={{ fontFamily: "var(--font-body)", fontSize: 18, color: "var(--ink-faded)", margin: 0, lineHeight: 1.6 }}>
+                    This chapter is still waiting for the first details of {person.displayName.split(" ")[0]}'s life.
+                  </p>
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section
+            ref={(el) => registerChapterSection("stories", el)}
+            style={{ scrollMarginTop: 120 }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 20, marginBottom: 28 }}>
+              <div>
+                <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 10px" }}>
+                  Written memories
+                </p>
+                <h2 style={{ fontFamily: "var(--font-display)", fontSize: 38, color: "var(--ink)", margin: 0, fontWeight: 400 }}>
+                  Stories
+                </h2>
+              </div>
+              <button
+                onClick={() => openMemoryComposer("story")}
+                style={{ fontFamily: "var(--font-ui)", fontSize: 14, color: "var(--moss)", background: "none", border: "1px solid var(--moss)", borderRadius: 999, padding: "10px 18px", cursor: "pointer" }}
+              >
+                + Add story
+              </button>
+            </div>
+
+            {storyMemories.length === 0 && contextualStoryMemories.length === 0 ? (
+              <p style={{ fontFamily: "var(--font-body)", fontSize: 18, color: "var(--ink-faded)", margin: 0, lineHeight: 1.6 }}>
+                No stories have been recorded yet.
+              </p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 40 }}>
+                {storyMemories.map((m) => (
+                  <article key={m.id} style={{ borderBottom: "1px solid var(--rule)", paddingBottom: 40 }}>
+                    <h3 style={{ fontFamily: "var(--font-display)", fontSize: 28, color: "var(--ink)", fontWeight: 400, margin: "0 0 8px" }}>{m.title}</h3>
+                    {m.dateOfEventText && <p style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-faded)", marginBottom: 16 }}>{m.dateOfEventText}</p>}
+                    {m.body && <p style={{ fontFamily: "var(--font-body)", fontSize: 19, lineHeight: 1.9, color: "var(--ink-soft)", whiteSpace: "pre-wrap", margin: 0 }}>{m.body}</p>}
+                    {canManageTreeVisibility && (
+                      <div style={{ marginTop: 16, maxWidth: 240 }}>
+                        {renderTreeVisibilityControl(m)}
+                      </div>
                     )}
-                    {duplicateCandidates.length === 0 ? (
-                      <p style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-faded)", margin: 0 }}>
-                        No likely duplicates found for this person right now.
-                      </p>
-                    ) : (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                        {duplicateCandidates.map((candidate) => (
-                          <div
-                            key={candidate.id}
-                            style={{
-                              border: "1px solid var(--rule)",
-                              borderRadius: 10,
-                              padding: "14px 16px",
-                              background: "var(--paper-deep)",
-                            }}
-                          >
-                            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-                              <div style={{ display: "flex", gap: 12 }}>
-                                {candidate.portraitUrl ? (
-                                  <img
-                                    src={candidate.portraitUrl}
-                                    alt={candidate.displayName}
-                                    style={{ width: 44, height: 44, borderRadius: "50%", objectFit: "cover", border: "1px solid var(--rule)" }}
-                                  />
-                                ) : (
-                                  <div style={{ width: 44, height: 44, borderRadius: "50%", background: "var(--paper)", border: "1px solid var(--rule)" }} />
-                                )}
-                                <div>
-                                  <p style={{ fontFamily: "var(--font-body)", fontSize: 16, color: "var(--ink)", margin: 0 }}>
-                                    {candidate.displayName}
-                                  </p>
-                                  <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", margin: "4px 0 0" }}>
-                                    Match score {candidate.score}
-                                    {candidate.birthDateText ? ` · b. ${candidate.birthDateText}` : ""}
-                                    {candidate.deathDateText ? ` · d. ${candidate.deathDateText}` : ""}
-                                  </p>
-                                  {candidate.essenceLine && (
-                                    <p style={{ fontFamily: "var(--font-body)", fontSize: 13, color: "var(--ink-soft)", margin: "6px 0 0" }}>
-                                      {candidate.essenceLine}
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => mergeDuplicate(candidate)}
-                                disabled={mergingDuplicateId === candidate.id}
-                                style={{
-                                  border: "1px solid var(--moss)",
-                                  background: "var(--paper)",
-                                  borderRadius: 999,
-                                  padding: "7px 12px",
-                                  fontFamily: "var(--font-ui)",
-                                  fontSize: 12,
-                                  color: "var(--moss)",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                {mergingDuplicateId === candidate.id ? "Merging…" : "Merge into this person"}
-                              </button>
-                            </div>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
-                              {candidate.reasons.map((reason) => (
-                                <span key={reason} style={pillStyle}>
-                                  {reason}
-                                </span>
-                              ))}
-                              {candidate.alreadyInTree && (
-                                <span style={pillStyle}>already in this tree</span>
+                  </article>
+                ))}
+
+                {contextualStoryMemories.length > 0 && (
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
+                      <span style={{ fontFamily: "var(--font-display)", fontSize: 18, color: "var(--ink-soft)", fontStyle: "italic" }}>
+                        Shared through family context
+                      </span>
+                      <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 40 }}>
+                      {contextualStoryMemories.map((m) => (
+                        <article key={m.id} style={{ borderBottom: "1px solid var(--rule)", paddingBottom: 40 }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <h3 style={{ fontFamily: "var(--font-display)", fontSize: 28, color: "var(--ink)", fontWeight: 400, margin: 0 }}>
+                                {m.title}
+                              </h3>
+                              {m.memoryReasonLabel && (
+                                <span style={pillStyle}>{m.memoryReasonLabel}</span>
                               )}
                             </div>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
-                              {candidate.visibleTrees.map((tree) => (
-                                <button
-                                  key={tree.id}
-                                  type="button"
-                                  onClick={() => router.push(`/trees/${tree.id}/people/${candidate.id}`)}
-                                  style={{
-                                    ...pillStyle,
-                                    background: "var(--paper)",
-                                    cursor: "pointer",
-                                  }}
-                                >
-                                  {tree.name}
-                                </button>
-                              ))}
+                            {canSuppressFromSurface && (
+                              <button
+                                type="button"
+                                onClick={() => setMemorySurfaceSuppression(m.id, true)}
+                                disabled={updatingMemorySuppressionId === m.id}
+                                style={{
+                                  ...secondaryBtnStyle,
+                                  padding: "6px 10px",
+                                  fontSize: 12,
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {updatingMemorySuppressionId === m.id ? "Hiding…" : "Hide from this page"}
+                              </button>
+                            )}
+                          </div>
+                          {m.dateOfEventText && <p style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-faded)", marginBottom: 16 }}>{m.dateOfEventText}</p>}
+                          {m.body && <p style={{ fontFamily: "var(--font-body)", fontSize: 19, lineHeight: 1.9, color: "var(--ink-soft)", whiteSpace: "pre-wrap", margin: 0 }}>{m.body}</p>}
+                          {(canManageTreeVisibility || canSuppressFromSurface) && (
+                            <div style={{ marginTop: 16, maxWidth: 240 }}>
+                              {renderTreeVisibilityControl(m)}
                             </div>
+                          )}
+                        </article>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+
+          <section
+            ref={(el) => registerChapterSection("archive", el)}
+            style={{ scrollMarginTop: 120 }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 20, marginBottom: 28 }}>
+              <div>
+                <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 10px" }}>
+                  Images, voice, and keepsakes
+                </p>
+                <h2 style={{ fontFamily: "var(--font-display)", fontSize: 38, color: "var(--ink)", margin: 0, fontWeight: 400 }}>
+                  Archive
+                </h2>
+              </div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <button
+                  onClick={() => openMemoryComposer("photo")}
+                  style={{ fontFamily: "var(--font-ui)", fontSize: 14, color: "var(--moss)", background: "none", border: "1px solid var(--moss)", borderRadius: 999, padding: "10px 18px", cursor: "pointer" }}
+                >
+                  + Add photo or video
+                </button>
+                <button
+                  onClick={() => openMemoryComposer("voice")}
+                  style={{ ...secondaryBtnStyle, borderRadius: 999, padding: "10px 18px", fontSize: 14 }}
+                >
+                  + Add voice
+                </button>
+                <button
+                  onClick={() => openMemoryComposer("document")}
+                  style={{ ...secondaryBtnStyle, borderRadius: 999, padding: "10px 18px", fontSize: 14 }}
+                >
+                  + Add document
+                </button>
+              </div>
+            </div>
+
+            {archiveMemories.length === 0 && contextualArchiveMemories.length === 0 && suppressedContextualMemories.length === 0 ? (
+              <p style={{ fontFamily: "var(--font-body)", fontSize: 18, color: "var(--ink-faded)", margin: 0, lineHeight: 1.6 }}>
+                No archive items have been added yet.
+              </p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 48 }}>
+                {decades.map((decade) => {
+                  const mems = decadeMap.get(decade)!;
+                  return (
+                    <section key={decade}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
+                        <span style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--ink-soft)", fontStyle: "italic" }}>{decade}</span>
+                        <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
+                        {mems.map((m, i) => (
+                          <MemoryCard
+                            key={m.id}
+                            memory={m}
+                            extraControls={renderMemoryCardControls(m)}
+                            onClick={() => openLightbox(mems, i)}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  );
+                })}
+
+                {undatedMemories.length > 0 && (
+                  <section>
+                    <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
+                       <span style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--ink-soft)", fontStyle: "italic" }}>Undated</span>
+                      <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
+                      {undatedMemories.map((m, i) => (
+                        <MemoryCard
+                          key={m.id}
+                          memory={m}
+                          extraControls={renderMemoryCardControls(m)}
+                          onClick={() => openLightbox(undatedMemories, i)}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {contextualArchiveMemories.length > 0 && (
+                  <section>
+                    <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
+                       <span style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--ink-soft)", fontStyle: "italic" }}>
+                         Shared through family context
+                       </span>
+                      <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
+                    </div>
+                     <p style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-faded)", marginTop: 0, marginBottom: 16, lineHeight: 1.5 }}>
+                       These memories appear here because they were shared through family or lineage context, not because this page owns them.
+                     </p>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
+                      {contextualArchiveMemories.map((memory, index) => (
+                        <MemoryCard
+                          key={memory.id}
+                          memory={memory}
+                          extraControls={renderMemoryCardControls(memory)}
+                          onClick={() => openLightbox(contextualArchiveMemories, index)}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {canSuppressFromSurface && suppressedContextualMemories.length > 0 && (
+                  <section>
+                    <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
+                       <span style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--ink-soft)", fontStyle: "italic" }}>
+                         Hidden from this page
+                       </span>
+                      <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
+                    </div>
+                     <p style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-faded)", marginTop: 0, marginBottom: 16, lineHeight: 1.5 }}>
+                       These memories still live in the archive, but they no longer surface on this page.
+                     </p>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
+                      {suppressedContextualMemories.map((memory) => (
+                        <MemoryCard
+                          key={memory.id}
+                          memory={memory}
+                          extraControls={
+                            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                              {renderTreeVisibilityControl(memory)}
+                              <button
+                                type="button"
+                                onClick={() => setMemorySurfaceSuppression(memory.id, false)}
+                                disabled={updatingMemorySuppressionId === memory.id}
+                                style={{
+                                  ...secondaryBtnStyle,
+                                  padding: "6px 10px",
+                                  fontSize: 12,
+                                }}
+                              >
+                                {updatingMemorySuppressionId === memory.id ? "Restoring…" : "Restore to page"}
+                              </button>
+                            </div>
+                          }
+                        />
+                      ))}
+                    </div>
+                  </section>
+                )}
+              </div>
+            )}
+          </section>
+
+          <section
+            ref={(el) => registerChapterSection("family", el)}
+            style={{ scrollMarginTop: 120 }}
+          >
+            <div style={{ marginBottom: 28 }}>
+              <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 10px" }}>
+                Family web
+              </p>
+              <h2 style={{ fontFamily: "var(--font-display)", fontSize: 38, color: "var(--ink)", margin: 0, fontWeight: 400 }}>
+                People around {person.displayName.split(" ")[0]}
+              </h2>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+              <RelationshipsSection
+                person={person}
+                personId={personId}
+                treeId={treeId}
+                otherPeople={otherPeople}
+                showRelForm={showRelForm}
+                relForm={relForm}
+                savingRel={savingRel}
+                onToggleForm={() => setShowRelForm((value) => !value)}
+                onChangeType={(value) => setRelForm((current) => ({ ...current, type: value }))}
+                onChangeDirection={(value) =>
+                  setRelForm((current) => ({ ...current, direction: value }))
+                }
+                onChangeOtherPersonId={(value) =>
+                  setRelForm((current) => ({ ...current, otherPersonId: value }))
+                }
+                onSubmit={saveRelationship}
+              />
+              <DuplicateCandidatesSection
+                canManageDuplicates={canManageDuplicates}
+                loadingDuplicates={loadingDuplicates}
+                mergeError={mergeError}
+                duplicateCandidates={duplicateCandidates}
+                mergingDuplicateId={mergingDuplicateId}
+                onRefresh={loadDuplicateCandidates}
+                onMerge={mergeDuplicate}
+                onOpenPerson={(candidateTreeId, candidatePersonId) =>
+                  router.push(`/trees/${candidateTreeId}/people/${candidatePersonId}`)
+                }
+              />
+            </div>
+          </section>
+
+          <section
+            ref={(el) => registerChapterSection("questions", el)}
+            style={{ scrollMarginTop: 120 }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20, marginBottom: 28 }}>
+              <div>
+                <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 10px" }}>
+                  Family prompts
+                </p>
+                <h2 style={{ fontFamily: "var(--font-display)", fontSize: 38, color: "var(--ink)", margin: 0, fontWeight: 400 }}>
+                  Questions for {person.displayName.split(" ")[0]}
+                </h2>
+              </div>
+              <button
+                onClick={() => setPromptComposerOpen(true)}
+                style={{ padding: "10px 18px", borderRadius: 999, border: "none", background: "var(--moss)", fontFamily: "var(--font-ui)", fontSize: 14, fontWeight: 500, color: "#fff", cursor: "pointer" }}
+              >
+                + Ask a question
+              </button>
+            </div>
+            {personPrompts.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "48px 0", color: "var(--ink-faded)", fontFamily: "var(--font-body)" }}>
+                <p style={{ fontSize: 28, marginBottom: 10 }}>✦</p>
+                <p style={{ fontSize: 19 }}>No questions yet.</p>
+                <p style={{ fontSize: 15 }}>Ask {person.displayName.split(" ")[0]} something about their life.</p>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {personPrompts.map((p) => (
+                  <div key={p.id} style={{ border: "1px solid var(--rule)", borderRadius: 10, padding: "14px 18px", background: "var(--paper)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                      <span style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)" }}>
+                        Asked by {p.fromUserName ?? "a family member"} · {new Date(p.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      </span>
+                      <span style={{ marginLeft: "auto", fontFamily: "var(--font-ui)", fontSize: 12, fontWeight: 500, color: p.status === "answered" ? "var(--moss)" : p.status === "dismissed" ? "var(--ink-faded)" : "var(--gilt)", padding: "2px 8px", borderRadius: 20, border: `1px solid ${p.status === "answered" ? "var(--moss)" : p.status === "dismissed" ? "var(--rule)" : "var(--gilt)"}` }}>
+                        {p.status === "answered" ? "Replied" : p.status === "dismissed" ? "Dismissed" : "Awaiting reply"}
+                      </span>
+                    </div>
+                    <p style={{ fontFamily: "var(--font-body)", fontSize: 18, color: "var(--ink)", margin: "0 0 8px", lineHeight: 1.65 }}>
+                      {p.questionText}
+                    </p>
+                    {p.replies && p.replies.length > 0 && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        {p.replies.map((r) => (
+                          <div key={r.id} style={{ background: "rgba(78,93,66,0.06)", borderRadius: 6, padding: "8px 12px", fontFamily: "var(--font-ui)", fontSize: 14, color: "var(--ink-soft)" }}>
+                            ↳ {r.title}
                           </div>
                         ))}
                       </div>
                     )}
                   </div>
-                )}
+                ))}
               </div>
+            )}
+          </section>
 
-              {/* ── Shared context from other trees ── */}
-              {crossTreeLinks.length > 0 && (
-                <div style={{ marginTop: 32 }}>
-                  <h3 style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", textTransform: "uppercase", letterSpacing: "0.06em", margin: "0 0 12px", fontWeight: 500 }}>
-                    Shared context from other trees
-                  </h3>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-                    {crossTreeLinks.map((link, index) => (
-                      <div key={link.connectionId ?? `${link.treeId}-${index}`} style={{ border: "1px solid var(--rule)", borderRadius: 10, padding: "16px 20px", background: "var(--paper-deep)" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12 }}>
-                          <div>
-                            <p style={{ fontFamily: "var(--font-ui)", fontSize: 11, color: "var(--ink-faded)", textTransform: "uppercase", letterSpacing: "0.06em", margin: 0 }}>
-                              {link.treeName ?? "Other tree"}
-                            </p>
-                          </div>
-                          <a
-                            href={`/trees/${link.treeId}/people/${link.linkedPerson.id}`}
-                            style={{
-                              fontFamily: "var(--font-ui)",
-                              fontSize: 12,
-                              color: "var(--moss)",
-                              textDecoration: "none",
-                            }}
-                          >
-                            Open in this tree →
-                          </a>
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: link.memories.length > 0 ? 14 : 0 }}>
-                          {link.linkedPerson.portraitUrl && (
-                            <img
-                              src={link.linkedPerson.portraitUrl}
-                              alt={link.linkedPerson.displayName}
-                              style={{ width: 36, height: 36, borderRadius: "50%", objectFit: "cover", border: "1px solid var(--rule)" }}
-                            />
-                          )}
-                          <div>
-                            <p style={{ fontFamily: "var(--font-ui)", fontSize: 14, color: "var(--ink)", margin: 0 }}>
-                              {link.linkedPerson.displayName}
-                            </p>
-                            {link.linkedPerson.essenceLine && (
-                              <p style={{ fontFamily: "var(--font-body)", fontSize: 12, color: "var(--ink-faded)", margin: "2px 0 0" }}>
-                                {link.linkedPerson.essenceLine}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                        {link.memories.length > 0 && (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                            {link.memories.slice(0, 3).map((m) => (
-                              <div
-                                key={m.id}
-                                style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "var(--paper)", borderRadius: 6, border: "1px solid var(--rule)" }}
-                              >
-                                <span style={{ fontSize: 13, opacity: 0.4 }}>
-                                  {m.kind === "photo" ? "◻" : m.kind === "voice" ? "🎙" : m.kind === "document" ? "□" : "✦"}
-                                </span>
-                                <span style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-soft)", flex: 1 }}>{m.title}</span>
-                                {m.dateOfEventText && (
-                                  <span style={{ fontFamily: "var(--font-ui)", fontSize: 11, color: "var(--ink-faded)" }}>{m.dateOfEventText}</span>
-                                )}
-                              </div>
-                            ))}
-                            {link.memories.length > 3 && (
-                              <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", margin: "4px 0 0", textAlign: "right" }}>
-                                +{link.memories.length - 3} more
-                              </p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-          {activeTab === "prompts" && (
-            <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
-                <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--ink)", margin: 0, fontWeight: 400 }}>
-                  Questions for {person.displayName.split(" ")[0]}
-                </h2>
-                <button
-                  onClick={() => setPromptComposerOpen(true)}
-                  style={{ padding: "7px 16px", borderRadius: 8, border: "none", background: "var(--moss)", fontFamily: "var(--font-ui)", fontSize: 13, fontWeight: 500, color: "#fff", cursor: "pointer" }}
-                >
-                  + Ask a question
-                </button>
-              </div>
-              {personPrompts.length === 0 ? (
-                <div style={{ textAlign: "center", padding: "48px 0", color: "var(--ink-faded)", fontFamily: "var(--font-body)" }}>
-                  <p style={{ fontSize: 28, marginBottom: 10 }}>✦</p>
-                  <p style={{ fontSize: 15 }}>No questions yet.</p>
-                  <p style={{ fontSize: 13 }}>Ask {person.displayName.split(" ")[0]} something about their life.</p>
-                </div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  {personPrompts.map((p) => (
-                    <div key={p.id} style={{ border: "1px solid var(--rule)", borderRadius: 10, padding: "14px 18px", background: "var(--paper)" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                        <span style={{ fontFamily: "var(--font-ui)", fontSize: 11, color: "var(--ink-faded)" }}>
-                          Asked by {p.fromUserName ?? "a family member"} · {new Date(p.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                        </span>
-                        <span style={{ marginLeft: "auto", fontFamily: "var(--font-ui)", fontSize: 11, fontWeight: 500, color: p.status === "answered" ? "var(--moss)" : p.status === "dismissed" ? "var(--ink-faded)" : "var(--gilt)", padding: "2px 8px", borderRadius: 20, border: `1px solid ${p.status === "answered" ? "var(--moss)" : p.status === "dismissed" ? "var(--rule)" : "var(--gilt)"}` }}>
-                          {p.status === "answered" ? "Replied" : p.status === "dismissed" ? "Dismissed" : "Awaiting reply"}
-                        </span>
-                      </div>
-                      <p style={{ fontFamily: "var(--font-body)", fontSize: 15, color: "var(--ink)", margin: "0 0 8px", lineHeight: 1.5 }}>
-                        {p.questionText}
-                      </p>
-                      {p.replies && p.replies.length > 0 && (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                          {p.replies.map((r) => (
-                            <div key={r.id} style={{ background: "rgba(78,93,66,0.06)", borderRadius: 6, padding: "6px 10px", fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-soft)" }}>
-                              ↳ {r.title}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </main>
-
-        {/* "In this chapter" right sidebar — only on memories tab when a decade is active */}
-        {activeTab === "memories" && activeDecade && decadeStats && (
-          <aside style={{
-            width: 180,
-            flexShrink: 0,
-            paddingTop: 40,
-            position: "sticky",
-            top: 100,
-            alignSelf: "flex-start",
-          }}>
-            <div style={{
-              background: "var(--paper-deep)",
-              border: "1px solid var(--rule)",
-              borderRadius: 8,
-              padding: 16,
-            }}>
-              <div style={{ fontFamily: "var(--font-ui)", fontSize: 10, color: "var(--ink-faded)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>
-                In the {activeDecade}
-              </div>
-              {[
-                { label: "Photos", count: decadeStats.photos, icon: "◻" },
-                { label: "Stories", count: decadeStats.stories, icon: "✦" },
-                { label: "Voice memos", count: decadeStats.voice, icon: "🎙" },
-                { label: "Documents", count: decadeStats.documents, icon: "□" },
-              ].filter((s) => s.count > 0).map(({ label, count, icon }) => (
-                <div key={label} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                  <span style={{ fontSize: 13, opacity: 0.5, width: 16, textAlign: "center" }}>{icon}</span>
-                  <span style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-soft)", flex: 1 }}>{label}</span>
-                  <span style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)" }}>{count}</span>
-                </div>
-              ))}
-              {decadeStats.total === 0 && (
-                <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", margin: 0 }}>
-                  No memories
+          {crossTreeLinks.length > 0 && (
+            <section
+              ref={(el) => registerChapterSection("context", el)}
+              style={{ scrollMarginTop: 120 }}
+            >
+              <div style={{ marginBottom: 24 }}>
+                <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 10px" }}>
+                  Shared identity
                 </p>
-              )}
-            </div>
-          </aside>
-        )}
+                <h2 style={{ fontFamily: "var(--font-display)", fontSize: 38, color: "var(--ink)", margin: 0, fontWeight: 400 }}>
+                  Shared context from other trees
+                </h2>
+              </div>
+              <CrossTreeContextSection crossTreeLinks={crossTreeLinks} />
+            </section>
+          )}
+          </main>
+        </div>
       </div>
 
       {/* Memory lightbox */}
@@ -1650,6 +1451,7 @@ export default function PersonPage({
           onSuccess={loadPerson}
           defaultPersonId={person.id}
           defaultKind={memoryComposerKind}
+          subjectName={person.displayName}
         />
       )}
     </div>
@@ -1704,6 +1506,31 @@ const dangerBtnStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
+const railPrimaryButtonStyle: React.CSSProperties = {
+  border: "none",
+  background: "var(--moss)",
+  borderRadius: 999,
+  padding: "11px 16px",
+  fontFamily: "var(--font-ui)",
+  fontSize: 14,
+  fontWeight: 500,
+  color: "#fff",
+  cursor: "pointer",
+  textAlign: "left",
+};
+
+const railSecondaryButtonStyle: React.CSSProperties = {
+  border: "1px solid var(--rule)",
+  background: "var(--paper-deep)",
+  borderRadius: 999,
+  padding: "10px 16px",
+  fontFamily: "var(--font-ui)",
+  fontSize: 14,
+  color: "var(--ink-soft)",
+  cursor: "pointer",
+  textAlign: "left",
+};
+
 const pillStyle: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
@@ -1728,6 +1555,8 @@ function MemoryCard({
   onClick?: () => void;
   extraControls?: React.ReactNode;
 }) {
+  const mime = memory.mimeType?.toLowerCase() ?? "";
+  const isVideo = mime.startsWith("video/");
   const kindIcon: Record<MemoryKind, string> = {
     photo: "◻",
     story: "✦",
@@ -1750,8 +1579,17 @@ function MemoryCard({
       onMouseEnter={(e) => { if (onClick) e.currentTarget.style.boxShadow = "0 4px 16px rgba(28,25,21,0.1)"; }}
       onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "none"; }}
     >
-      {memory.mediaUrl && memory.kind === "photo" && (
-        <img src={memory.mediaUrl} alt={memory.title} style={{ width: "100%", height: 160, objectFit: "cover", display: "block" }} />
+      {memory.mediaUrl && memory.kind === "photo" && !isVideo && (
+        <img src={memory.mediaUrl} alt={memory.title} style={{ width: "100%", height: 188, objectFit: "cover", display: "block" }} />
+      )}
+      {memory.mediaUrl && isVideo && (
+        <video
+          src={memory.mediaUrl}
+          style={{ width: "100%", height: 188, objectFit: "cover", display: "block", background: "var(--ink)" }}
+          muted
+          playsInline
+          preload="metadata"
+        />
       )}
       {memory.kind === "voice" && (
         <div style={{ height: 60, background: "var(--ink)", display: "flex", alignItems: "center", justifyContent: "center", gap: 2 }}>
@@ -1763,8 +1601,13 @@ function MemoryCard({
       <div style={{ padding: "14px 16px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
           <span style={{ fontSize: 11, opacity: 0.4 }}>{kindIcon[memory.kind]}</span>
-          <h3 style={{ fontFamily: "var(--font-display)", fontSize: 15, color: "var(--ink)", margin: 0, fontWeight: 400, lineHeight: 1.3 }}>{memory.title}</h3>
+          <h3 style={{ fontFamily: "var(--font-display)", fontSize: 18, color: "var(--ink)", margin: 0, fontWeight: 400, lineHeight: 1.3 }}>{memory.title}</h3>
         </div>
+        {isVideo && (
+          <div style={{ marginBottom: 8 }}>
+            <span style={pillStyle}>Video</span>
+          </div>
+        )}
         {memory.linkedMediaProvider === "google_drive" && (
           <div style={{ marginBottom: 8 }}>
             <span style={pillStyle}>Linked from Drive</span>
@@ -1776,15 +1619,15 @@ function MemoryCard({
           </div>
         )}
         {memory.dateOfEventText && (
-          <p style={{ fontFamily: "var(--font-ui)", fontSize: 11, color: "var(--ink-faded)", margin: "0 0 8px" }}>{memory.dateOfEventText}</p>
+          <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", margin: "0 0 8px" }}>{memory.dateOfEventText}</p>
         )}
         {memory.body && memory.kind !== "photo" && (
-          <p style={{ fontFamily: "var(--font-body)", fontSize: 13, lineHeight: 1.6, color: "var(--ink-soft)", margin: 0, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+          <p style={{ fontFamily: "var(--font-body)", fontSize: 15, lineHeight: 1.7, color: "var(--ink-soft)", margin: 0, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
             {memory.body}
           </p>
         )}
         {memory.kind === "voice" && (
-          <p style={{ fontFamily: "var(--font-body)", fontSize: 13, lineHeight: 1.6, color: "var(--ink-faded)", margin: 0, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+          <p style={{ fontFamily: "var(--font-body)", fontSize: 15, lineHeight: 1.7, color: "var(--ink-faded)", margin: 0, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
             {getVoiceTranscriptLabel(memory)}
           </p>
         )}
@@ -1798,5 +1641,776 @@ function MemoryCard({
         )}
       </div>
     </article>
+  );
+}
+
+function MemoryStudioRail({
+  personName,
+  onOpenStory,
+  onOpenPhoto,
+  onOpenVoice,
+  onOpenDocument,
+  onOpenStudio,
+}: {
+  personName: string;
+  onOpenStory: () => void;
+  onOpenPhoto: () => void;
+  onOpenVoice: () => void;
+  onOpenDocument: () => void;
+  onOpenStudio: () => void;
+}) {
+  return (
+    <div
+      style={{
+        border: "1px solid var(--rule)",
+        borderRadius: 16,
+        background: "var(--paper)",
+        padding: "18px 16px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 14,
+      }}
+    >
+      <div>
+        <p
+          style={{
+            fontFamily: "var(--font-ui)",
+            fontSize: 11,
+            color: "var(--ink-faded)",
+            textTransform: "uppercase",
+            letterSpacing: "0.08em",
+            margin: "0 0 8px",
+          }}
+        >
+          Memory studio
+        </p>
+        <h3
+          style={{
+            fontFamily: "var(--font-display)",
+            fontSize: 24,
+            color: "var(--ink)",
+            fontWeight: 400,
+            margin: 0,
+            lineHeight: 1.2,
+          }}
+        >
+          Add to {personName.split(" ")[0]}'s chapter
+        </h3>
+      </div>
+      <p style={{ fontFamily: "var(--font-body)", fontSize: 15, lineHeight: 1.65, color: "var(--ink-soft)", margin: 0 }}>
+        Start with a story, upload a photo or video, drop in a document, or record a voice note.
+        Everything begins anchored to {personName.split(" ")[0]}, then you can tag others and choose
+        how far it should travel through the family archive.
+      </p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <button type="button" onClick={onOpenStory} style={railPrimaryButtonStyle}>
+          + Add a story
+        </button>
+        <button type="button" onClick={onOpenPhoto} style={railSecondaryButtonStyle}>
+          Upload photo or video
+        </button>
+        <button type="button" onClick={onOpenVoice} style={railSecondaryButtonStyle}>
+          Record or upload voice
+        </button>
+        <button type="button" onClick={onOpenDocument} style={railSecondaryButtonStyle}>
+          Add a document
+        </button>
+      </div>
+      <button type="button" onClick={onOpenStudio} style={{ ...secondaryBtnStyle, borderRadius: 999, fontSize: 13, padding: "9px 14px" }}>
+        Open full memory studio
+      </button>
+    </div>
+  );
+}
+
+function BiographyDrawer({
+  editing,
+  person,
+  editForm,
+  savingEdit,
+  deletingPerson,
+  deleteError,
+  treeId,
+  apiBase,
+  onClose,
+  onSubmit,
+  onDelete,
+  onChangeField,
+}: {
+  editing: boolean;
+  person: Person;
+  editForm: EditFormState;
+  savingEdit: boolean;
+  deletingPerson: boolean;
+  deleteError: string | null;
+  treeId: string;
+  apiBase: string;
+  onClose: () => void;
+  onSubmit: (event: React.FormEvent) => void;
+  onDelete: () => void;
+  onChangeField: <K extends keyof EditFormState>(field: K, value: EditFormState[K]) => void;
+}) {
+  if (!editing) return null;
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(28,25,21,0.32)",
+        backdropFilter: "blur(4px)",
+        zIndex: 40,
+        display: "flex",
+        justifyContent: "flex-end",
+      }}
+    >
+      <div
+        onClick={(event) => event.stopPropagation()}
+        style={{
+          width: "min(480px, 100%)",
+          height: "100%",
+          overflowY: "auto",
+          background: "var(--paper)",
+          borderLeft: "1px solid var(--rule)",
+          boxShadow: "-18px 0 48px rgba(28,25,21,0.14)",
+          padding: "28px 28px 36px",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: 16,
+            marginBottom: 24,
+          }}
+        >
+          <div>
+            <p
+              style={{
+                fontFamily: "var(--font-ui)",
+                fontSize: 11,
+                color: "var(--ink-faded)",
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+                margin: "0 0 6px",
+              }}
+            >
+              Edit biography
+            </p>
+            <h2
+              style={{
+                fontFamily: "var(--font-display)",
+                fontSize: 28,
+                fontWeight: 400,
+                color: "var(--ink)",
+                margin: 0,
+              }}
+            >
+              {person.displayName}
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              border: "1px solid var(--rule)",
+              background: "var(--paper-deep)",
+              borderRadius: 999,
+              padding: "6px 10px",
+              fontFamily: "var(--font-ui)",
+              fontSize: 12,
+              color: "var(--ink-faded)",
+              cursor: "pointer",
+            }}
+          >
+            Close
+          </button>
+        </div>
+
+        <form onSubmit={onSubmit} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <p
+              style={{
+                fontFamily: "var(--font-ui)",
+                fontSize: 11,
+                color: "var(--ink-faded)",
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+                margin: 0,
+              }}
+            >
+              Identity
+            </p>
+            <input
+              type="text"
+              required
+              value={editForm.displayName}
+              onChange={(event) => onChangeField("displayName", event.target.value)}
+              placeholder="Full name"
+              style={inputStyle}
+            />
+            <input
+              type="text"
+              value={editForm.essenceLine}
+              onChange={(event) => onChangeField("essenceLine", event.target.value)}
+              placeholder="Essence line (one sentence)"
+              style={inputStyle}
+            />
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <p
+              style={{
+                fontFamily: "var(--font-ui)",
+                fontSize: 11,
+                color: "var(--ink-faded)",
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+                margin: 0,
+              }}
+            >
+              Life details
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <input
+                type="text"
+                value={editForm.birthDateText}
+                onChange={(event) => onChangeField("birthDateText", event.target.value)}
+                placeholder="Birth date"
+                style={inputStyle}
+              />
+              <input
+                type="text"
+                value={editForm.deathDateText}
+                onChange={(event) => onChangeField("deathDateText", event.target.value)}
+                placeholder="Death date"
+                style={inputStyle}
+              />
+            </div>
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                fontFamily: "var(--font-ui)",
+                fontSize: 13,
+                color: "var(--ink-soft)",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={editForm.isLiving}
+                onChange={(event) => onChangeField("isLiving", event.target.checked)}
+              />
+              Still living
+            </label>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <p
+              style={{
+                fontFamily: "var(--font-ui)",
+                fontSize: 11,
+                color: "var(--ink-faded)",
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+                margin: 0,
+              }}
+            >
+              Places
+            </p>
+            <input
+              type="text"
+              value={editForm.birthPlace}
+              onChange={(event) => onChangeField("birthPlace", event.target.value)}
+              placeholder="Birthplace"
+              style={inputStyle}
+            />
+            <PlacePicker
+              treeId={treeId}
+              apiBase={apiBase}
+              value={editForm.birthPlaceId}
+              onChange={(birthPlaceId) => onChangeField("birthPlaceId", birthPlaceId)}
+              label="Birthplace on the map"
+              emptyLabel="No mapped birthplace"
+            />
+            <input
+              type="text"
+              value={editForm.deathPlace}
+              onChange={(event) => onChangeField("deathPlace", event.target.value)}
+              placeholder="Death place"
+              style={inputStyle}
+            />
+            <PlacePicker
+              treeId={treeId}
+              apiBase={apiBase}
+              value={editForm.deathPlaceId}
+              onChange={(deathPlaceId) => onChangeField("deathPlaceId", deathPlaceId)}
+              label="Death place on the map"
+              emptyLabel="No mapped death place"
+            />
+          </div>
+
+          <div
+            style={{
+              borderTop: "1px solid var(--rule)",
+              paddingTop: 18,
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+            }}
+          >
+            {deleteError && (
+              <div style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "#9a4f46" }}>
+                {deleteError}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button type="submit" disabled={savingEdit} style={primaryBtnStyle}>
+                {savingEdit ? "Saving…" : "Save biography"}
+              </button>
+              <button type="button" onClick={onClose} style={secondaryBtnStyle}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={onDelete}
+                disabled={savingEdit || deletingPerson}
+                style={dangerBtnStyle}
+              >
+                {deletingPerson ? "Deleting…" : "Delete person"}
+              </button>
+            </div>
+            <div style={{ fontFamily: "var(--font-ui)", fontSize: 11, color: "var(--ink-faded)" }}>
+              Deleting a person also removes their relationships, memories, prompts, and cross-tree
+              links.
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function RelationshipsSection({
+  person,
+  personId,
+  treeId,
+  otherPeople,
+  showRelForm,
+  relForm,
+  savingRel,
+  onToggleForm,
+  onChangeType,
+  onChangeDirection,
+  onChangeOtherPersonId,
+  onSubmit,
+}: {
+  person: Person;
+  personId: string;
+  treeId: string;
+  otherPeople: PersonSummary[];
+  showRelForm: boolean;
+  relForm: RelationshipFormState;
+  savingRel: boolean;
+  onToggleForm: () => void;
+  onChangeType: (value: RelationshipType) => void;
+  onChangeDirection: (value: "from" | "to") => void;
+  onChangeOtherPersonId: (value: string) => void;
+  onSubmit: (event: React.FormEvent) => void;
+}) {
+  return (
+    <div>
+      <div
+        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}
+      >
+        <h3
+          style={{
+            fontFamily: "var(--font-display)",
+            fontSize: 30,
+            color: "var(--ink)",
+            margin: 0,
+            fontWeight: 400,
+          }}
+        >
+          Relationships
+        </h3>
+        {otherPeople.length > 0 && (
+          <button
+            type="button"
+            onClick={onToggleForm}
+            style={{
+              fontFamily: "var(--font-ui)",
+              fontSize: 14,
+              color: "var(--moss)",
+              background: "none",
+              border: "1px solid var(--moss)",
+              borderRadius: 999,
+              padding: "10px 16px",
+              cursor: "pointer",
+            }}
+          >
+            {showRelForm ? "Cancel" : "+ Add"}
+          </button>
+        )}
+      </div>
+
+      {showRelForm && (
+        <form
+          onSubmit={onSubmit}
+          style={{
+            background: "var(--paper-deep)",
+            border: "1px solid var(--rule)",
+            borderRadius: 8,
+            padding: 16,
+            marginBottom: 24,
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+          }}
+        >
+          <select
+            value={relForm.type}
+            onChange={(event) => onChangeType(event.target.value as RelationshipType)}
+            style={inputStyle}
+          >
+            <option value="parent_child">Parent / Child</option>
+            <option value="sibling">Sibling</option>
+            <option value="spouse">Spouse / Partner</option>
+          </select>
+          {relForm.type === "parent_child" && (
+            <select
+              value={relForm.direction}
+              onChange={(event) => onChangeDirection(event.target.value as "from" | "to")}
+              style={inputStyle}
+            >
+              <option value="from">{person.displayName} is the parent</option>
+              <option value="to">{person.displayName} is the child</option>
+            </select>
+          )}
+          <select
+            required
+            value={relForm.otherPersonId}
+            onChange={(event) => onChangeOtherPersonId(event.target.value)}
+            style={inputStyle}
+          >
+            <option value="">Select person…</option>
+            {otherPeople.map((otherPerson) => (
+              <option key={otherPerson.id} value={otherPerson.id}>
+                {otherPerson.displayName}
+              </option>
+            ))}
+          </select>
+          <button type="submit" disabled={savingRel} style={primaryBtnStyle}>
+            {savingRel ? "Saving…" : "Add relationship"}
+          </button>
+        </form>
+      )}
+
+      {person.relationships.length === 0 ? (
+        <p style={{ fontFamily: "var(--font-body)", fontSize: 18, color: "var(--ink-faded)", lineHeight: 1.6 }}>
+          No relationships recorded.
+        </p>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16 }}>
+          {person.relationships.map((relationship) => {
+            const other =
+              relationship.fromPerson.id === personId ? relationship.toPerson : relationship.fromPerson;
+            const label = relationshipLabel(relationship, personId);
+            const initials = other.displayName
+              .split(" ")
+              .map((word) => word[0])
+              .join("")
+              .slice(0, 2)
+              .toUpperCase();
+
+            return (
+              <a
+                key={relationship.id}
+                href={`/trees/${treeId}/people/${other.id}`}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "24px 18px",
+                  background: "var(--paper-deep)",
+                  border: "1px solid var(--rule)",
+                  borderRadius: 14,
+                  textDecoration: "none",
+                  textAlign: "center",
+                }}
+              >
+                <div
+                  style={{
+                    width: 56,
+                    height: 56,
+                    borderRadius: "50%",
+                    background: "var(--paper)",
+                    border: "1.5px solid var(--rule)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    overflow: "hidden",
+                  }}
+                >
+                  {other.portraitUrl ? (
+                    <img
+                      src={other.portraitUrl}
+                      alt={other.displayName}
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                  ) : (
+                    <span
+                      style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--ink-faded)" }}
+                    >
+                      {initials}
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <div
+                    style={{ fontFamily: "var(--font-display)", fontSize: 20, color: "var(--ink)", lineHeight: 1.3 }}
+                  >
+                    {other.displayName}
+                  </div>
+                  <div
+                    style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-faded)", marginTop: 4 }}
+                  >
+                    {label.split(" ")[0]}
+                  </div>
+                </div>
+              </a>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DuplicateCandidatesSection({
+  canManageDuplicates,
+  loadingDuplicates,
+  mergeError,
+  duplicateCandidates,
+  mergingDuplicateId,
+  onRefresh,
+  onMerge,
+  onOpenPerson,
+}: {
+  canManageDuplicates: boolean;
+  loadingDuplicates: boolean;
+  mergeError: string | null;
+  duplicateCandidates: DuplicateCandidate[];
+  mergingDuplicateId: string | null;
+  onRefresh: () => void;
+  onMerge: (candidate: DuplicateCandidate) => void;
+  onOpenPerson: (treeId: string, personId: string) => void;
+}) {
+  if (!canManageDuplicates) return null;
+
+  return (
+    <div style={{ marginTop: 28 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 12 }}>
+        <h3
+          style={{
+            fontFamily: "var(--font-ui)",
+            fontSize: 12,
+            color: "var(--ink-faded)",
+            textTransform: "uppercase",
+            letterSpacing: "0.06em",
+            margin: 0,
+            fontWeight: 500,
+          }}
+        >
+          Possible duplicates
+        </h3>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={loadingDuplicates}
+          style={{
+            border: "1px solid var(--rule)",
+            background: "var(--paper)",
+            borderRadius: 999,
+            padding: "5px 10px",
+            fontFamily: "var(--font-ui)",
+            fontSize: 12,
+            color: "var(--ink-faded)",
+            cursor: "pointer",
+          }}
+        >
+          {loadingDuplicates ? "Checking…" : "Refresh"}
+        </button>
+      </div>
+      {mergeError && (
+        <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "#9a4f46", margin: "0 0 12px" }}>
+          {mergeError}
+        </p>
+      )}
+      {duplicateCandidates.length === 0 ? (
+        <p style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-faded)", margin: 0 }}>
+          No likely duplicates found for this person right now.
+        </p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {duplicateCandidates.map((candidate) => (
+            <div
+              key={candidate.id}
+              style={{
+                border: "1px solid var(--rule)",
+                borderRadius: 10,
+                padding: "14px 16px",
+                background: "var(--paper-deep)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                <div style={{ display: "flex", gap: 12 }}>
+                  {candidate.portraitUrl ? (
+                    <img
+                      src={candidate.portraitUrl}
+                      alt={candidate.displayName}
+                      style={{ width: 44, height: 44, borderRadius: "50%", objectFit: "cover", border: "1px solid var(--rule)" }}
+                    />
+                  ) : (
+                    <div style={{ width: 44, height: 44, borderRadius: "50%", background: "var(--paper)", border: "1px solid var(--rule)" }} />
+                  )}
+                  <div>
+                    <p style={{ fontFamily: "var(--font-body)", fontSize: 16, color: "var(--ink)", margin: 0 }}>
+                      {candidate.displayName}
+                    </p>
+                    <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", margin: "4px 0 0" }}>
+                      Match score {candidate.score}
+                      {candidate.birthDateText ? ` · b. ${candidate.birthDateText}` : ""}
+                      {candidate.deathDateText ? ` · d. ${candidate.deathDateText}` : ""}
+                    </p>
+                    {candidate.essenceLine && (
+                      <p style={{ fontFamily: "var(--font-body)", fontSize: 13, color: "var(--ink-soft)", margin: "6px 0 0" }}>
+                        {candidate.essenceLine}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onMerge(candidate)}
+                  disabled={mergingDuplicateId === candidate.id}
+                  style={{
+                    border: "1px solid var(--moss)",
+                    background: "var(--paper)",
+                    borderRadius: 999,
+                    padding: "7px 12px",
+                    fontFamily: "var(--font-ui)",
+                    fontSize: 12,
+                    color: "var(--moss)",
+                    cursor: "pointer",
+                  }}
+                >
+                  {mergingDuplicateId === candidate.id ? "Merging…" : "Merge into this person"}
+                </button>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
+                {candidate.reasons.map((reason) => (
+                  <span key={reason} style={pillStyle}>
+                    {reason}
+                  </span>
+                ))}
+                {candidate.alreadyInTree && <span style={pillStyle}>already in this tree</span>}
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
+                {candidate.visibleTrees.map((tree) => (
+                  <button
+                    key={tree.id}
+                    type="button"
+                    onClick={() => onOpenPerson(tree.id, candidate.id)}
+                    style={{ ...pillStyle, background: "var(--paper)", cursor: "pointer" }}
+                  >
+                    {tree.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CrossTreeContextSection({ crossTreeLinks }: { crossTreeLinks: CrossTreeLink[] }) {
+  if (crossTreeLinks.length === 0) return null;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {crossTreeLinks.map((link, index) => (
+        <div
+          key={link.connectionId ?? `${link.treeId}-${index}`}
+          style={{ border: "1px solid var(--rule)", borderRadius: 10, padding: "16px 20px", background: "var(--paper-deep)" }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12 }}>
+            <div>
+              <p style={{ fontFamily: "var(--font-ui)", fontSize: 11, color: "var(--ink-faded)", textTransform: "uppercase", letterSpacing: "0.06em", margin: 0 }}>
+                {link.treeName ?? "Other tree"}
+              </p>
+            </div>
+            <a
+              href={`/trees/${link.treeId}/people/${link.linkedPerson.id}`}
+              style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--moss)", textDecoration: "none" }}
+            >
+              Open in this tree →
+            </a>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: link.memories.length > 0 ? 14 : 0 }}>
+            {link.linkedPerson.portraitUrl && (
+              <img
+                src={link.linkedPerson.portraitUrl}
+                alt={link.linkedPerson.displayName}
+                style={{ width: 36, height: 36, borderRadius: "50%", objectFit: "cover", border: "1px solid var(--rule)" }}
+              />
+            )}
+            <div>
+              <p style={{ fontFamily: "var(--font-ui)", fontSize: 14, color: "var(--ink)", margin: 0 }}>
+                {link.linkedPerson.displayName}
+              </p>
+              {link.linkedPerson.essenceLine && (
+                <p style={{ fontFamily: "var(--font-body)", fontSize: 12, color: "var(--ink-faded)", margin: "2px 0 0" }}>
+                  {link.linkedPerson.essenceLine}
+                </p>
+              )}
+            </div>
+          </div>
+          {link.memories.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {link.memories.slice(0, 3).map((memory) => (
+                <div
+                  key={memory.id}
+                  style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "var(--paper)", borderRadius: 6, border: "1px solid var(--rule)" }}
+                >
+                  <span style={{ fontSize: 13, opacity: 0.4 }}>
+                    {memory.kind === "photo" ? "◻" : memory.kind === "voice" ? "🎙" : memory.kind === "document" ? "□" : "✦"}
+                  </span>
+                  <span style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-soft)", flex: 1 }}>
+                    {memory.title}
+                  </span>
+                  {memory.dateOfEventText && (
+                    <span style={{ fontFamily: "var(--font-ui)", fontSize: 11, color: "var(--ink-faded)" }}>
+                      {memory.dateOfEventText}
+                    </span>
+                  )}
+                </div>
+              ))}
+              {link.memories.length > 3 && (
+                <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", margin: "4px 0 0", textAlign: "right" }}>
+                  +{link.memories.length - 3} more
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }

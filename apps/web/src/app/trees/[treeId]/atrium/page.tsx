@@ -12,6 +12,7 @@ import {
 } from "@/components/tree/MemoryVisibilityControl";
 import { SearchOverlay } from "@/components/tree/SearchOverlay";
 import { Shimmer } from "@/components/ui/Shimmer";
+import { usePendingVoiceTranscriptionRefresh } from "@/lib/usePendingVoiceTranscriptionRefresh";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -380,6 +381,16 @@ export default function AtriumPage() {
     });
     if (res.ok) setMemories(await res.json());
   }, [treeId]);
+
+  usePendingVoiceTranscriptionRefresh({
+    items: memories.map((memory) => ({
+      id: memory.id,
+      kind: memory.kind,
+      transcriptStatus: memory.transcriptStatus,
+    })),
+    refresh: refreshMemories,
+    enabled: Boolean(session),
+  });
 
   const setMemoryTreeVisibility = useCallback(
     async (memoryId: string, visibility: TreeVisibilityLevel | null) => {

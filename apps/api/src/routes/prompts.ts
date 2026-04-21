@@ -69,6 +69,10 @@ const PresignBody = z.object({
   sizeBytes: z.number().int().positive().max(200 * 1024 * 1024), // 200 MB cap
 });
 
+const PublicReplyStatusQuery = z.object({
+  memoryId: z.string().uuid(),
+});
+
 async function verifyMembership(treeId: string, userId: string) {
   return db.query.treeMemberships.findFirst({
     where: (t, { and, eq }) => and(eq(t.treeId, treeId), eq(t.userId, userId)),
@@ -687,6 +691,37 @@ export async function promptsPlugin(app: FastifyInstance): Promise<void> {
       mimeType: full?.media?.mimeType ?? null,
     });
   });
+
+  app.get("/api/prompt-replies/:token/reply-status", async (request, reply) => {
+    const { token } = request.params as { token: string };
+    const resolved = await resolveReplyStatusLink(token);
+    if (!resolved.ok) return reply.status(resolved.status).send({ error: resolved.error });
+
+    const parsed = PublicReplyStatusQuery.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Invalid query parameters" });
+    }
+
+    const memory = await db.query.memories.findFirst({
+      where: (m, { and, eq }) =>
+        and(
+          eq(m.id, parsed.data.memoryId),
+          eq(m.promptId, resolved.link.promptId),
+          eq(m.treeId, resolved.link.treeId),
+        ),
+      with: { media: true },
+    });
+
+    if (!memory) {
+      return reply.status(404).send({ error: "Reply memory not found" });
+    }
+
+    return reply.send({
+      ...memory,
+      mediaUrl: memory.media ? mediaUrl(memory.media.objectKey) : null,
+      mimeType: memory.media?.mimeType ?? null,
+    });
+  });
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -773,6 +808,40 @@ async function resolveReplyLink(
 
   if (link.prompt.status !== "pending") {
     return { ok: false, status: 410, error: "Prompt is no longer accepting replies" };
+  }
+
+  return {
+    ok: true,
+    link: link as ResolvedReplyLink,
+  };
+}
+
+async function resolveReplyStatusLink(
+  rawToken: string,
+): Promise<
+  | { ok: true; link: ResolvedReplyLink }
+  | { ok: false; status: number; error: string }
+> {
+  const tokenHash = hashToken(rawToken);
+  const link = await db.query.promptReplyLinks.findFirst({
+    where: (l, { eq }) => eq(l.tokenHash, tokenHash),
+    with: {
+      prompt: {
+        with: {
+          toPerson: true,
+          fromUser: true,
+          tree: true,
+        },
+      },
+    },
+  });
+
+  if (!link || !link.prompt) {
+    return { ok: false, status: 404, error: "Reply link not found" };
+  }
+
+  if (link.status === "revoked" || link.status === "expired") {
+    return { ok: false, status: 410, error: "Reply link is no longer active" };
   }
 
   return {
