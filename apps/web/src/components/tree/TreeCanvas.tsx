@@ -494,16 +494,40 @@ function TreeCanvasInner({
       return [];
     }
 
-    return buildEditSlots(selectedPersonId, relationships, layout).map((slot) => ({
-      kind: slot.kind,
-      x: slot.flowX * viewport.zoom + viewport.x,
-      y: slot.flowY * viewport.zoom + viewport.y + CANVAS_TOP_PADDING,
-      label: slot.label,
-    }));
+    const rootBounds = rootRef.current?.getBoundingClientRect() ?? null;
+    const flowToScreenPosition = (
+      reactFlow as typeof reactFlow & {
+        flowToScreenPosition?: (point: { x: number; y: number }) => { x: number; y: number };
+      }
+    ).flowToScreenPosition;
+    const projectPoint = (x: number, y: number) => {
+      if (flowToScreenPosition && rootBounds) {
+        const screenPoint = flowToScreenPosition({ x, y });
+        return {
+          x: screenPoint.x - rootBounds.left,
+          y: screenPoint.y - rootBounds.top,
+        };
+      }
+      return {
+        x: x * viewport.zoom + viewport.x,
+        y: y * viewport.zoom + viewport.y + CANVAS_TOP_PADDING,
+      };
+    };
+
+    return buildEditSlots(selectedPersonId, relationships, layout).map((slot) => {
+      const projected = projectPoint(slot.flowX, slot.flowY);
+      return {
+        kind: slot.kind,
+        x: projected.x,
+        y: projected.y,
+        label: slot.label,
+      };
+    });
   }, [
     editInteraction.mode,
     editMode,
     layout,
+    reactFlow,
     relationships,
     selectedPersonId,
     viewport.x,
