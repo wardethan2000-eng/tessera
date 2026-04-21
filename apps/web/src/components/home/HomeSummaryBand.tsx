@@ -15,18 +15,20 @@ export function HomeSummaryBand({
   return (
     <section
       style={{
-        padding: "24px max(24px, 5vw) 0",
+        padding: "24px max(20px, 5vw) 0",
         display: "grid",
-        gap: 14,
+        gap: 16,
         gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
       }}
     >
       <article
         style={{
           border: "1px solid var(--rule)",
-          borderRadius: 10,
-          background: "var(--paper-deep)",
-          padding: "16px 18px",
+          borderRadius: 18,
+          background:
+            "linear-gradient(180deg, rgba(255,250,244,0.92) 0%, rgba(242,235,224,0.88) 100%)",
+          padding: "18px clamp(16px, 3vw, 22px)",
+          boxShadow: "0 10px 28px rgba(40,30,18,0.04)",
         }}
       >
         <div
@@ -56,9 +58,11 @@ export function HomeSummaryBand({
       <article
         style={{
           border: "1px solid var(--rule)",
-          borderRadius: 10,
-          background: "var(--paper-deep)",
-          padding: "16px 18px",
+          borderRadius: 18,
+          background:
+            "linear-gradient(180deg, rgba(255,250,244,0.92) 0%, rgba(242,235,224,0.88) 100%)",
+          padding: "18px clamp(16px, 3vw, 22px)",
+          boxShadow: "0 10px 28px rgba(40,30,18,0.04)",
         }}
       >
         <div
@@ -99,9 +103,11 @@ export function HomeSummaryBand({
       <article
         style={{
           border: "1px solid var(--rule)",
-          borderRadius: 10,
-          background: "var(--paper-deep)",
-          padding: "16px 18px",
+          borderRadius: 18,
+          background:
+            "linear-gradient(180deg, rgba(255,250,244,0.92) 0%, rgba(242,235,224,0.88) 100%)",
+          padding: "18px clamp(16px, 3vw, 22px)",
+          boxShadow: "0 10px 28px rgba(40,30,18,0.04)",
         }}
       >
         <div

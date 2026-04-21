@@ -207,7 +207,7 @@ function DashboardContent() {
           alignItems: "center",
           justifyContent: "space-between",
           gap: 16,
-          padding: "18px 24px",
+          padding: "18px clamp(18px, 4vw, 28px)",
           borderBottom: "1px solid rgba(128,107,82,0.14)",
           background: "rgba(247,242,233,0.74)",
           backdropFilter: "blur(10px)",
@@ -271,10 +271,10 @@ function DashboardContent() {
         style={{
           maxWidth: 1240,
           margin: "0 auto",
-          padding: "40px 24px 56px",
+          padding: "clamp(30px, 6vw, 48px) clamp(18px, 4vw, 28px) 64px",
         }}
       >
-        <section style={{ marginBottom: 30 }}>
+        <section style={{ marginBottom: 34 }}>
           <div
             style={{
               fontFamily: "var(--font-display)",
@@ -306,8 +306,8 @@ function DashboardContent() {
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-            gap: 12,
-            marginBottom: 32,
+            gap: 14,
+            marginBottom: 36,
           }}
         >
           <StatTile label="Archives" value={`${summaries.length}`} />
@@ -320,7 +320,7 @@ function DashboardContent() {
         </section>
 
         {primarySummary && (
-          <section style={{ marginBottom: 26 }}>
+          <section style={{ marginBottom: 30 }}>
             <TreeArchiveCard
               treeName={primarySummary.tree.name}
               role={primarySummary.tree.role}
@@ -334,18 +334,20 @@ function DashboardContent() {
         )}
 
         {primarySummary && primarySummary.stats.memoryCount === 0 && (
-          <section style={{ marginBottom: 26 }}>
+          <section style={{ marginBottom: 30 }}>
             <div
               style={{
                 border: "1px solid rgba(128,107,82,0.14)",
                 borderRadius: 18,
-                background: "rgba(252,248,242,0.84)",
-                padding: "20px 22px",
+                background:
+                  "linear-gradient(180deg, rgba(252,248,242,0.88) 0%, rgba(245,238,228,0.84) 100%)",
+                padding: "22px clamp(18px, 3vw, 24px)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
                 gap: 16,
                 flexWrap: "wrap",
+                boxShadow: "0 12px 28px rgba(40,30,18,0.05)",
               }}
             >
               <div style={{ maxWidth: 640 }}>
@@ -404,7 +406,12 @@ function DashboardContent() {
         )}
 
         {secondarySummaries.length > 0 && (
-          <section>
+          <section
+            style={{
+              borderTop: "1px solid rgba(128,107,82,0.12)",
+              paddingTop: 26,
+            }}
+          >
             <div
               style={{
                 display: "flex",
@@ -463,7 +470,7 @@ function DashboardContent() {
             <div
               style={{
                 borderTop: "1px solid rgba(128,107,82,0.12)",
-                paddingTop: 20,
+                paddingTop: 22,
                 fontFamily: "var(--font-body)",
                 fontSize: 15,
                 lineHeight: 1.75,
@@ -486,9 +493,10 @@ function StatTile({ label, value }: { label: string; value: string }) {
     <div
       style={{
         border: "1px solid rgba(128,107,82,0.14)",
-        borderRadius: 16,
+        borderRadius: 18,
         background: "rgba(252,248,242,0.82)",
-        padding: "14px 16px",
+        padding: "16px 18px",
+        boxShadow: "0 10px 24px rgba(40,30,18,0.04)",
       }}
     >
       <div

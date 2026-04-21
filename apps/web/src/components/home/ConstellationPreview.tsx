@@ -52,7 +52,7 @@ export function ConstellationPreview({
   if (!bounds || visiblePeople.length === 0) return null;
 
   return (
-    <section style={{ padding: "28px max(24px, 5vw) 0" }}>
+    <section style={{ padding: "30px max(20px, 5vw) 0" }}>
       <div
         style={{
           marginBottom: 14,
@@ -99,10 +99,11 @@ export function ConstellationPreview({
       <div
         style={{
           border: "1px solid var(--rule)",
-          borderRadius: 16,
+          borderRadius: 22,
           overflow: "hidden",
           background:
-            "radial-gradient(circle at 20% 20%, rgba(255,255,255,0.6), transparent 32%), linear-gradient(180deg, #f7f2e9 0%, #efe7da 100%)",
+            "radial-gradient(circle at 20% 20%, rgba(255,255,255,0.7), transparent 32%), radial-gradient(circle at 84% 14%, rgba(210,182,133,0.14), transparent 24%), linear-gradient(180deg, #f7f2e9 0%, #efe7da 100%)",
+          boxShadow: "0 14px 32px rgba(40,30,18,0.05)",
         }}
       >
         <svg
@@ -110,7 +111,7 @@ export function ConstellationPreview({
           style={{
             display: "block",
             width: "100%",
-            height: "clamp(260px, 38vw, 420px)",
+            height: "clamp(240px, 40vw, 420px)",
           }}
           role="img"
           aria-label="Constellation preview"

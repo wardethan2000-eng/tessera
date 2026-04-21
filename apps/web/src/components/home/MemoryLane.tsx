@@ -21,14 +21,15 @@ export function MemoryLane({
   if (memories.length === 0) return null;
 
   return (
-    <section style={{ padding: "28px 0 0" }}>
+    <section style={{ padding: "32px 0 0" }}>
       <div
         style={{
-          padding: "0 max(24px, 5vw)",
-          marginBottom: 16,
+          padding: "0 max(20px, 5vw)",
+          marginBottom: 18,
           display: "flex",
           alignItems: "baseline",
           gap: 12,
+          flexWrap: "wrap",
         }}
       >
         <h2
@@ -56,12 +57,13 @@ export function MemoryLane({
       <div
         style={{
           overflowX: "auto",
-          paddingBottom: 16,
-          paddingLeft: "max(24px, 5vw)",
-          paddingRight: "max(24px, 5vw)",
+          paddingBottom: 18,
+          paddingLeft: "max(20px, 5vw)",
+          paddingRight: "max(20px, 5vw)",
           display: "flex",
-          gap: 12,
+          gap: 14,
           scrollbarWidth: "none",
+          scrollSnapType: "x proximity",
         }}
       >
         {memories.map((memory) => (
@@ -75,12 +77,13 @@ export function MemoryLane({
           <a
             href={viewAllHref}
             style={{
-              background: "var(--paper-deep)",
+              background:
+                "linear-gradient(180deg, rgba(244,237,226,1) 0%, rgba(236,229,216,1) 100%)",
               border: "1px solid var(--rule)",
-              borderRadius: 8,
+              borderRadius: 14,
               flexShrink: 0,
-              width: 200,
-              height: 156,
+              width: "min(240px, calc(100vw - 72px))",
+              minHeight: 184,
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
@@ -88,6 +91,8 @@ export function MemoryLane({
               gap: 8,
               textDecoration: "none",
               cursor: "pointer",
+              scrollSnapAlign: "start",
+              boxShadow: "0 10px 28px rgba(40,30,18,0.04)",
             }}
           >
             <span

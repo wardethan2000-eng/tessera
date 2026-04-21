@@ -30,12 +30,12 @@ export function TreeArchiveCard({
       style={{
         position: "relative",
         overflow: "hidden",
-        borderRadius: isPrimary ? 24 : 18,
+        borderRadius: isPrimary ? 28 : 20,
         border: "1px solid rgba(124,108,84,0.2)",
         background: isPrimary
           ? "linear-gradient(180deg, rgba(247,242,233,0.98) 0%, rgba(238,229,216,0.98) 100%)"
           : "linear-gradient(180deg, rgba(247,242,233,1) 0%, rgba(242,235,224,1) 100%)",
-        minHeight: isPrimary ? 430 : 320,
+        minHeight: isPrimary ? 430 : 340,
         boxShadow: isPrimary
           ? "0 24px 60px rgba(40,30,18,0.12)"
           : "0 12px 30px rgba(40,30,18,0.08)",
@@ -85,7 +85,7 @@ export function TreeArchiveCard({
       <div
         style={{
           position: "relative",
-          padding: isPrimary ? "28px 28px 30px" : "22px 22px 24px",
+          padding: isPrimary ? "clamp(22px, 4vw, 32px)" : "clamp(18px, 3vw, 24px)",
           display: "flex",
           flexDirection: "column",
           height: "100%",
@@ -148,7 +148,7 @@ export function TreeArchiveCard({
           style={{
             marginTop: 14,
             display: "grid",
-            gridTemplateColumns: isPrimary ? "repeat(3, minmax(0, 1fr))" : "repeat(2, minmax(0, 1fr))",
+            gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
             gap: 10,
             maxWidth: isPrimary ? 560 : "100%",
           }}
@@ -166,9 +166,10 @@ export function TreeArchiveCard({
             marginTop: isPrimary ? 26 : 20,
             padding: isPrimary ? "18px 18px 20px" : "16px 16px 18px",
             borderRadius: 16,
-            background: "rgba(255,248,240,0.64)",
+            background: "rgba(255,248,240,0.72)",
             border: "1px solid rgba(128,107,82,0.14)",
             maxWidth: isPrimary ? 620 : "100%",
+            backdropFilter: "blur(4px)",
           }}
         >
           <div

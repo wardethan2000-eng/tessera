@@ -18,64 +18,76 @@ export function EraRibbon({
   return (
     <section
       style={{
-        padding: "26px max(24px, 5vw) 0",
+        padding: "28px max(20px, 5vw) 0",
       }}
     >
       <div
         style={{
-          marginBottom: 12,
-          display: "flex",
-          alignItems: "baseline",
-          gap: 12,
-          flexWrap: "wrap",
+          border: "1px solid var(--rule)",
+          borderRadius: 18,
+          background:
+            "linear-gradient(180deg, rgba(255,250,244,0.92) 0%, rgba(242,235,224,0.88) 100%)",
+          boxShadow: "0 10px 28px rgba(40,30,18,0.04)",
+          padding: "16px clamp(14px, 3vw, 22px)",
         }}
       >
-        <h2
+        <div
           style={{
-            margin: 0,
-            fontFamily: "var(--font-display)",
-            fontSize: 20,
-            fontWeight: 400,
-            color: "var(--ink)",
+            marginBottom: 12,
+            display: "flex",
+            alignItems: "baseline",
+            gap: 12,
+            flexWrap: "wrap",
           }}
         >
-          Browse by era
-        </h2>
-        <span
-          style={{
-            fontFamily: "var(--font-ui)",
-            fontSize: 12,
-            color: "var(--ink-faded)",
-          }}
-        >
-          Filter the atrium through the decades already present in the archive.
-        </span>
-      </div>
+          <h2
+            style={{
+              margin: 0,
+              fontFamily: "var(--font-display)",
+              fontSize: 20,
+              fontWeight: 400,
+              color: "var(--ink)",
+            }}
+          >
+            Browse by era
+          </h2>
+          <span
+            style={{
+              fontFamily: "var(--font-ui)",
+              fontSize: 12,
+              color: "var(--ink-faded)",
+            }}
+          >
+            Filter the atrium through the decades already present in the archive.
+          </span>
+        </div>
 
-      <div
-        style={{
-          display: "flex",
-          gap: 10,
-          overflowX: "auto",
-          paddingBottom: 4,
-          scrollbarWidth: "none",
-        }}
-      >
-        <EraChip
-          label="All eras"
-          detail={`${coverage.decadeBuckets.length} decades`}
-          active={selectedEra === "all"}
-          onClick={() => onSelectEra("all")}
-        />
-        {coverage.decadeBuckets.map((bucket) => (
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            overflowX: "auto",
+            paddingBottom: 4,
+            scrollbarWidth: "none",
+            scrollSnapType: "x proximity",
+          }}
+        >
           <EraChip
-            key={bucket.startYear}
-            label={bucket.label}
-            detail={`${bucket.count} ${bucket.count === 1 ? "memory" : "memories"}`}
-            active={selectedEra === bucket.startYear}
-            onClick={() => onSelectEra(bucket.startYear)}
+            label="All eras"
+            detail={`${coverage.decadeBuckets.length} decades`}
+            active={selectedEra === "all"}
+            onClick={() => onSelectEra("all")}
           />
-        ))}
+          {coverage.decadeBuckets.map((bucket) => (
+            <EraChip
+              key={bucket.startYear}
+              label={bucket.label}
+              detail={`${bucket.count} ${bucket.count === 1 ? "memory" : "memories"}`}
+              active={selectedEra === bucket.startYear}
+              onClick={() => onSelectEra(bucket.startYear)}
+            />
+          ))}
+        </div>
       </div>
     </section>
   );
@@ -105,6 +117,10 @@ function EraChip({
         minWidth: "fit-content",
         cursor: "pointer",
         textAlign: "left",
+        scrollSnapAlign: "start",
+        boxShadow: active ? "0 8px 18px rgba(78,93,66,0.08)" : "none",
+        transition:
+          "background 220ms cubic-bezier(0.22, 0.61, 0.36, 1), border-color 220ms cubic-bezier(0.22, 0.61, 0.36, 1), box-shadow 220ms cubic-bezier(0.22, 0.61, 0.36, 1), color 220ms cubic-bezier(0.22, 0.61, 0.36, 1)",
       }}
     >
       <div

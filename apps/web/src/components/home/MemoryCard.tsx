@@ -24,17 +24,18 @@ export function MemoryCard({
       style={{
         background: "var(--paper)",
         border: "1px solid var(--rule)",
-        borderRadius: 8,
+        borderRadius: 14,
         padding: 0,
         textAlign: "left",
         flexShrink: 0,
-        width: 200,
+        width: "min(240px, calc(100vw - 72px))",
         overflow: "hidden",
         boxShadow: hovered
-          ? "0 4px 20px rgba(28,25,21,0.12)"
-          : "0 1px 4px rgba(28,25,21,0.06)",
-        transform: hovered ? "translateY(-2px)" : "none",
+          ? "0 10px 28px rgba(28,25,21,0.12)"
+          : "0 3px 10px rgba(28,25,21,0.06)",
+        transform: hovered ? "translateY(-3px)" : "none",
         transition: `box-shadow 200ms ${EASE}, transform 200ms ${EASE}`,
+        scrollSnapAlign: "start",
       }}
     >
       <button
@@ -50,7 +51,7 @@ export function MemoryCard({
         }}
       >
         {memory.kind === "photo" && resolvedMediaUrl ? (
-          <div style={{ height: 110, overflow: "hidden", position: "relative" }}>
+          <div style={{ height: "clamp(126px, 18vw, 156px)", overflow: "hidden", position: "relative" }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={resolvedMediaUrl}
@@ -61,8 +62,9 @@ export function MemoryCard({
         ) : (
           <div
             style={{
-              height: 110,
-              background: "var(--paper-deep)",
+              height: "clamp(126px, 18vw, 156px)",
+              background:
+                "radial-gradient(circle at 18% 24%, rgba(201,161,92,0.14), transparent 30%), linear-gradient(180deg, rgba(244,237,226,1) 0%, rgba(236,229,216,1) 100%)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -71,7 +73,7 @@ export function MemoryCard({
             <div
               style={{
                 fontFamily: "var(--font-display)",
-                fontSize: 32,
+                fontSize: 36,
                 color: "var(--rule)",
               }}
             >
@@ -79,11 +81,11 @@ export function MemoryCard({
             </div>
           </div>
         )}
-        <div style={{ padding: "10px 12px 12px" }}>
+        <div style={{ padding: "12px 14px 14px" }}>
           <div
             style={{
               fontFamily: "var(--font-display)",
-              fontSize: 13,
+              fontSize: 14,
               color: "var(--ink)",
               lineHeight: 1.3,
               marginBottom: 4,

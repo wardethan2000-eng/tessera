@@ -10,6 +10,7 @@ const HERO_EASE = [0.22, 0.61, 0.36, 1] as const;
 export function TreeHomeHero({
   treeName,
   featuredMemory,
+  transitionKey,
   heroIndex,
   heroCount,
   onPauseChange,
@@ -17,6 +18,7 @@ export function TreeHomeHero({
 }: {
   treeName: string;
   featuredMemory: TreeHomeMemory | null;
+  transitionKey: string;
   heroIndex: number;
   heroCount: number;
   onPauseChange: (paused: boolean) => void;
@@ -31,18 +33,19 @@ export function TreeHomeHero({
       onMouseLeave={() => onPauseChange(false)}
       style={{
         position: "relative",
-        height: "min(60vh, 480px)",
+        height: "clamp(360px, 62vh, 560px)",
         overflow: "hidden",
         background: "var(--ink)",
+        borderBottom: "1px solid rgba(255,255,255,0.08)",
       }}
     >
       <AnimatePresence mode="wait">
         <motion.div
-          key={featuredMemory?.id ?? "empty"}
-          initial={{ opacity: 0.45 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0.2 }}
-          transition={{ duration: 0.7, ease: HERO_EASE }}
+          key={transitionKey}
+          initial={{ opacity: 0.35, scale: 1.03 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0.12, scale: 1.01 }}
+          transition={{ duration: 0.85, ease: HERO_EASE }}
           style={{ position: "absolute", inset: 0 }}
         >
           {featuredMemory?.kind === "photo" && featuredMemoryMediaUrl ? (
@@ -57,7 +60,7 @@ export function TreeHomeHero({
                   width: "100%",
                   height: "100%",
                   objectFit: "cover",
-                  filter: "sepia(20%) brightness(0.7)",
+                  filter: "sepia(20%) brightness(0.68)",
                 }}
               />
               <div
@@ -65,7 +68,7 @@ export function TreeHomeHero({
                   position: "absolute",
                   inset: 0,
                   background:
-                    "linear-gradient(to top, rgba(28,25,21,0.85) 0%, rgba(28,25,21,0.2) 60%, transparent 100%)",
+                    "linear-gradient(to top, rgba(28,25,21,0.9) 0%, rgba(28,25,21,0.34) 54%, rgba(28,25,21,0.12) 76%, transparent 100%)",
                 }}
               />
             </>
@@ -85,30 +88,48 @@ export function TreeHomeHero({
         </motion.div>
       </AnimatePresence>
 
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background:
+            "radial-gradient(circle at 14% 16%, rgba(255,255,255,0.08), transparent 22%), linear-gradient(180deg, rgba(246,241,231,0.08) 0%, transparent 18%, transparent 78%, rgba(246,241,231,0.08) 100%)",
+          pointerEvents: "none",
+        }}
+      />
+
       <AnimatePresence mode="wait">
         <motion.div
-          key={`content-${featuredMemory?.id ?? "empty"}`}
-          initial={{ opacity: 0, y: 10 }}
+          key={`content-${transitionKey}`}
+          initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -6 }}
-          transition={{ duration: 0.45, ease: HERO_EASE }}
+          exit={{ opacity: 0, y: -10 }}
+          transition={{ duration: 0.52, ease: HERO_EASE }}
           style={{
             position: "absolute",
-            bottom: 40,
-            left: "max(40px, 5vw)",
-            right: "max(40px, 5vw)",
+            bottom: "clamp(28px, 5vw, 46px)",
+            left: "clamp(20px, 5vw, 52px)",
+            right: "clamp(20px, 5vw, 52px)",
+            maxWidth: 840,
           }}
         >
           {featuredMemory ? (
             <>
               <div
                 style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "7px 10px",
+                  borderRadius: 999,
+                  background: "rgba(28,25,21,0.28)",
+                  backdropFilter: "blur(8px)",
                   fontFamily: "var(--font-ui)",
                   fontSize: 11,
                   color: "rgba(246,241,231,0.55)",
                   textTransform: "uppercase",
                   letterSpacing: "0.12em",
-                  marginBottom: 8,
+                  marginBottom: 12,
                 }}
               >
                 {featuredMemory.kind === "photo"
@@ -122,11 +143,11 @@ export function TreeHomeHero({
               <div
                 style={{
                   fontFamily: "var(--font-display)",
-                  fontSize: "clamp(24px, 4vw, 40px)",
+                  fontSize: "clamp(28px, 5vw, 46px)",
                   color: "rgba(246,241,231,0.95)",
-                  lineHeight: 1.2,
+                  lineHeight: 1.1,
                   marginBottom: 10,
-                  maxWidth: "60ch",
+                  maxWidth: "18ch",
                 }}
               >
                 {featuredMemory.title}
@@ -147,7 +168,7 @@ export function TreeHomeHero({
                 <div
                   style={{
                     marginTop: 14,
-                    maxWidth: "60ch",
+                    maxWidth: "58ch",
                     fontFamily: "var(--font-body)",
                     fontSize: 15,
                     lineHeight: 1.7,
@@ -166,12 +187,18 @@ export function TreeHomeHero({
             <>
               <div
                 style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: "7px 10px",
+                  borderRadius: 999,
+                  background: "rgba(28,25,21,0.22)",
+                  backdropFilter: "blur(8px)",
                   fontFamily: "var(--font-ui)",
                   fontSize: 11,
                   color: "rgba(246,241,231,0.45)",
                   textTransform: "uppercase",
                   letterSpacing: "0.12em",
-                  marginBottom: 10,
+                  marginBottom: 12,
                 }}
               >
                 A private family archive
@@ -179,9 +206,10 @@ export function TreeHomeHero({
               <div
                 style={{
                   fontFamily: "var(--font-display)",
-                  fontSize: "clamp(28px, 5vw, 52px)",
+                  fontSize: "clamp(32px, 6vw, 58px)",
                   color: "rgba(246,241,231,0.9)",
-                  lineHeight: 1.15,
+                  lineHeight: 1.06,
+                  maxWidth: "12ch",
                 }}
               >
                 {treeName}
@@ -206,11 +234,18 @@ export function TreeHomeHero({
         <div
           style={{
             position: "absolute",
-            right: "max(24px, 5vw)",
-            bottom: 22,
+            right: "clamp(18px, 5vw, 40px)",
+            bottom: "clamp(16px, 3vw, 26px)",
             display: "flex",
             alignItems: "center",
             gap: 8,
+            padding: "8px 10px",
+            borderRadius: 999,
+            background: "rgba(28,25,21,0.22)",
+            backdropFilter: "blur(8px)",
+            flexWrap: "wrap",
+            justifyContent: "flex-end",
+            maxWidth: "calc(100% - 40px)",
           }}
         >
           <span

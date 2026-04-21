@@ -585,6 +585,7 @@ export default function AtriumPage() {
       <TreeHomeHero
         treeName={tree?.name ?? "Family Archive"}
         featuredMemory={featuredMemory}
+        transitionKey={`${selectedEra}-${featuredMemory?.id ?? "empty"}`}
         heroIndex={
           eraFilteredHeroCandidates.length > 0 ? heroIndex % eraFilteredHeroCandidates.length : 0
         }
@@ -596,7 +597,7 @@ export default function AtriumPage() {
       {/* CTA row */}
       <section
         style={{
-          padding: "28px max(24px, 5vw)",
+          padding: "30px max(20px, 5vw)",
           display: "flex",
           gap: 12,
           alignItems: "center",
@@ -663,13 +664,16 @@ export default function AtriumPage() {
           Enter the constellation →
         </a>
 
-        <div style={{ flex: 1 }} />
-
         <div
           style={{
+            marginLeft: "auto",
             fontFamily: "var(--font-ui)",
             fontSize: 12,
             color: "var(--ink-faded)",
+            background: "rgba(255,250,244,0.72)",
+            border: "1px solid var(--rule)",
+            borderRadius: 999,
+            padding: "8px 12px",
           }}
         >
           {homeStats?.peopleCount ?? people.length}{" "}
@@ -684,7 +688,7 @@ export default function AtriumPage() {
         style={{
           border: "none",
           borderTop: "1px solid var(--rule)",
-          margin: "0 max(24px, 5vw)",
+          margin: "0 max(20px, 5vw)",
         }}
       />
 
@@ -709,7 +713,7 @@ export default function AtriumPage() {
       {selectedEra !== "all" && eraFilteredMemories.length === 0 && (
         <section
           style={{
-            padding: "24px max(24px, 5vw) 0",
+            padding: "24px max(20px, 5vw) 0",
           }}
         >
           <div
@@ -747,7 +751,7 @@ export default function AtriumPage() {
       {memories.length === 0 ? (
         <section
           style={{
-            padding: "28px max(24px, 5vw) 0",
+            padding: "30px max(20px, 5vw) 0",
           }}
         >
           <div
@@ -860,7 +864,7 @@ export default function AtriumPage() {
           style={{
             border: "none",
             borderTop: "1px solid var(--rule)",
-            margin: "20px max(24px, 5vw) 0",
+            margin: "24px max(20px, 5vw) 0",
           }}
         />
       )}
@@ -879,14 +883,14 @@ export default function AtriumPage() {
             style={{
               border: "none",
               borderTop: "1px solid var(--rule)",
-              margin: "20px max(24px, 5vw) 0",
+              margin: "24px max(20px, 5vw) 0",
             }}
           />
         </>
       )}
 
       {/* The family */}
-      <section style={{ padding: "28px max(24px, 5vw) 60px" }}>
+      <section style={{ padding: "32px max(20px, 5vw) 64px" }}>
         <div
           style={{
             marginBottom: 20,
