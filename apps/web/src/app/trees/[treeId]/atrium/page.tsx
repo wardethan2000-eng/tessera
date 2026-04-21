@@ -4,10 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
 import { AnimatePresence } from "framer-motion";
+import { ConstellationPreview } from "@/components/home/ConstellationPreview";
 import { EraRibbon } from "@/components/home/EraRibbon";
 import { HomeSummaryBand } from "@/components/home/HomeSummaryBand";
 import { MemoryLane } from "@/components/home/MemoryLane";
 import { TreeHomeHero } from "@/components/home/TreeHomeHero";
+import type { TreeHomeRelationship } from "@/components/home/homeTypes";
 import { DriftMode } from "@/components/tree/DriftMode";
 import { AddMemoryWizard } from "@/components/tree/AddMemoryWizard";
 import { SearchOverlay } from "@/components/tree/SearchOverlay";
@@ -88,6 +90,7 @@ interface HomePayload {
   currentUserPersonId: string | null;
   stats: HomeStats;
   coverage: HomeCoverage;
+  relationships: TreeHomeRelationship[];
 }
 
 function extractYear(text?: string | null): number | null {
@@ -189,6 +192,7 @@ export default function AtriumPage() {
   const [heroCandidates, setHeroCandidates] = useState<Memory[]>([]);
   const [homeStats, setHomeStats] = useState<HomeStats | null>(null);
   const [coverage, setCoverage] = useState<HomeCoverage | null>(null);
+  const [relationships, setRelationships] = useState<TreeHomeRelationship[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -269,6 +273,7 @@ export default function AtriumPage() {
         setHeroCandidates(data.heroCandidates);
         setHomeStats(data.stats);
         setCoverage(data.coverage);
+        setRelationships(data.relationships);
         setSelectedEra((current) =>
           current === "all" || data.coverage.decadeBuckets.some((bucket) => bucket.startYear === current)
             ? current
@@ -317,6 +322,7 @@ export default function AtriumPage() {
     setHeroCandidates(data.heroCandidates);
     setHomeStats(data.stats);
     setCoverage(data.coverage);
+    setRelationships(data.relationships);
     setSelectedEra((current) =>
       current === "all" || data.coverage.decadeBuckets.some((bucket) => bucket.startYear === current)
         ? current
@@ -349,6 +355,15 @@ export default function AtriumPage() {
     name: p.name,
     portraitUrl: p.portraitUrl,
   }));
+  const previewPeople = people.map((p) => ({
+    id: p.id,
+    name: p.name,
+    birthYear: p.birthYear,
+    deathYear: p.deathYear,
+    essenceLine: p.essenceLine,
+    portraitUrl: p.portraitUrl,
+    linkedUserId: p.linkedUserId,
+  }));
 
   const eraFilteredMemories =
     selectedEra === "all"
@@ -374,6 +389,7 @@ export default function AtriumPage() {
       ? "All eras"
       : coverage?.decadeBuckets.find((bucket) => bucket.startYear === selectedEra)?.label ??
         `${selectedEra}s`;
+  const previewFocusPersonId = currentUserPersonIdFromPeople(people, session?.user.id) ?? featuredMemory?.primaryPersonId ?? people[0]?.id ?? null;
 
   if (isPending || loading || (needsNormalization && !loadError)) {
     return (
@@ -730,6 +746,13 @@ export default function AtriumPage() {
         }}
       />
 
+      <ConstellationPreview
+        people={previewPeople}
+        relationships={relationships}
+        focusPersonId={previewFocusPersonId}
+        href={`/trees/${treeId}`}
+      />
+
       {selectedEra !== "all" && eraFilteredMemories.length === 0 && (
         <section
           style={{
@@ -945,4 +968,9 @@ export default function AtriumPage() {
       />
     </main>
   );
+}
+
+function currentUserPersonIdFromPeople(people: Person[], userId: string | undefined) {
+  if (!userId) return null;
+  return people.find((person) => person.linkedUserId === userId)?.id ?? null;
 }

@@ -35,3 +35,13 @@ export interface TreeHomeCoverage {
     count: number;
   }>;
 }
+
+export interface TreeHomeRelationship {
+  id: string;
+  fromPersonId: string;
+  toPersonId: string;
+  type: "parent_child" | "sibling" | "spouse";
+  spouseStatus?: "active" | "former" | "deceased_partner" | null;
+  startDateText?: string | null;
+  endDateText?: string | null;
+}

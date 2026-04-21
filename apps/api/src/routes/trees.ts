@@ -92,6 +92,18 @@ function serializeHomeMemory(memory: HomeMemory) {
   };
 }
 
+function serializeHomeRelationship(relationship: HomeRelationship) {
+  return {
+    id: relationship.id,
+    fromPersonId: relationship.fromPersonId,
+    toPersonId: relationship.toPersonId,
+    type: relationship.type,
+    spouseStatus: relationship.spouseStatus ?? null,
+    startDateText: relationship.startDateText ?? null,
+    endDateText: relationship.endDateText ?? null,
+  };
+}
+
 function scoreHeroMemory(memory: HomeMemory): number {
   let score = 0;
 
@@ -386,6 +398,7 @@ export async function treesPlugin(app: FastifyInstance): Promise<void> {
         latestYear,
         decadeBuckets: buildDecadeBuckets(memories),
       },
+      relationships: relationships.map(serializeHomeRelationship),
       heroCandidates: selectHeroCandidates(memories).map(serializeHomeMemory),
       people: people.map(serializeHomePerson),
       memories: memories.map(serializeHomeMemory),
