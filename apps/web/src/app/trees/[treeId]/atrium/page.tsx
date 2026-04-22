@@ -447,7 +447,6 @@ export default function AtriumPage() {
         >
           ← Home
         </Link>
-        <span style={{ color: "var(--rule)", fontSize: 12 }}>·</span>
         <span
           style={{
             fontFamily: "var(--font-display)",
@@ -458,44 +457,19 @@ export default function AtriumPage() {
           {tree?.name ?? "Heirloom"}
         </span>
 
+        <div style={headerNavGroupStyle}>
+          <Link href={`/trees/${treeId}/atrium`} style={getHeaderNavItemStyle(true)}>
+            Atrium
+          </Link>
+          <Link href={`/trees/${treeId}`} style={getHeaderNavItemStyle(false)}>
+            Tree
+          </Link>
+          <Link href={`/trees/${treeId}/map`} style={getHeaderNavItemStyle(false)}>
+            Map
+          </Link>
+        </div>
+
         <div style={{ flex: 1 }} />
-
-        <Link href={`/trees/${treeId}/map`} style={headerLinkStyle}>
-          Map
-        </Link>
-
-        <Link
-          href={`/trees/${treeId}/inbox`}
-          style={{
-            ...headerIconStyle,
-            position: "relative",
-          }}
-          title="Inbox"
-        >
-          ✉
-          {inboxCount > 0 && (
-            <span
-              style={{
-                position: "absolute",
-                top: -4,
-                right: -4,
-                width: 16,
-                height: 16,
-                borderRadius: "50%",
-                background: "var(--rose)",
-                color: "#fff",
-                fontFamily: "var(--font-ui)",
-                fontSize: 9,
-                fontWeight: 700,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              {inboxCount > 9 ? "9+" : inboxCount}
-            </span>
-          )}
-        </Link>
 
         {curationCount > 0 && (
           <Link
@@ -511,6 +485,38 @@ export default function AtriumPage() {
             ✎ {curationCount} need{curationCount === 1 ? "s" : ""} attention
           </Link>
         )}
+
+        <Link
+          href={`/trees/${treeId}/inbox`}
+          style={{
+            ...headerLinkStyle,
+            position: "relative",
+            gap: 8,
+          }}
+          title="Inbox"
+        >
+          <span>Inbox</span>
+          {inboxCount > 0 && (
+            <span
+              style={{
+                minWidth: 18,
+                height: 18,
+                borderRadius: 999,
+                background: "var(--rose)",
+                color: "#fff",
+                fontFamily: "var(--font-ui)",
+                fontSize: 10,
+                fontWeight: 700,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "0 5px",
+              }}
+            >
+              {inboxCount > 9 ? "9+" : inboxCount}
+            </span>
+          )}
+        </Link>
 
         <button type="button" onClick={() => setSearchOpen(true)} style={headerButtonStyle}>
           <span>⌕</span>
@@ -549,6 +555,10 @@ export default function AtriumPage() {
         >
           + Add memory
         </button>
+
+        <Link href={`/trees/${treeId}/settings`} style={headerLinkStyle}>
+          Settings
+        </Link>
       </header>
 
       {memories.length === 0 ? (
@@ -653,17 +663,14 @@ const headerLinkStyle = {
   alignItems: "center",
 } as const;
 
-const headerIconStyle = {
-  fontFamily: "var(--font-ui)",
-  fontSize: 18,
-  color: "var(--ink-faded)",
-  background: "var(--paper-deep)",
-  border: "1px solid var(--rule)",
-  borderRadius: 6,
-  padding: "5px 10px",
-  textDecoration: "none",
-  display: "flex",
+const headerNavGroupStyle = {
+  display: "inline-flex",
   alignItems: "center",
+  gap: 6,
+  padding: 4,
+  borderRadius: 999,
+  border: "1px solid var(--rule)",
+  background: "var(--paper-deep)",
 } as const;
 
 const headerButtonStyle = {
@@ -679,6 +686,21 @@ const headerButtonStyle = {
   alignItems: "center",
   gap: 6,
 } as const;
+
+function getHeaderNavItemStyle(active: boolean) {
+  return {
+    fontFamily: "var(--font-ui)",
+    fontSize: 12,
+    color: active ? "#fff" : "var(--ink-faded)",
+    background: active ? "var(--moss)" : "transparent",
+    border: active ? "1px solid rgba(78,93,66,0.28)" : "1px solid transparent",
+    borderRadius: 999,
+    padding: "5px 12px",
+    textDecoration: "none",
+    display: "inline-flex",
+    alignItems: "center",
+  } as const;
+}
 
 function formatArchiveScaleLabel(
   archiveSummary: TreeHomeArchiveSummary | null,

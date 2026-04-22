@@ -273,6 +273,21 @@ function MetadataPill({ children }: { children: ReactNode }) {
   );
 }
 
+function memoryNavItemStyle(active: boolean) {
+  return {
+    fontFamily: "var(--font-ui)",
+    fontSize: 12,
+    color: active ? "#fff" : "var(--ink-faded)",
+    background: active ? "var(--moss)" : "transparent",
+    border: active ? "1px solid rgba(78,93,66,0.28)" : "1px solid transparent",
+    borderRadius: 999,
+    padding: "5px 12px",
+    textDecoration: "none",
+    display: "inline-flex",
+    alignItems: "center",
+  } as const;
+}
+
 function RelatedMemoryCard({
   treeId,
   memory,
@@ -824,17 +839,27 @@ export default function MemoryPage({
           flexWrap: "wrap",
         }}
       >
-        <a
-          href={`/trees/${treeId}`}
+        <div
           style={{
-            fontFamily: "var(--font-ui)",
-            fontSize: 14,
-            color: "var(--ink-faded)",
-            textDecoration: "none",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            padding: 4,
+            borderRadius: 999,
+            border: "1px solid var(--rule)",
+            background: "var(--paper-deep)",
           }}
         >
-          ← Tree
-        </a>
+          <a href={`/trees/${treeId}/atrium`} style={memoryNavItemStyle(false)}>
+            Atrium
+          </a>
+          <a href={`/trees/${treeId}`} style={memoryNavItemStyle(false)}>
+            Tree
+          </a>
+          <a href={`/trees/${treeId}/map`} style={memoryNavItemStyle(false)}>
+            Map
+          </a>
+        </div>
         {memory.primaryPerson && (
           <>
             <span style={{ color: "var(--rule)" }}>·</span>

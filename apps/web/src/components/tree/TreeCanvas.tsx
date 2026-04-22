@@ -1005,17 +1005,96 @@ function TreeCanvasInner({
           flexWrap: "wrap",
         }}
       >
-        <span
+        <div
           style={{
-            fontFamily: "var(--font-display)",
-            fontSize: 18,
-            color: "var(--ink)",
-            lineHeight: 1,
-            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
           }}
         >
-          {treeName}
-        </span>
+          <span
+            style={{
+              fontFamily: "var(--font-display)",
+              fontSize: 18,
+              color: "var(--ink)",
+              lineHeight: 1,
+              flexShrink: 0,
+            }}
+          >
+            {treeName}
+          </span>
+
+          <div style={toolbarSegmentedStyle}>
+            <a href={`/trees/${treeId}/atrium`} style={toolbarNavItemStyle(false)}>
+              Atrium
+            </a>
+            <a href={`/trees/${treeId}`} style={toolbarNavItemStyle(true)}>
+              Tree
+            </a>
+            {familyMapHref && (
+              <a href={familyMapHref} style={toolbarNavItemStyle(false)}>
+                Map
+              </a>
+            )}
+          </div>
+
+          <button
+            onClick={handleToggleEditMode}
+            style={{
+              ...(editMode ? toolbarPrimaryButtonStyle : toolbarButtonStyle),
+              background: editMode ? "var(--ink)" : toolbarButtonStyle.background,
+              border: editMode ? "1px solid rgba(28,25,21,0.32)" : toolbarButtonStyle.border,
+            }}
+          >
+            {editMode ? "Exit edit mode" : "Edit constellation"}
+          </button>
+
+          {editMode ? (
+            <div style={toolbarHintStyle}>
+              Click a person to add family. Click a connection line to edit it.
+            </div>
+          ) : selectedPerson ? (
+            <div style={toolbarSegmentedStyle}>
+              <span
+                style={{
+                  fontFamily: "var(--font-ui)",
+                  fontSize: 11,
+                  color: "var(--ink-faded)",
+                  paddingLeft: 6,
+                  paddingRight: 2,
+                }}
+              >
+                Lineage
+              </span>
+              {([
+                ["full", "Full tree"],
+                ["birth", "Birth family"],
+                ["household", "Household"],
+              ] as const).map(([mode, label]) => {
+                const active = lineageMode === mode;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setLineageMode(mode)}
+                    style={{
+                      ...toolbarButtonStyle,
+                      fontSize: 11,
+                      color: active ? "white" : "var(--ink-faded)",
+                      background: active ? "var(--moss)" : "transparent",
+                      border: active ? "1px solid rgba(78,93,66,0.28)" : "1px solid transparent",
+                      boxShadow: "none",
+                      padding: "6px 10px",
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
 
         <div
           style={{
@@ -1056,72 +1135,10 @@ function TreeCanvasInner({
           )}
 
           <button
-            onClick={handleToggleEditMode}
-            style={{
-              ...(editMode ? toolbarPrimaryButtonStyle : toolbarButtonStyle),
-              background: editMode ? "var(--ink)" : toolbarButtonStyle.background,
-              border: editMode ? "1px solid rgba(28,25,21,0.32)" : toolbarButtonStyle.border,
-            }}
-          >
-            {editMode ? "Exit edit mode" : "Edit constellation"}
-          </button>
-
-          {editMode && (
-            <div
-              style={toolbarHintStyle}
-            >
-              Click a person to add family. Click a connection line to edit or disconnect it.
-            </div>
-          )}
-
-          {!editMode && selectedPerson && (
-            <div
-              style={toolbarSegmentedStyle}
-            >
-              <span
-                style={{
-                  fontFamily: "var(--font-ui)",
-                  fontSize: 11,
-                  color: "var(--ink-faded)",
-                  paddingLeft: 6,
-                  paddingRight: 2,
-                }}
-              >
-                Lineage
-              </span>
-              {([
-                ["full", "Full tree"],
-                ["birth", "Birth family"],
-                ["household", "Household"],
-              ] as const).map(([mode, label]) => {
-                const active = lineageMode === mode;
-                return (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => setLineageMode(mode)}
-                    style={{
-                      ...toolbarButtonStyle,
-                      fontSize: 11,
-                      color: active ? "white" : "var(--ink-faded)",
-                      background: active ? "var(--moss)" : "transparent",
-                      border: active ? "1px solid rgba(78,93,66,0.28)" : "1px solid transparent",
-                      boxShadow: "none",
-                      padding: "6px 10px",
-                    }}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          <button
             onClick={onDriftClick}
             style={toolbarAccentButtonStyle}
           >
-            Drift ›
+            Drift
           </button>
 
           {onAddMemoryClick && (
@@ -1142,35 +1159,19 @@ function TreeCanvasInner({
             </button>
           )}
 
-          {familyMapHref && (
-            <a
-              href={familyMapHref}
-              style={toolbarButtonStyle}
-            >
-              Family map
-            </a>
-          )}
-
-          <a
-            href={`/trees/${treeId}/atrium`}
-            style={toolbarIconButtonStyle}
-          >
-            ⌂
-          </a>
-
           <a
             href={`/trees/${treeId}/inbox`}
-            style={toolbarIconButtonStyle}
+            style={toolbarButtonStyle}
             title="Inbox"
           >
-            ✉
+            Inbox
           </a>
 
           <a
             href={`/trees/${treeId}/settings`}
-            style={toolbarIconButtonStyle}
+            style={toolbarButtonStyle}
           >
-            ⚙
+            Settings
           </a>
         </div>
       </div>
@@ -2392,6 +2393,22 @@ const toolbarSegmentedStyle: React.CSSProperties = {
   background: "rgba(246,241,231,0.76)",
   boxShadow: "0 12px 26px rgba(28,25,21,0.06)",
 };
+
+function toolbarNavItemStyle(active: boolean): React.CSSProperties {
+  return {
+    fontFamily: "var(--font-ui)",
+    fontSize: 12,
+    color: active ? "#fff" : "var(--ink-faded)",
+    background: active ? "var(--moss)" : "transparent",
+    border: active ? "1px solid rgba(78,93,66,0.28)" : "1px solid transparent",
+    borderRadius: 999,
+    padding: "7px 12px",
+    textDecoration: "none",
+    display: "inline-flex",
+    alignItems: "center",
+    boxShadow: "none",
+  };
+}
 
 const floatingPanelStyle: React.CSSProperties = {
   background: "rgba(246,241,231,0.94)",
