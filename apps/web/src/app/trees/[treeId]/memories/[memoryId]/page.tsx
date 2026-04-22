@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { VoiceRecorderField } from "@/components/tree/VoiceRecorderField";
 import { useSession } from "@/lib/auth-client";
@@ -148,6 +148,7 @@ type MemoryDetail = {
     hasPromptThread: boolean;
   };
   viewerCanAddPerspective: boolean;
+  viewerCanEdit?: boolean;
   viewerCanManageVisibility: boolean;
 };
 
@@ -396,7 +397,15 @@ export default function MemoryPage({
   const [perspectiveFile, setPerspectiveFile] = useState<File | null>(null);
   const [perspectiveError, setPerspectiveError] = useState<string | null>(null);
   const [submittingPerspective, setSubmittingPerspective] = useState(false);
+  const [editingMemory, setEditingMemory] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editBody, setEditBody] = useState("");
+  const [editDateOfEventText, setEditDateOfEventText] = useState("");
+  const [editPlaceLabel, setEditPlaceLabel] = useState("");
+  const [editError, setEditError] = useState<string | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
   const [updatingVisibilityId, setUpdatingVisibilityId] = useState<string | null>(null);
+  const perspectiveComposerRef = useRef<HTMLDivElement | null>(null);
   const normalizingTreeId = !isCanonicalTreeId(treeId);
 
   useEffect(() => {
@@ -483,6 +492,12 @@ export default function MemoryPage({
     setPerspectiveVoiceInputMode("record");
     setPerspectiveFile(null);
     setPerspectiveError(null);
+    setEditingMemory(false);
+    setEditTitle(memory?.title ?? "");
+    setEditBody(memory?.body ?? "");
+    setEditDateOfEventText(memory?.dateOfEventText ?? "");
+    setEditPlaceLabel(memory?.place?.label ?? "");
+    setEditError(null);
   }, [memory?.id]);
 
   const setMemoryTreeVisibility = useCallback(
@@ -619,6 +634,75 @@ export default function MemoryPage({
       setSubmittingPerspective(false);
     }
   }, [memory, perspectiveDraft, perspectiveFile, perspectiveMode, treeId]);
+
+  const handleStartEditing = useCallback(() => {
+    if (!memory?.viewerCanEdit) return;
+    setEditTitle(memory.title);
+    setEditBody(memory.body ?? "");
+    setEditDateOfEventText(memory.dateOfEventText ?? "");
+    setEditPlaceLabel(memory.place?.label ?? "");
+    setEditError(null);
+    setEditingMemory(true);
+  }, [memory]);
+
+  const handleCancelEditing = useCallback(() => {
+    setEditingMemory(false);
+    setEditError(null);
+    if (!memory) return;
+    setEditTitle(memory.title);
+    setEditBody(memory.body ?? "");
+    setEditDateOfEventText(memory.dateOfEventText ?? "");
+    setEditPlaceLabel(memory.place?.label ?? "");
+  }, [memory]);
+
+  const handleSaveEdit = useCallback(async () => {
+    if (!memory?.viewerCanEdit) return;
+
+    const nextTitle = editTitle.trim();
+    if (!nextTitle) {
+      setEditError("Give the memory a title before saving.");
+      return;
+    }
+
+    setSavingEdit(true);
+    setEditError(null);
+    try {
+      const response = await fetch(`${API}/api/trees/${treeId}/memories/${memory.id}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title: nextTitle,
+          body: editBody.trim() || null,
+          dateOfEventText: editDateOfEventText.trim() || null,
+          placeLabelOverride: editPlaceLabel.trim() || null,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(data?.error ?? "Failed to save memory changes.");
+      }
+
+      await loadMemory();
+      setEditingMemory(false);
+    } catch (error) {
+      setEditError(
+        error instanceof Error ? error.message : "Failed to save memory changes.",
+      );
+    } finally {
+      setSavingEdit(false);
+    }
+  }, [editBody, editDateOfEventText, editPlaceLabel, editTitle, loadMemory, memory, treeId]);
+
+  const scrollToPerspectiveComposer = useCallback(() => {
+    perspectiveComposerRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, []);
 
   if (isPending || loading || normalizingTreeId) {
     return (
@@ -1057,6 +1141,275 @@ export default function MemoryPage({
                   </p>
                 )}
               </div>
+
+              {(memory.viewerCanEdit || memory.viewerCanAddPerspective) && (
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 10,
+                  }}
+                >
+                  {memory.viewerCanEdit && (
+                    <button
+                      type="button"
+                      onClick={editingMemory ? handleCancelEditing : handleStartEditing}
+                      style={{
+                        borderRadius: 999,
+                        border: "1px solid var(--rule)",
+                        background: editingMemory ? "var(--paper-deep)" : "transparent",
+                        color: "var(--ink)",
+                        cursor: "pointer",
+                        fontFamily: "var(--font-ui)",
+                        fontSize: 13,
+                        padding: "10px 16px",
+                      }}
+                    >
+                      {editingMemory ? "Close editor" : "Edit memory"}
+                    </button>
+                  )}
+                  {memory.viewerCanAddPerspective && (
+                    <button
+                      type="button"
+                      onClick={scrollToPerspectiveComposer}
+                      style={{
+                        borderRadius: 999,
+                        border: "1px solid var(--moss)",
+                        background: "var(--moss)",
+                        color: "var(--paper)",
+                        cursor: "pointer",
+                        fontFamily: "var(--font-ui)",
+                        fontSize: 13,
+                        padding: "10px 16px",
+                      }}
+                    >
+                      Add to this memory
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {editingMemory && memory.viewerCanEdit && (
+                <div
+                  style={{
+                    borderRadius: 18,
+                    border: "1px solid var(--rule)",
+                    background: "var(--paper-deep)",
+                    padding: 18,
+                    display: "grid",
+                    gap: 12,
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        fontFamily: "var(--font-display)",
+                        fontSize: 26,
+                        color: "var(--ink)",
+                        marginBottom: 4,
+                      }}
+                    >
+                      Edit this memory
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: "var(--font-body)",
+                        fontSize: 15,
+                        lineHeight: 1.7,
+                        color: "var(--ink-soft)",
+                      }}
+                    >
+                      Update the title, narrative, date, or place without replacing the attached media.
+                    </div>
+                  </div>
+
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span
+                      style={{
+                        fontFamily: "var(--font-ui)",
+                        fontSize: 11,
+                        color: "var(--ink-faded)",
+                        letterSpacing: "0.08em",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      Title
+                    </span>
+                    <input
+                      value={editTitle}
+                      onChange={(event) => setEditTitle(event.target.value)}
+                      style={{
+                        width: "100%",
+                        borderRadius: 12,
+                        border: "1px solid var(--rule)",
+                        background: "var(--paper)",
+                        padding: "12px 14px",
+                        fontFamily: "var(--font-body)",
+                        fontSize: 16,
+                        color: "var(--ink)",
+                        boxSizing: "border-box",
+                      }}
+                    />
+                  </label>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span
+                        style={{
+                          fontFamily: "var(--font-ui)",
+                          fontSize: 11,
+                          color: "var(--ink-faded)",
+                          letterSpacing: "0.08em",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        Date
+                      </span>
+                      <input
+                        value={editDateOfEventText}
+                        onChange={(event) => setEditDateOfEventText(event.target.value)}
+                        placeholder="August 1998"
+                        style={{
+                          width: "100%",
+                          borderRadius: 12,
+                          border: "1px solid var(--rule)",
+                          background: "var(--paper)",
+                          padding: "12px 14px",
+                          fontFamily: "var(--font-body)",
+                          fontSize: 16,
+                          color: "var(--ink)",
+                          boxSizing: "border-box",
+                        }}
+                      />
+                    </label>
+
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span
+                        style={{
+                          fontFamily: "var(--font-ui)",
+                          fontSize: 11,
+                          color: "var(--ink-faded)",
+                          letterSpacing: "0.08em",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        Place
+                      </span>
+                      <input
+                        value={editPlaceLabel}
+                        onChange={(event) => setEditPlaceLabel(event.target.value)}
+                        placeholder="Chicago, Illinois"
+                        style={{
+                          width: "100%",
+                          borderRadius: 12,
+                          border: "1px solid var(--rule)",
+                          background: "var(--paper)",
+                          padding: "12px 14px",
+                          fontFamily: "var(--font-body)",
+                          fontSize: 16,
+                          color: "var(--ink)",
+                          boxSizing: "border-box",
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span
+                      style={{
+                        fontFamily: "var(--font-ui)",
+                        fontSize: 11,
+                        color: "var(--ink-faded)",
+                        letterSpacing: "0.08em",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      Narrative
+                    </span>
+                    <textarea
+                      value={editBody}
+                      onChange={(event) => setEditBody(event.target.value)}
+                      rows={8}
+                      placeholder="Add or revise the story this memory carries."
+                      style={{
+                        width: "100%",
+                        resize: "vertical",
+                        borderRadius: 14,
+                        border: "1px solid var(--rule)",
+                        background: "var(--paper)",
+                        padding: "14px 16px",
+                        fontFamily: "var(--font-body)",
+                        fontSize: 17,
+                        lineHeight: 1.8,
+                        color: "var(--ink)",
+                        boxSizing: "border-box",
+                      }}
+                    />
+                  </label>
+
+                  {editError && (
+                    <div
+                      style={{
+                        fontFamily: "var(--font-ui)",
+                        fontSize: 13,
+                        color: "#9b3d2e",
+                      }}
+                    >
+                      {editError}
+                    </div>
+                  )}
+
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "flex-end",
+                      gap: 10,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={handleCancelEditing}
+                      disabled={savingEdit}
+                      style={{
+                        borderRadius: 999,
+                        border: "1px solid var(--rule)",
+                        background: "transparent",
+                        color: "var(--ink)",
+                        cursor: savingEdit ? "default" : "pointer",
+                        fontFamily: "var(--font-ui)",
+                        fontSize: 13,
+                        padding: "10px 16px",
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleSaveEdit()}
+                      disabled={savingEdit}
+                      style={{
+                        borderRadius: 999,
+                        border: "1px solid var(--moss)",
+                        background: savingEdit ? "var(--paper)" : "var(--moss)",
+                        color: savingEdit ? "var(--ink-faded)" : "var(--paper)",
+                        cursor: savingEdit ? "default" : "pointer",
+                        fontFamily: "var(--font-ui)",
+                        fontSize: 13,
+                        padding: "10px 16px",
+                      }}
+                    >
+                      {savingEdit ? "Saving…" : "Save changes"}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {memory.primaryPerson && (
                 <div>
@@ -1524,6 +1877,7 @@ export default function MemoryPage({
 
               {memory.viewerCanAddPerspective && (
                 <div
+                  ref={perspectiveComposerRef}
                   style={{
                     borderRadius: 18,
                     border: "1px solid var(--rule)",
@@ -1543,7 +1897,7 @@ export default function MemoryPage({
                         marginBottom: 6,
                       }}
                     >
-                      Add your perspective
+                      Add to this memory
                     </div>
                     <div
                       style={{
@@ -1553,7 +1907,7 @@ export default function MemoryPage({
                         color: "var(--ink-soft)",
                       }}
                     >
-                      Add a reflection, correction, or additional detail as{" "}
+                      Add a reflection, correction, missing detail, or voice note as{" "}
                       {session?.user.name ?? session?.user.email ?? "a family member"}.
                     </div>
                   </div>

@@ -35,6 +35,17 @@ export interface TreeHomeMemory {
   personPortraitUrl?: string | null;
   relatedPersonIds?: string[];
   createdAt?: string;
+  mediaItems?: Array<{
+    id: string;
+    sortOrder: number;
+    mediaId: string | null;
+    mediaUrl: string | null;
+    mimeType?: string | null;
+    linkedMediaProvider?: "google_drive" | null;
+    linkedMediaOpenUrl?: string | null;
+    linkedMediaSourceUrl?: string | null;
+    linkedMediaLabel?: string | null;
+  }>;
 }
 
 export interface TreeHomeStats {

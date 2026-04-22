@@ -58,6 +58,7 @@ const UpdateMemoryVisibilityBody = z.object({
 
 const PatchMemoryBody = z.object({
   title: z.string().min(1).max(200).optional(),
+  body: z.string().trim().max(8000).nullable().optional(),
   dateOfEventText: z.string().max(100).nullable().optional(),
   placeLabelOverride: z.string().max(200).nullable().optional(),
 });
@@ -815,6 +816,7 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
         hasPromptThread: Boolean(detailedMemory.promptId),
       },
       viewerCanAddPerspective: true,
+      viewerCanEdit: membership.role !== "viewer",
       viewerCanManageVisibility: canManageTreeScope(membership.role),
       ...serializeTreeVisibility(visibility),
     });
@@ -1038,6 +1040,7 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
         updatedAt: new Date(),
       };
       if (parsed.data.title !== undefined) updates.title = parsed.data.title;
+      if (parsed.data.body !== undefined) updates.body = parsed.data.body;
       if (parsed.data.dateOfEventText !== undefined) {
         updates.dateOfEventText = parsed.data.dateOfEventText;
       }

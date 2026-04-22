@@ -21,6 +21,11 @@ interface TrailPerson {
   portraitUrl: string | null;
 }
 
+type TrailVisualMediaItem = {
+  mediaUrl: string;
+  mimeType: string | null;
+};
+
 export function AtriumMemoryTrail({
   coverage,
   sections,
@@ -239,7 +244,9 @@ function TrailLeadScene({
   onMemoryClick: (memory: TreeHomeMemory) => void;
   onPersonClick: (personId: string) => void;
 }) {
-  const mediaUrl = getProxiedMediaUrl(memory.mediaUrl);
+  const visualItems = getMemoryVisualItems(memory);
+  const mediaUrl = visualItems[0]?.mediaUrl ?? null;
+  const mediaCount = visualItems.length;
   const excerpt = getMemoryExcerpt(memory);
   const usesMedia = Boolean(mediaUrl && (memory.kind === "photo" || memory.kind === "document"));
   const relatedPeople = getRelatedPeople(memory, peopleById);
@@ -298,6 +305,9 @@ function TrailLeadScene({
                   "linear-gradient(90deg, rgba(22,19,16,0.88) 0%, rgba(22,19,16,0.66) 44%, rgba(22,19,16,0.28) 100%), linear-gradient(180deg, rgba(22,19,16,0.10) 0%, rgba(22,19,16,0.42) 100%)",
               }}
             />
+            {mediaCount > 1 && (
+              <MemoryStackHint items={visualItems.slice(1, 3)} totalCount={mediaCount} light />
+            )}
           </>
         ) : (
           <div
@@ -334,6 +344,12 @@ function TrailLeadScene({
               }}
             >
               <span>{memory.dateOfEventText ?? "Undated"}</span>
+              {mediaCount > 1 && (
+                <>
+                  <span style={{ opacity: 0.46 }}>·</span>
+                  <span>{mediaCount} items</span>
+                </>
+              )}
             </div>
 
             <div
@@ -419,7 +435,9 @@ function TrailEchoEntry({
   onMemoryClick: (memory: TreeHomeMemory) => void;
   onPersonClick: (personId: string) => void;
 }) {
-  const mediaUrl = getProxiedMediaUrl(memory.mediaUrl);
+  const visualItems = getMemoryVisualItems(memory);
+  const mediaUrl = visualItems[0]?.mediaUrl ?? null;
+  const mediaCount = visualItems.length;
   const excerpt = getMemoryExcerpt(memory);
   const relatedPeople = getRelatedPeople(memory, peopleById);
   const alignsRight = index % 2 === 1;
@@ -478,7 +496,7 @@ function TrailEchoEntry({
           }}
         >
           {mediaUrl && memory.kind === "photo" && !alignsRight && (
-            <TrailEchoImage mediaUrl={mediaUrl} title={memory.title} />
+            <TrailEchoImage items={visualItems} title={memory.title} />
           )}
 
           <div
@@ -502,6 +520,12 @@ function TrailEchoEntry({
               }}
             >
               <span>{memory.dateOfEventText ?? "Undated"}</span>
+              {mediaCount > 1 && (
+                <>
+                  <span style={{ opacity: 0.42 }}>·</span>
+                  <span>{mediaCount} items</span>
+                </>
+              )}
             </div>
 
             <div
@@ -548,7 +572,7 @@ function TrailEchoEntry({
           </div>
 
           {mediaUrl && memory.kind === "photo" && alignsRight && (
-            <TrailEchoImage mediaUrl={mediaUrl} title={memory.title} />
+            <TrailEchoImage items={visualItems} title={memory.title} />
           )}
         </div>
       </button>
@@ -557,12 +581,15 @@ function TrailEchoEntry({
 }
 
 function TrailEchoImage({
-  mediaUrl,
+  items,
   title,
 }: {
-  mediaUrl: string;
+  items: TrailVisualMediaItem[];
   title: string;
 }) {
+  const primary = items[0] ?? null;
+  const layered = items.slice(1, 3);
+
   return (
     <div
       style={{
@@ -577,17 +604,24 @@ function TrailEchoImage({
           "linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.96) 12%, rgba(0,0,0,0.96) 88%, transparent 100%)",
       }}
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={mediaUrl}
-        alt={title}
-        style={{
-          width: "100%",
-          height: "100%",
-          objectFit: "cover",
-          filter: "grayscale(20%) sepia(10%)",
-        }}
-      />
+      {layered.length > 0 && (
+        <MemoryStackHint items={layered} totalCount={items.length} compact />
+      )}
+      {primary && (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={primary.mediaUrl}
+            alt={title}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              filter: "grayscale(20%) sepia(10%)",
+            }}
+          />
+        </>
+      )}
       <div
         style={{
           position: "absolute",
@@ -595,6 +629,90 @@ function TrailEchoImage({
           background: "linear-gradient(180deg, rgba(19,17,14,0.04) 0%, rgba(19,17,14,0.18) 100%)",
         }}
       />
+    </div>
+  );
+}
+
+function MemoryStackHint({
+  items,
+  totalCount,
+  compact = false,
+  light = false,
+}: {
+  items: TrailVisualMediaItem[];
+  totalCount: number;
+  compact?: boolean;
+  light?: boolean;
+}) {
+  if (items.length === 0 || totalCount <= 1) return null;
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        right: compact ? 12 : "clamp(18px, 4vw, 32px)",
+        top: compact ? 12 : "clamp(18px, 4vw, 32px)",
+        width: compact ? 96 : "clamp(130px, 16vw, 200px)",
+        aspectRatio: "4 / 5",
+        pointerEvents: "none",
+        zIndex: 2,
+      }}
+    >
+      {items
+        .slice(0, 2)
+        .reverse()
+        .map((item, index) => (
+          <div
+            key={`${item.mediaUrl}-${index}`}
+            style={{
+              position: "absolute",
+              inset: 0,
+              transform: `translate(${index * -10}px, ${index * 10}px) rotate(${index === 0 ? -3 : 3}deg)`,
+              borderRadius: 16,
+              overflow: "hidden",
+              border: light
+                ? "1px solid rgba(246,241,231,0.22)"
+                : "1px solid rgba(122,108,88,0.16)",
+              boxShadow: light
+                ? "0 16px 30px rgba(8,7,6,0.24)"
+                : "0 12px 24px rgba(35,28,19,0.12)",
+              background: light ? "rgba(246,241,231,0.08)" : "rgba(255,255,255,0.66)",
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={item.mediaUrl}
+              alt=""
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                display: "block",
+                filter: compact ? "grayscale(28%) sepia(10%)" : "grayscale(18%) sepia(10%)",
+              }}
+            />
+          </div>
+        ))}
+
+      <div
+        style={{
+          position: "absolute",
+          left: compact ? 8 : 10,
+          bottom: compact ? 8 : 10,
+          borderRadius: 999,
+          padding: compact ? "4px 8px" : "6px 10px",
+          background: light ? "rgba(22,19,16,0.74)" : "rgba(255,255,255,0.82)",
+          color: light ? "rgba(246,241,231,0.92)" : "var(--ink)",
+          fontFamily: "var(--font-ui)",
+          fontSize: compact ? 11 : 12,
+          backdropFilter: "blur(8px)",
+          border: light
+            ? "1px solid rgba(246,241,231,0.16)"
+            : "1px solid rgba(122,108,88,0.12)",
+        }}
+      >
+        {totalCount} items
+      </div>
     </div>
   );
 }
@@ -715,6 +833,39 @@ function getMemoryExcerpt(memory: TreeHomeMemory) {
     memory.kind === "voice" ? transcriptLabel : getHeroExcerpt(memory) ?? transcriptLabel ?? null;
   if (!excerpt) return null;
   return excerpt.length > 260 ? `${excerpt.slice(0, 257).trimEnd()}…` : excerpt;
+}
+
+function getMemoryVisualItems(memory: TreeHomeMemory) {
+  const candidates =
+    memory.mediaItems && memory.mediaItems.length > 0
+      ? memory.mediaItems
+      : memory.mediaUrl
+        ? [
+            {
+              id: `${memory.id}-primary`,
+              sortOrder: 0,
+              mediaId: null,
+              mediaUrl: memory.mediaUrl,
+              mimeType: memory.mimeType ?? null,
+            },
+          ]
+        : [];
+
+  const normalized = candidates
+    .map((item) => ({
+      mediaUrl: getProxiedMediaUrl(item.mediaUrl) ?? null,
+      mimeType: item.mimeType ?? null,
+    }))
+    .filter((item): item is TrailVisualMediaItem => item.mediaUrl !== null);
+
+  const images = normalized.filter(
+    (item) =>
+      item.mimeType?.toLowerCase().startsWith("image/") ||
+      memory.kind === "photo" ||
+      memory.kind === "document",
+  );
+
+  return images.length > 0 ? images : normalized;
 }
 
 function EraChip({
