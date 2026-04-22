@@ -817,6 +817,10 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
       },
       viewerCanAddPerspective: true,
       viewerCanEdit: membership.role !== "viewer",
+      viewerCanDelete:
+        membership.role !== "viewer" &&
+        (detailedMemory.contributorUserId === session.user.id ||
+          canManageTreeScope(membership.role)),
       viewerCanManageVisibility: canManageTreeScope(membership.role),
       ...serializeTreeVisibility(visibility),
     });
@@ -1055,6 +1059,50 @@ export async function memoriesPlugin(app: FastifyInstance): Promise<void> {
         .returning();
 
       return reply.send(updated);
+    },
+  );
+
+  app.delete(
+    "/api/trees/:treeId/memories/:memoryId",
+    async (request, reply) => {
+      const session = await getSession(request.headers);
+      if (!session) return reply.status(401).send({ error: "Unauthorized" });
+
+      const { treeId, memoryId } = request.params as {
+        treeId: string;
+        memoryId: string;
+      };
+
+      const membership = await db.query.treeMemberships.findFirst({
+        where: (t) => and(eq(t.treeId, treeId), eq(t.userId, session.user.id)),
+      });
+      if (!membership) {
+        return reply.status(403).send({ error: "Not a member of this tree" });
+      }
+      if (membership.role === "viewer") {
+        return reply.status(403).send({ error: "Viewers cannot delete memories" });
+      }
+
+      const inScope = await isMemoryInTreeScope(treeId, memoryId);
+      if (!inScope) {
+        return reply.status(404).send({ error: "Memory not found in this tree" });
+      }
+
+      const memory = await db.query.memories.findFirst({
+        where: (m, { eq: eqFn }) => eqFn(m.id, memoryId),
+        columns: { id: true, contributorUserId: true },
+      });
+      if (!memory) {
+        return reply.status(404).send({ error: "Memory not found" });
+      }
+
+      if (memory.contributorUserId !== session.user.id && !canManageTreeScope(membership.role)) {
+        return reply.status(403).send({ error: "Only the original contributor or a steward/founder can delete this memory" });
+      }
+
+      await db.delete(schema.memories).where(eq(schema.memories.id, memoryId));
+
+      return reply.send({ deleted: true, memoryId });
     },
   );
 }

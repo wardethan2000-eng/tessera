@@ -149,6 +149,7 @@ type MemoryDetail = {
   };
   viewerCanAddPerspective: boolean;
   viewerCanEdit?: boolean;
+  viewerCanDelete?: boolean;
   viewerCanManageVisibility: boolean;
 };
 
@@ -421,6 +422,9 @@ export default function MemoryPage({
   const [editError, setEditError] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const [updatingVisibilityId, setUpdatingVisibilityId] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const perspectiveComposerRef = useRef<HTMLDivElement | null>(null);
   const normalizingTreeId = !isCanonicalTreeId(treeId);
 
@@ -713,6 +717,31 @@ export default function MemoryPage({
       setSavingEdit(false);
     }
   }, [editBody, editDateOfEventText, editPlaceLabel, editTitle, loadMemory, memory, treeId]);
+
+  const handleDeleteMemory = useCallback(async () => {
+    if (!memory) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const response = await fetch(
+        `${API}/api/trees/${treeId}/memories/${memory.id}`,
+        {
+          method: "DELETE",
+          credentials: "include",
+        },
+      );
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(data?.error ?? "Failed to delete memory.");
+      }
+      router.push(`/trees/${treeId}`);
+    } catch (error) {
+      setDeleting(false);
+      setDeleteError(
+        error instanceof Error ? error.message : "Failed to delete memory.",
+      );
+    }
+  }, [memory, router, treeId]);
 
   const scrollToPerspectiveComposer = useCallback(() => {
     perspectiveComposerRef.current?.scrollIntoView({
@@ -1211,6 +1240,113 @@ export default function MemoryPage({
                       Add to this memory
                     </button>
                   )}
+                  {memory.viewerCanDelete && !confirmingDelete && (
+                    <button
+                      type="button"
+                      onClick={() => { setConfirmingDelete(true); setDeleteError(null); }}
+                      style={{
+                        borderRadius: 999,
+                        border: "1px solid var(--rule)",
+                        background: "transparent",
+                        color: "var(--ink-faded)",
+                        cursor: "pointer",
+                        fontFamily: "var(--font-ui)",
+                        fontSize: 13,
+                        padding: "10px 16px",
+                      }}
+                    >
+                      Delete memory
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {confirmingDelete && memory.viewerCanDelete && (
+                <div
+                  style={{
+                    borderRadius: 18,
+                    border: "1px solid rgba(180, 50, 50, 0.4)",
+                    background: "rgba(180, 50, 50, 0.06)",
+                    padding: 18,
+                    display: "grid",
+                    gap: 12,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontFamily: "var(--font-display)",
+                      fontSize: 22,
+                      color: "var(--ink)",
+                    }}
+                  >
+                    Delete this memory?
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: "var(--font-body)",
+                      fontSize: 15,
+                      lineHeight: 1.7,
+                      color: "var(--ink-soft)",
+                    }}
+                  >
+                    This action cannot be undone. The memory, its perspectives, and all
+                    associated data will be permanently removed.
+                  </div>
+                  {deleteError && (
+                    <div
+                      style={{
+                        fontFamily: "var(--font-body)",
+                        fontSize: 14,
+                        color: "rgba(180, 50, 50, 0.9)",
+                      }}
+                    >
+                      {deleteError}
+                    </div>
+                  )}
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 10,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={handleDeleteMemory}
+                      disabled={deleting}
+                      style={{
+                        borderRadius: 999,
+                        border: "1px solid rgba(180, 50, 50, 0.5)",
+                        background: "rgba(180, 50, 50, 0.1)",
+                        color: "rgba(180, 50, 50, 0.9)",
+                        cursor: deleting ? "not-allowed" : "pointer",
+                        fontFamily: "var(--font-ui)",
+                        fontSize: 13,
+                        fontWeight: 600,
+                        padding: "10px 16px",
+                        opacity: deleting ? 0.6 : 1,
+                      }}
+                    >
+                      {deleting ? "Deleting\u2026" : "Yes, delete permanently"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setConfirmingDelete(false); setDeleteError(null); }}
+                      disabled={deleting}
+                      style={{
+                        borderRadius: 999,
+                        border: "1px solid var(--rule)",
+                        background: "transparent",
+                        color: "var(--ink)",
+                        cursor: deleting ? "not-allowed" : "pointer",
+                        fontFamily: "var(--font-ui)",
+                        fontSize: 13,
+                        padding: "10px 16px",
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               )}
 
