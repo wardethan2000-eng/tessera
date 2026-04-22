@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { EB_Garamond, Source_Serif_4, Inter } from "next/font/google";
 import "./globals.css";
+import { VerifyEmailBanner } from "@/components/VerifyEmailBanner";
 
 const ebGaramond = EB_Garamond({
   variable: "--font-display",
@@ -48,7 +49,10 @@ export default function RootLayout({
       lang="en"
       className={`${ebGaramond.variable} ${sourceSerif.variable} ${inter.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <VerifyEmailBanner />
+        {children}
+      </body>
     </html>
   );
 }

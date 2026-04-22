@@ -285,6 +285,21 @@ function DashboardContent() {
           >
             {session?.user.name}
           </span>
+          <a
+            href="/account"
+            style={{
+              border: "1px solid rgba(128,107,82,0.2)",
+              background: "rgba(255,250,244,0.84)",
+              borderRadius: 999,
+              padding: "8px 12px",
+              textDecoration: "none",
+              fontFamily: "var(--font-ui)",
+              fontSize: 12,
+              color: "var(--ink-faded)",
+            }}
+          >
+            Account
+          </a>
           <button
             onClick={() => {
               void signOut().then(() => router.push("/auth/signin"));

@@ -101,6 +101,14 @@ function SignInContent() {
                 />
                 {error && <p className="text-sm text-red-600">{error}</p>}
                 <SubmitButton loading={loading} label="Sign in" loadingLabel="Signing in…" />
+                <p className="text-right text-xs">
+                  <Link
+                    href="/auth/forgot-password"
+                    className="text-stone-500 hover:text-stone-900 underline underline-offset-2"
+                  >
+                    Forgot password?
+                  </Link>
+                </p>
               </form>
             ) : (
               <form onSubmit={handleMagicLink} className="space-y-4">

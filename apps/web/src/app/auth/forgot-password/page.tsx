@@ -2,7 +2,7 @@
 
 import { Suspense, useState } from "react";
 import Link from "next/link";
-import { authClient } from "@/lib/auth-client";
+import { authApi } from "@/lib/auth-api";
 
 function ForgotPasswordContent() {
   const [email, setEmail] = useState("");
@@ -14,7 +14,7 @@ function ForgotPasswordContent() {
     e.preventDefault();
     setError("");
     setLoading(true);
-    const { error: err } = await authClient.forgetPassword({
+    const { error: err } = await authApi.forgetPassword({
       email,
       redirectTo: "/auth/reset-password",
     });
