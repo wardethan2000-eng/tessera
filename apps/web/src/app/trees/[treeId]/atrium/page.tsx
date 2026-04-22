@@ -5,7 +5,6 @@ import { AnimatePresence } from "framer-motion";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AtriumContextStrip } from "@/components/home/AtriumContextStrip";
-import { AtriumFamilyPresence } from "@/components/home/AtriumFamilyPresence";
 import { AtriumMemoryTrail } from "@/components/home/AtriumMemoryTrail";
 import { AtriumSkeleton } from "@/components/home/HomeSurfaceSkeletons";
 import { AtriumStage } from "@/components/home/AtriumStage";
@@ -23,7 +22,6 @@ import type {
   TreeHomeStats,
 } from "@/components/home/homeTypes";
 import {
-  buildAtriumFamilyPresenceGroups,
   buildAtriumMemoryTrail,
   getAtriumBranchFocusIds,
   getMemoryAnchorPersonId,
@@ -53,12 +51,6 @@ interface Person {
   birthYear: number | null;
   deathYear: number | null;
   linkedUserId: string | null;
-}
-
-interface FamilyPresenceGroup {
-  id: string;
-  label: string;
-  people: Person[];
 }
 
 function extractYear(text?: string | null): number | null {
@@ -316,49 +308,6 @@ export default function AtriumPage() {
             focusPersonName: focusPerson?.name ?? null,
           }),
     [activeFeaturedMemory, activeFocusIds, activeMemories, focusPerson?.name, relatedMemoryTrail, selectedEra],
-  );
-
-  const familyPresenceGroups = useMemo(
-    () =>
-      mapFamilyPresenceGroups(
-        selectedEra === "all"
-          ? familyPresence
-          : {
-              focusPersonId: activeFocusPersonId,
-              groups: buildAtriumFamilyPresenceGroups({
-                focusPersonId: activeFocusPersonId,
-                focusIds: activeFocusIds,
-                people: people.map((person) => ({
-                  id: person.id,
-                  displayName: person.name,
-                  portraitUrl: person.portraitUrl,
-                  essenceLine: person.essenceLine,
-                  birthDateText: person.birthYear ? String(person.birthYear) : null,
-                  deathDateText: person.deathYear ? String(person.deathYear) : null,
-                  linkedUserId: person.linkedUserId,
-                })),
-                relationships,
-              }),
-            },
-        people,
-      ),
-    [activeFocusIds, activeFocusPersonId, familyPresence, people, relationships, selectedEra],
-  );
-
-  const nearbyPeople = useMemo(
-    () => {
-      const peopleById = new Map(people.map((person) => [person.id, person]));
-      const relatedIds =
-        selectedEra === "all" && featuredBranch?.relatedPersonIds?.length
-          ? featuredBranch.relatedPersonIds
-          : [activeFocusPersonId, ...activeFocusIds];
-      return [...new Set(relatedIds.filter(Boolean))]
-        .filter((personId): personId is string => Boolean(personId) && personId !== activeFocusPersonId)
-        .map((personId) => peopleById.get(personId))
-        .filter((person): person is Person => Boolean(person))
-        .slice(0, 8);
-    },
-    [activeFocusIds, activeFocusPersonId, featuredBranch?.relatedPersonIds, people, selectedEra],
   );
 
   if (sessionTimedOut && isPending) {
@@ -631,26 +580,17 @@ export default function AtriumPage() {
         <AtriumMemoryTrail
           coverage={coverage}
           sections={trailSections}
+          people={people}
           selectedEra={selectedEra}
           selectedEraLabel={selectedEraLabel}
           onSelectEra={setSelectedEra}
+          onPersonClick={handlePersonClick}
           onMemoryClick={(memory) => {
             router.push(`/trees/${treeId}/memories/${memory.id}`);
           }}
           openArchiveHref={`/trees/${treeId}`}
         />
       )}
-
-      <AtriumFamilyPresence
-        focusPerson={focusPerson}
-        focusPersonName={activeFeaturedMemory?.personName ?? focusPerson?.name ?? null}
-        branchCue={branchCue}
-        nearbyPeople={nearbyPeople}
-        groups={familyPresenceGroups}
-        fullTreeHref={`/trees/${treeId}`}
-        addPersonHref={`/trees/${treeId}/people/new`}
-        onPersonClick={handlePersonClick}
-      />
 
       <AnimatePresence>
         {driftOpen && (
@@ -739,30 +679,6 @@ const headerButtonStyle = {
   alignItems: "center",
   gap: 6,
 } as const;
-
-function mapFamilyPresenceGroups(
-  familyPresence:
-    | {
-        focusPersonId: string | null;
-        groups: Array<{ id: string; label: string; personIds: string[] }>;
-      }
-    | TreeHomeFamilyPresence
-    | null,
-  people: Person[],
-): FamilyPresenceGroup[] {
-  if (!familyPresence) return [];
-
-  const peopleById = new Map(people.map((person) => [person.id, person]));
-  return familyPresence.groups
-    .map((group) => ({
-      id: group.id,
-      label: group.label,
-      people: group.personIds
-        .map((personId) => peopleById.get(personId))
-        .filter((person): person is Person => Boolean(person)),
-    }))
-    .filter((group) => group.people.length > 0);
-}
 
 function formatArchiveScaleLabel(
   archiveSummary: TreeHomeArchiveSummary | null,
