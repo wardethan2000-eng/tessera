@@ -1,15 +1,9 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { magicLink } from "better-auth/plugins";
-import { createTransport } from "nodemailer";
 import { db } from "./db.js";
 import * as schema from "@familytree/database";
-
-const mailer = createTransport({
-  host: process.env.SMTP_HOST ?? "localhost",
-  port: Number(process.env.SMTP_PORT ?? "1025"),
-  secure: false,
-});
+import { mailer, MAIL_FROM } from "./mailer.js";
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -28,7 +22,7 @@ export const auth = betterAuth({
     magicLink({
       sendMagicLink: async ({ email, url }) => {
         await mailer.sendMail({
-          from: process.env.SMTP_FROM ?? "noreply@familytree.local",
+          from: MAIL_FROM,
           to: email,
           subject: "Sign in to FamilyTree",
           html: `<p>Sign in to your FamilyTree account: <a href="${url}">Click here to sign in</a></p><p>This link expires shortly. If you did not request this, you can ignore it.</p>`,

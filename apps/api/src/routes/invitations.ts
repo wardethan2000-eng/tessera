@@ -2,7 +2,6 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { randomBytes, createHash } from "node:crypto";
-import { createTransport } from "nodemailer";
 import * as schema from "@familytree/database";
 import {
   decideInvitationLinkedIdentity,
@@ -13,12 +12,7 @@ import { getSession } from "../lib/session.js";
 import { checkTreeCanAdd } from "../lib/tree-usage-service.js";
 import { addPersonToTreeScope } from "../lib/cross-tree-write-service.js";
 import { isPersonInTreeScope } from "../lib/cross-tree-read-service.js";
-
-const mailer = createTransport({
-  host: process.env.SMTP_HOST ?? "localhost",
-  port: Number(process.env.SMTP_PORT ?? "1025"),
-  secure: false,
-});
+import { mailer, MAIL_FROM } from "../lib/mailer.js";
 
 function hashToken(raw: string): string {
   return createHash("sha256").update(raw).digest("hex");
@@ -100,15 +94,19 @@ export async function invitationsPlugin(app: FastifyInstance): Promise<void> {
       expiresAt,
     });
 
-    // Send email
+    // Send email (non-blocking on failure so the invitation row isn't orphaned
+    // in a way that prevents the accept link from being usable).
     const acceptUrl = `${WEB_URL}/invitations/accept?token=${rawToken}`;
     const inviterName = session.user.name ?? session.user.email;
 
-    await mailer.sendMail({
-      from: process.env.SMTP_FROM ?? "noreply@familytree.local",
-      to: email,
-      subject: `You've been invited to the ${tree.name} family archive`,
-      html: `
+    let emailDelivered = true;
+    let emailError: string | undefined;
+    try {
+      await mailer.sendMail({
+        from: MAIL_FROM,
+        to: email,
+        subject: `You've been invited to the ${tree.name} family archive`,
+        html: `
         <div style="font-family: Georgia, serif; max-width: 520px; margin: 0 auto; padding: 40px 24px; color: #1C1915; background: #F6F1E7;">
           <h1 style="font-size: 28px; font-weight: 400; margin: 0 0 16px;">You're invited</h1>
           <p style="font-size: 16px; line-height: 1.7; color: #403A2E;">
@@ -128,10 +126,26 @@ export async function invitationsPlugin(app: FastifyInstance): Promise<void> {
           <p style="font-size: 12px; color: #847A66;">Heirloom · private family archive</p>
         </div>
       `,
-      text: `You've been invited to the ${tree.name} family archive by ${inviterName}.\n\nAccept your invitation: ${acceptUrl}\n\nThis link expires in 7 days.`,
-    });
+        text: `You've been invited to the ${tree.name} family archive by ${inviterName}.\n\nAccept your invitation: ${acceptUrl}\n\nThis link expires in 7 days.`,
+      });
+    } catch (err) {
+      emailDelivered = false;
+      emailError = err instanceof Error ? err.message : String(err);
+      request.log.error(
+        { err, email, treeId },
+        "Failed to deliver invitation email; invitation record still created",
+      );
+    }
 
-    return reply.status(201).send({ message: "Invitation sent", email });
+    return reply.status(201).send({
+      message: emailDelivered
+        ? "Invitation sent"
+        : "Invitation created but email delivery failed — share the link manually",
+      email,
+      emailDelivered,
+      emailError,
+      acceptUrl,
+    });
   });
 
   /** GET /api/trees/:treeId/invitations — list pending invitations for a tree */

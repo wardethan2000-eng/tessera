@@ -2,7 +2,6 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
-import { createTransport } from "nodemailer";
 import * as schema from "@familytree/database";
 import {
   getVisibleMemoryIdsForTree,
@@ -20,12 +19,7 @@ import {
 } from "../lib/storage.js";
 import { checkTreeCanAdd } from "../lib/tree-usage-service.js";
 import { enqueueMemoryTranscription } from "../lib/transcription.js";
-
-const mailer = createTransport({
-  host: process.env.SMTP_HOST ?? "localhost",
-  port: Number(process.env.SMTP_PORT ?? "1025"),
-  secure: false,
-});
+import { mailer, MAIL_FROM } from "../lib/mailer.js";
 
 const WEB_URL = process.env.WEB_URL ?? "http://localhost:3000";
 
@@ -524,7 +518,7 @@ export async function promptsPlugin(app: FastifyInstance): Promise<void> {
 
     try {
       await mailer.sendMail({
-        from: process.env.SMTP_FROM ?? "noreply@familytree.local",
+        from: MAIL_FROM,
         to: email,
         subject: `${fromName} asked a family history question`,
         html: `
