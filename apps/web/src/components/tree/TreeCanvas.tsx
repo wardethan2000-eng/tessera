@@ -202,33 +202,17 @@ function TreeCanvasInner({
     return ids;
   }, [people, activeFamily]);
 
-  const combinedFocusIds = useMemo(() => {
-    if (!familyFocusIds && !renderFocusIds) return null;
-    if (familyFocusIds && !renderFocusIds) return familyFocusIds;
-    if (!familyFocusIds && renderFocusIds) return renderFocusIds;
-    const combined = new Set(familyFocusIds!);
-    for (const id of renderFocusIds!) combined.add(id);
-    return combined;
-  }, [familyFocusIds, renderFocusIds]);
+  const displayFocusIds = useMemo(() => {
+    if (familyFocusIds && lineageFocusIds) {
+      const combined = new Set(familyFocusIds);
+      for (const id of lineageFocusIds) combined.add(id);
+      return combined;
+    }
+    return familyFocusIds ?? lineageFocusIds ?? null;
+  }, [familyFocusIds, lineageFocusIds]);
 
-  const renderPeople = useMemo(
-    () =>
-      combinedFocusIds
-        ? people.filter((person) => combinedFocusIds.has(person.id))
-        : people,
-    [people, combinedFocusIds],
-  );
-  const renderRelationships = useMemo(
-    () =>
-      combinedFocusIds
-        ? relationships.filter(
-            (relationship) =>
-              combinedFocusIds.has(relationship.fromPersonId) &&
-              combinedFocusIds.has(relationship.toPersonId),
-          )
-        : relationships,
-    [relationships, combinedFocusIds],
-  );
+  const renderPeople = people;
+  const renderRelationships = relationships;
   const layout = useMemo(
     () => computeLayout(renderPeople, renderRelationships),
     [renderPeople, renderRelationships]
@@ -265,10 +249,10 @@ function TreeCanvasInner({
       layout,
       selectedPersonId,
       currentUserPersonId,
-      combinedFocusIds,
+      displayFocusIds,
       activeDecade,
     );
-    const edgeList = buildEdges(renderRelationships, layout, combinedFocusIds, renderPeople, activeDecade);
+    const edgeList = buildEdges(renderRelationships, layout, displayFocusIds, renderPeople, activeDecade);
     setNodes(personNodes);
     setEdges(edgeList);
   }, [
@@ -277,7 +261,7 @@ function TreeCanvasInner({
     layout,
     selectedPersonId,
     currentUserPersonId,
-    combinedFocusIds,
+    displayFocusIds,
     activeDecade,
     setNodes,
     setEdges,
@@ -324,6 +308,16 @@ function TreeCanvasInner({
   // Only trigger on decade change, not layout changes
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDecade]);
+
+  // Zoom to family when active family changes
+  useEffect(() => {
+    if (!familyFocusIds || familyFocusIds.size === 0) return;
+    const bounds = getFocusBoundsForIds(familyFocusIds, layoutRef.current);
+    if (bounds) {
+      reactFlow.fitBounds(bounds, { duration: 650, padding: 0.22 });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFamily]);
 
   const selectPerson = useCallback(
     (personId: string, focusCamera = true) => {
@@ -1929,9 +1923,13 @@ function TreeCanvasInner({
         <PersonBanner
           person={selectedPerson}
           treeId={treeId}
+          relationships={relationships}
           onClose={clearSelection}
           onEnterLife={onPersonDetailClick}
           onPersonUpdated={onConstellationChanged}
+          onAddRelation={onAddMemoryClick ? (personId, kind) => {
+            openRelationFormForPerson(personId, kind);
+          } : undefined}
         />
       )}
     </div>
