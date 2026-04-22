@@ -175,8 +175,7 @@ export function AddMemoryWizard({
       if (step2.body.trim()) body.body = step2.body.trim();
       if (resolvedMediaIds.length === 1) {
         body.mediaId = resolvedMediaIds[0];
-      }
-      if (resolvedMediaIds.length > 0) {
+      } else if (resolvedMediaIds.length > 1) {
         body.mediaIds = resolvedMediaIds;
       }
       if (usingDriveLink) {
