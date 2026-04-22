@@ -179,9 +179,16 @@ pnpm db:migrate
 pnpm build
 ```
 
-6. Stop the existing listeners on `:4000` and `:3000`.
-7. Start API and web manually from that new checkout with `nohup`, writing logs and pid files into the deployment directory.
-8. Verify:
+6. Restart the live checkout with the checked-in helper:
+
+```bash
+cd ~/heirloom-dashboard-redesign-live
+bash infra/restart-live-checkout.sh
+```
+
+This helper intentionally avoids `pkill -f "next start"` style matches, kills listeners by pid file and port, and starts the web process with `exec node node_modules/next/dist/bin/next start` so the stored pid is the actual long-lived process rather than a shell wrapper.
+
+7. Verify:
    - `curl http://127.0.0.1:4000/health`
    - `curl -I http://127.0.0.1:3000`
 

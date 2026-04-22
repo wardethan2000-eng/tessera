@@ -37,6 +37,8 @@ import { usePendingVoiceTranscriptionRefresh } from "@/lib/usePendingVoiceTransc
 import { AddMemoryWizard } from "@/components/tree/AddMemoryWizard";
 import { DriftMode } from "@/components/tree/DriftMode";
 import { SearchOverlay } from "@/components/tree/SearchOverlay";
+import { fetchWithTimeout } from "@/lib/fetch-timeout";
+import { usePendingTimeout } from "@/lib/usePendingTimeout";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -82,6 +84,7 @@ export default function AtriumPage() {
   const params = useParams<{ treeId: string }>();
   const { treeId } = params;
   const { data: session, isPending } = useSession();
+  const sessionTimedOut = usePendingTimeout(isPending, 10000);
   const needsNormalization = !isCanonicalTreeId(treeId);
 
   const [tree, setTree] = useState<Tree | null>(null);
@@ -173,7 +176,7 @@ export default function AtriumPage() {
       setLoading(true);
       setLoadError(null);
       try {
-        const response = await fetch(`${API}/api/trees/${treeId}/home`, {
+        const response = await fetchWithTimeout(`${API}/api/trees/${treeId}/home`, {
           credentials: "include",
         });
         if (!response.ok) {
@@ -203,7 +206,7 @@ export default function AtriumPage() {
   );
 
   const refreshHome = useCallback(async () => {
-    const response = await fetch(`${API}/api/trees/${treeId}/home`, {
+    const response = await fetchWithTimeout(`${API}/api/trees/${treeId}/home`, {
       credentials: "include",
     });
     if (!response.ok) return;
@@ -357,6 +360,55 @@ export default function AtriumPage() {
     },
     [activeFocusIds, activeFocusPersonId, featuredBranch?.relatedPersonIds, people, selectedEra],
   );
+
+  if (sessionTimedOut && isPending) {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          background: "var(--paper)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24,
+        }}
+      >
+        <div
+          style={{
+            maxWidth: 560,
+            border: "1px solid var(--rule)",
+            background: "var(--paper)",
+            borderRadius: 12,
+            padding: 24,
+          }}
+        >
+          <h1
+            style={{
+              margin: "0 0 10px",
+              fontFamily: "var(--font-display)",
+              fontSize: 28,
+              fontWeight: 400,
+              color: "var(--ink)",
+            }}
+          >
+            This atrium is taking too long to open.
+          </h1>
+          <p
+            style={{
+              margin: 0,
+              fontFamily: "var(--font-body)",
+              fontSize: 17,
+              lineHeight: 1.7,
+              color: "var(--ink-soft)",
+            }}
+          >
+            The sign-in or archive service did not answer in time. Reload the page, and if it
+            keeps happening, sign in again once the server is healthy.
+          </p>
+        </div>
+      </main>
+    );
+  }
 
   if (isPending || loading || (needsNormalization && !loadError)) {
     return <AtriumSkeleton />;
