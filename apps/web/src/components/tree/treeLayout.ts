@@ -1613,26 +1613,34 @@ function buildGenerationLanes(
 export function computeDecadeRelevance(
   person: ApiPerson,
   activeDecade: number | null,
+  generationDecades: Map<string, number> = new Map(),
 ): number | null {
   if (activeDecade === null) return null;
 
-  const birthDecade = person.birthYear != null ? Math.floor(person.birthYear / 10) * 10 : null;
-  const deathDecade = person.deathYear != null ? Math.floor(person.deathYear / 10) * 10 : null;
+  if (person.birthYear != null) {
+    const birthDecade = Math.floor(person.birthYear / 10) * 10;
+    const deathDecade = person.deathYear != null ? Math.floor(person.deathYear / 10) * 10 : null;
+    const aliveEnd = deathDecade ?? 2030;
 
-  if (birthDecade === null) return 0.15;
+    if (activeDecade >= birthDecade && activeDecade <= aliveEnd) {
+      if (activeDecade === birthDecade) return 1;
+      const distance = (activeDecade - birthDecade) / 10;
+      return Math.max(0.45, 1 - distance * 0.15);
+    }
 
-  const aliveEnd = deathDecade ?? 2030;
-  if (activeDecade >= birthDecade && activeDecade <= aliveEnd) {
-    if (activeDecade === birthDecade) return 1;
-    const distance = (activeDecade - birthDecade) / 10;
-    return Math.max(0.45, 1 - distance * 0.15);
+    const distance = activeDecade < birthDecade
+      ? (birthDecade - activeDecade) / 10
+      : (activeDecade - aliveEnd) / 10;
+    return Math.max(0, 1 - distance * 0.35);
   }
 
-  const distance = activeDecade < birthDecade
-    ? (birthDecade - activeDecade) / 10
-    : (activeDecade - aliveEnd) / 10;
+  const guessedDecade = generationDecades.get(person.id);
+  if (guessedDecade != null) {
+    const diff = (activeDecade - guessedDecade) / 10;
+    return Math.max(0.3, 1 - Math.abs(diff) * 0.2);
+  }
 
-  return Math.max(0, 1 - distance * 0.35);
+  return 0.35;
 }
 
 export function getAvailableDecades(people: ApiPerson[]): number[] {
@@ -1642,17 +1650,18 @@ export function getAvailableDecades(people: ApiPerson[]): number[] {
 
   for (const person of people) {
     if (person.birthYear != null) {
-      const birthDecade = Math.floor(person.birthYear / 10) * 10;
-      decades.add(birthDecade);
+      decades.add(Math.floor(person.birthYear / 10) * 10);
     }
     if (person.deathYear != null) {
-      const deathDecade = Math.floor(person.deathYear / 10) * 10;
-      decades.add(deathDecade);
+      decades.add(Math.floor(person.deathYear / 10) * 10);
     }
   }
 
   if (decades.size === 0) {
-    decades.add(currentDecade);
+    const earliest = currentDecade - 80;
+    for (let d = earliest; d <= currentDecade; d += 10) {
+      decades.add(d);
+    }
   }
 
   decades.add(currentDecade);
@@ -1665,6 +1674,99 @@ export function getAvailableDecades(people: ApiPerson[]): number[] {
   return full;
 }
 
+export function inferGenerationDecades(
+  people: ApiPerson[],
+  positions: Map<string, { x: number; y: number }>,
+): Map<string, number> {
+  const result = new Map<string, number>();
+
+  type GenInfo = { ySum: number; count: number; decadeSum: number; decadeCount: number };
+  const generationBuckets = new Map<number, GenInfo>();
+  const Y_TOLERANCE = 40;
+
+  for (const person of people) {
+    const pos = positions.get(person.id);
+    if (!pos) continue;
+
+    let matched = false;
+    for (const [bucketY, info] of generationBuckets) {
+      if (Math.abs(pos.y - bucketY) <= Y_TOLERANCE) {
+        info.ySum += pos.y;
+        info.count += 1;
+        if (person.birthYear != null) {
+          info.decadeSum += Math.floor(person.birthYear / 10) * 10;
+          info.decadeCount += 1;
+        }
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      const info: GenInfo = { ySum: pos.y, count: 1, decadeSum: 0, decadeCount: 0 };
+      if (person.birthYear != null) {
+        info.decadeSum = Math.floor(person.birthYear / 10) * 10;
+        info.decadeCount = 1;
+      }
+      generationBuckets.set(pos.y, info);
+    }
+  }
+
+  const sortedBuckets = [...generationBuckets.entries()].sort((a, b) => a[0] - b[0]);
+
+  const bucketDecades: Map<number, number> = new Map();
+  const knownDecades = sortedBuckets
+    .filter(([, info]) => info.decadeCount > 0)
+    .map(([bucketY, info]) => ({ bucketY, avgDecade: info.decadeSum / info.decadeCount }));
+
+  if (knownDecades.length >= 2) {
+    const firstY = knownDecades[0]!.bucketY;
+    const firstD = knownDecades[0]!.avgDecade;
+    const lastY = knownDecades[knownDecades.length - 1]!.bucketY;
+    const lastD = knownDecades[knownDecades.length - 1]!.avgDecade;
+
+    for (const [bucketY] of sortedBuckets) {
+      if (bucketY <= firstY) {
+        bucketDecades.set(bucketY, firstD);
+      } else if (bucketY >= lastY) {
+        bucketDecades.set(bucketY, lastD);
+      } else {
+        const fraction = (bucketY - firstY) / (lastY - firstY);
+        bucketDecades.set(bucketY, firstD + fraction * (lastD - firstD));
+      }
+    }
+  } else if (knownDecades.length === 1) {
+    const singleDec = knownDecades[0]!.avgDecade;
+    for (const [bucketY] of sortedBuckets) {
+      bucketDecades.set(bucketY, singleDec + (bucketY - knownDecades[0]!.bucketY) / 240 * 30);
+    }
+  } else {
+    const currentDecade = Math.floor(new Date().getFullYear() / 10) * 10;
+    const topY = sortedBuckets.length > 0 ? sortedBuckets[0]![0] : 0;
+    for (const [bucketY] of sortedBuckets) {
+      const gensDown = Math.round((bucketY - topY) / 240);
+      bucketDecades.set(bucketY, currentDecade - gensDown * 30);
+    }
+  }
+
+  for (const person of people) {
+    if (person.birthYear != null) continue;
+    const pos = positions.get(person.id);
+    if (!pos) continue;
+
+    for (const [bucketY] of sortedBuckets) {
+      if (Math.abs(pos.y - bucketY) <= Y_TOLERANCE) {
+        const decade = bucketDecades.get(bucketY);
+        if (decade != null) {
+          result.set(person.id, Math.round(decade / 10) * 10);
+        }
+        break;
+      }
+    }
+  }
+
+  return result;
+}
+
 export function buildPersonNodes(
   people: ApiPerson[],
   positions: Map<string, { x: number; y: number }>,
@@ -1673,6 +1775,10 @@ export function buildPersonNodes(
   focusPersonIds: Set<string> | null = null,
   activeDecade: number | null = null,
 ): PersonFlowNode[] {
+  const generationDecades = activeDecade != null
+    ? inferGenerationDecades(people, positions)
+    : new Map<string, number>();
+
   return people.map((person) => {
     const pos = positions.get(person.id) ?? { x: 0, y: 0 };
 
@@ -1690,7 +1796,7 @@ export function buildPersonNodes(
         isYou: person.id === currentUserId,
         isFocused: person.id === selectedPersonId,
         isDimmed: focusPersonIds ? !focusPersonIds.has(person.id) : false,
-        decadeRelevance: computeDecadeRelevance(person, activeDecade),
+        decadeRelevance: computeDecadeRelevance(person, activeDecade, generationDecades),
       },
       draggable: false,
     };

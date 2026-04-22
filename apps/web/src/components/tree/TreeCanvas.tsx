@@ -40,6 +40,7 @@ import {
   getConstellationFocusIds,
   getLineageFocusIds,
   getAvailableDecades,
+  inferGenerationDecades,
   type LineageFocusMode,
 } from "./treeLayout";
 
@@ -74,6 +75,7 @@ interface TreeCanvasProps {
   people: ApiPerson[];
   relationships: ApiRelationship[];
   currentUserPersonId: string | null;
+  initialSelectedPersonId?: string | null;
   onDriftClick: () => void;
   onPersonDetailClick: (personId: string) => void;
   onAddMemoryClick?: () => void;
@@ -114,6 +116,7 @@ function TreeCanvasInner({
   people,
   relationships,
   currentUserPersonId,
+  initialSelectedPersonId,
   onDriftClick,
   onPersonDetailClick,
   onAddMemoryClick,
@@ -203,13 +206,19 @@ function TreeCanvasInner({
 
   useEffect(() => {
     if (didInitializeLineageRef.current) return;
+    if (initialSelectedPersonId && people.some((p) => p.id === initialSelectedPersonId)) {
+      didInitializeLineageRef.current = true;
+      setSelectedPersonId(initialSelectedPersonId);
+      setLineageMode("birth");
+      return;
+    }
     if (!currentUserPersonId) return;
     if (!people.some((person) => person.id === currentUserPersonId)) return;
 
     didInitializeLineageRef.current = true;
     setSelectedPersonId(currentUserPersonId);
     setLineageMode("birth");
-  }, [currentUserPersonId, people]);
+  }, [currentUserPersonId, initialSelectedPersonId, people]);
 
   useEffect(() => {
     onSelectedPersonChange?.(selectedPersonId);
@@ -255,14 +264,21 @@ function TreeCanvasInner({
   // When active decade changes, pan to the relevant people
   useEffect(() => {
     if (activeDecade === null) return;
+    const genDecades = inferGenerationDecades(people, layoutRef.current);
     const relevantIds = new Set(
       people
         .filter((p) => {
-          if (p.birthYear == null) return false;
-          const birthDecade = Math.floor(p.birthYear / 10) * 10;
-          const aliveEnd = p.deathYear ?? new Date().getFullYear();
-          const aliveEndDecade = Math.floor(aliveEnd / 10) * 10;
-          return activeDecade >= birthDecade && activeDecade <= aliveEndDecade;
+          if (p.birthYear != null) {
+            const birthDecade = Math.floor(p.birthYear / 10) * 10;
+            const aliveEnd = p.deathYear ?? new Date().getFullYear();
+            const aliveEndDecade = Math.floor(aliveEnd / 10) * 10;
+            return activeDecade >= birthDecade && activeDecade <= aliveEndDecade;
+          }
+          const guessed = genDecades.get(p.id);
+          if (guessed != null) {
+            return Math.abs(guessed - activeDecade) <= 10;
+          }
+          return false;
         })
         .map((p) => p.id),
     );
@@ -494,6 +510,43 @@ function TreeCanvasInner({
   const selectedPerson = selectedPersonId
     ? people.find((p) => p.id === selectedPersonId) ?? null
     : null;
+
+  const [personOtherTrees, setPersonOtherTrees] = useState<
+    Array<{ id: string; name: string; role: string }>
+  >([]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!selectedPersonId) {
+      setPersonOtherTrees([]);
+      return () => {
+        cancelled = true;
+      };
+    }
+    void (async () => {
+      try {
+        const res = await fetch(`${API}/api/people/${selectedPersonId}/trees`, {
+          credentials: "include",
+        });
+        if (!res.ok) {
+          if (!cancelled) setPersonOtherTrees([]);
+          return;
+        }
+        const data = (await res.json()) as Array<{
+          id: string;
+          name: string;
+          role: string;
+        }>;
+        if (!cancelled) {
+          setPersonOtherTrees(data.filter((entry) => entry.id !== treeId));
+        }
+      } catch {
+        if (!cancelled) setPersonOtherTrees([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [API, selectedPersonId, treeId]);
 
   const hoveredPerson = hoverState
     ? people.find((p) => p.id === hoverState.personId) ?? null
@@ -1252,6 +1305,60 @@ function TreeCanvasInner({
           activeDecade={activeDecade}
           onSelectDecade={setActiveDecade}
         />
+      )}
+
+      {/* Selected-person lineage switcher */}
+      {selectedPerson && personOtherTrees.length > 0 && (
+        <div
+          style={{
+            position: "absolute",
+            top: 68,
+            right: 16,
+            zIndex: 10,
+            maxWidth: 320,
+            padding: "10px 12px",
+            borderRadius: 12,
+            background: CONTROL_SURFACE,
+            backdropFilter: "blur(10px)",
+            border: `1px solid ${CONTROL_BORDER}`,
+            boxShadow: "0 10px 24px rgba(40,30,18,0.08)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+          }}
+        >
+          <div
+            style={{
+              fontFamily: "var(--font-ui)",
+              fontSize: 10,
+              textTransform: "uppercase",
+              letterSpacing: "0.1em",
+              color: "rgba(63,53,41,0.6)",
+            }}
+          >
+            {selectedPerson.name} also appears in
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {personOtherTrees.map((other) => (
+              <a
+                key={other.id}
+                href={`/trees/${other.id}?focusPersonId=${selectedPersonId}`}
+                style={{
+                  fontFamily: "var(--font-ui)",
+                  fontSize: 12,
+                  color: "var(--moss)",
+                  background: "rgba(255,250,244,0.84)",
+                  border: `1px solid ${CONTROL_BORDER}`,
+                  borderRadius: 999,
+                  padding: "4px 10px",
+                  textDecoration: "none",
+                }}
+              >
+                Open in {other.name} →
+              </a>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Legend button */}
