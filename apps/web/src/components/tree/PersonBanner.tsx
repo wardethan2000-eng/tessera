@@ -69,6 +69,10 @@ export function PersonBanner({
   const [editingMaidenName, setEditingMaidenName] = useState(false);
   const [editMaidenNameValue, setEditMaidenNameValue] = useState("");
   const calendarRef = useRef<HTMLDivElement>(null);
+  // Prevent double-save when Enter triggers both onKeyDown and the subsequent onBlur
+  const nameSavedRef = useRef(false);
+  const essenceSavedRef = useRef(false);
+  const maidenSavedRef = useRef(false);
 
   useEffect(() => {
     if (!person) return;
@@ -203,14 +207,15 @@ export function PersonBanner({
                   autoFocus
                   value={editNameValue}
                   onChange={(e) => setEditNameValue(e.target.value)}
+                  onBlur={() => { if (!nameSavedRef.current) { nameSavedRef.current = true; saveField("displayName", editNameValue); } setEditingName(false); }}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") { saveField("displayName", editNameValue); setEditingName(false); }
-                    if (e.key === "Escape") setEditingName(false);
+                    if (e.key === "Enter") { nameSavedRef.current = true; saveField("displayName", editNameValue); setEditingName(false); }
+                    if (e.key === "Escape") { nameSavedRef.current = true; setEditingName(false); }
                   }}
                   style={{ fontFamily: "var(--font-display)", fontSize: 20, color: "var(--ink)", width: "100%", border: "none", borderBottom: "2px solid var(--moss)", background: "transparent", outline: "none", padding: "4px 0", lineHeight: 1.2, letterSpacing: "-0.01em" }}
                 />
               ) : (
-                <div onClick={() => { setEditNameValue(displayName); setEditingName(true); }} style={{ fontFamily: "var(--font-display)", fontSize: 20, color: "var(--ink)", lineHeight: 1.2, letterSpacing: "-0.01em", cursor: "text", wordBreak: "break-word" }}>{displayName}</div>
+                <div onClick={() => { nameSavedRef.current = false; setEditNameValue(displayName); setEditingName(true); }} style={{ fontFamily: "var(--font-display)", fontSize: 20, color: "var(--ink)", lineHeight: 1.2, letterSpacing: "-0.01em", cursor: "text", wordBreak: "break-word" }}>{displayName}</div>
               )}
 
               {(!person.birthDateText && !person.deathDateText) && person.birthYear && !editingName && (
@@ -224,15 +229,16 @@ export function PersonBanner({
                   autoFocus
                   value={editEssenceValue}
                   onChange={(e) => setEditEssenceValue(e.target.value)}
+                  onBlur={() => { if (!essenceSavedRef.current) { essenceSavedRef.current = true; saveField("essenceLine", editEssenceValue || null); } setEditingEssence(false); }}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") { saveField("essenceLine", editEssenceValue || null); setEditingEssence(false); }
-                    if (e.key === "Escape") setEditingEssence(false);
+                    if (e.key === "Enter") { essenceSavedRef.current = true; saveField("essenceLine", editEssenceValue || null); setEditingEssence(false); }
+                    if (e.key === "Escape") { essenceSavedRef.current = true; setEditingEssence(false); }
                   }}
                   style={{ fontFamily: "var(--font-body)", fontSize: 13, fontStyle: "italic", color: "var(--ink-soft)", width: "100%", border: "none", borderBottom: "1px solid var(--moss)", background: "transparent", outline: "none", padding: "4px 0", marginTop: 6 }}
                 />
               ) : (
                 <div
-                  onClick={() => { setEditEssenceValue(essenceLine ?? ""); setEditingEssence(true); }}
+                  onClick={() => { essenceSavedRef.current = false; setEditEssenceValue(essenceLine ?? ""); setEditingEssence(true); }}
                   style={{ fontFamily: "var(--font-body)", fontSize: 13, fontStyle: essenceLine ? "italic" : "normal", color: essenceLine ? "var(--ink-soft)" : "var(--ink-faded)", marginTop: 6, cursor: "text", lineHeight: 1.4 }}
                 >
                   {essenceLine || "Add essence line…"}
@@ -250,15 +256,16 @@ export function PersonBanner({
                   autoFocus
                   value={editMaidenNameValue}
                   onChange={(e) => setEditMaidenNameValue(e.target.value)}
+                  onBlur={() => { if (!maidenSavedRef.current) { maidenSavedRef.current = true; saveField("maidenName", editMaidenNameValue || null); } setEditingMaidenName(false); }}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") { saveField("maidenName", editMaidenNameValue || null); setEditingMaidenName(false); }
-                    if (e.key === "Escape") setEditingMaidenName(false);
+                    if (e.key === "Enter") { maidenSavedRef.current = true; saveField("maidenName", editMaidenNameValue || null); setEditingMaidenName(false); }
+                    if (e.key === "Escape") { maidenSavedRef.current = true; setEditingMaidenName(false); }
                   }}
                   style={{ fontFamily: "var(--font-body)", fontSize: 14, color: "var(--ink)", width: "100%", border: "none", borderBottom: "1px solid var(--moss)", background: "transparent", outline: "none", padding: "4px 0" }}
                 />
               ) : (
                 <div
-                  onClick={() => { setEditMaidenNameValue(person.maidenName ?? ""); setEditingMaidenName(true); }}
+                  onClick={() => { maidenSavedRef.current = false; setEditMaidenNameValue(person.maidenName ?? ""); setEditingMaidenName(true); }}
                   style={{ fontFamily: "var(--font-body)", fontSize: 14, color: person.maidenName ? "var(--ink)" : "var(--ink-faded)", cursor: "text", minHeight: 20 }}
                 >
                   {person.maidenName || "Add maiden name…"}
