@@ -66,6 +66,8 @@ export function PersonBanner({
   const [editNameValue, setEditNameValue] = useState("");
   const [editingEssence, setEditingEssence] = useState(false);
   const [editEssenceValue, setEditEssenceValue] = useState("");
+  const [editingMaidenName, setEditingMaidenName] = useState(false);
+  const [editMaidenNameValue, setEditMaidenNameValue] = useState("");
   const calendarRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -74,6 +76,7 @@ export function PersonBanner({
     setDeathDate(parseDateText(person.deathDateText));
     setEditingName(false);
     setEditingEssence(false);
+    setEditingMaidenName(false);
     setShowCalendar(null);
   }, [person?.id, person?.birthDateText, person?.deathDateText]);
 
@@ -84,6 +87,7 @@ export function PersonBanner({
         setShowCalendar(null);
         setEditingName(false);
         setEditingEssence(false);
+        setEditingMaidenName(false);
         onClose();
       }
     };
@@ -239,6 +243,29 @@ export function PersonBanner({
 
           {/* Scrollable body */}
           <div style={{ flex: 1, overflowY: "auto", padding: "16px 24px", display: "flex", flexDirection: "column", gap: 18 }}>
+            {/* Maiden name */}
+            <Section label="Maiden name">
+              {editingMaidenName ? (
+                <input
+                  autoFocus
+                  value={editMaidenNameValue}
+                  onChange={(e) => setEditMaidenNameValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { saveField("maidenName", editMaidenNameValue || null); setEditingMaidenName(false); }
+                    if (e.key === "Escape") setEditingMaidenName(false);
+                  }}
+                  style={{ fontFamily: "var(--font-body)", fontSize: 14, color: "var(--ink)", width: "100%", border: "none", borderBottom: "1px solid var(--moss)", background: "transparent", outline: "none", padding: "4px 0" }}
+                />
+              ) : (
+                <div
+                  onClick={() => { setEditMaidenNameValue(person.maidenName ?? ""); setEditingMaidenName(true); }}
+                  style={{ fontFamily: "var(--font-body)", fontSize: 14, color: person.maidenName ? "var(--ink)" : "var(--ink-faded)", cursor: "text", minHeight: 20 }}
+                >
+                  {person.maidenName || "Add maiden name…"}
+                </div>
+              )}
+            </Section>
+
             {/* Dates */}
             <Section label="Life dates">
               <DateRow

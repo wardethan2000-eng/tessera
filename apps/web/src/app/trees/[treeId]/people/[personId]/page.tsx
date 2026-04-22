@@ -19,8 +19,35 @@ import { usePendingVoiceTranscriptionRefresh } from "@/lib/usePendingVoiceTransc
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
+const MONTHS = [
+  "", "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
 type MemoryKind = "story" | "photo" | "voice" | "document" | "other";
 type RelationshipType = "parent_child" | "sibling" | "spouse";
+
+type ParsedDate = { month: string; day: string; year: string };
+
+function parseDateText(text: string | null | undefined): ParsedDate {
+  if (!text) return { month: "", day: "", year: "" };
+  const parts = text.split(/[\/\-\.]/);
+  if (parts.length === 3) {
+    return { month: parts[0] ?? "", day: parts[1] ?? "", year: parts[2] ?? "" };
+  }
+  const yearMatch = text.match(/\b(\d{4})\b/);
+  if (yearMatch) return { month: "", day: "", year: yearMatch[1] ?? "" };
+  return { month: "", day: "", year: text.trim() };
+}
+
+function formatDateText(parsed: ParsedDate): string | null {
+  const { month, day, year } = parsed;
+  if (!month && !day && !year) return null;
+  if (month && day && year) return `${month}/${day}/${year}`;
+  if (!month && !day && year) return year;
+  if (month && year && !day) return `${month}/${year}`;
+  return [month, day, year].filter(Boolean).join("/");
+}
 type ResolvedPlace = {
   id: string;
   label: string;
@@ -36,6 +63,9 @@ type Person = {
   displayName: string;
   canonicalDisplayName?: string | null;
   displayNameOverride?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  maidenName?: string | null;
   essenceLine: string | null;
   birthDateText: string | null;
   deathDateText: string | null;
@@ -129,6 +159,9 @@ type CrossTreeLink = {
 
 type EditFormState = {
   displayName: string;
+  firstName: string;
+  lastName: string;
+  maidenName: string;
   essenceLine: string;
   birthDateText: string;
   deathDateText: string;
@@ -235,6 +268,9 @@ export default function PersonPage({
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<EditFormState>({
     displayName: "",
+    firstName: "",
+    lastName: "",
+    maidenName: "",
     essenceLine: "",
     birthDateText: "",
     deathDateText: "",
@@ -544,6 +580,9 @@ export default function PersonPage({
     setDeleteError(null);
     setEditForm({
       displayName: p.displayName,
+      firstName: p.firstName ?? "",
+      lastName: p.lastName ?? "",
+      maidenName: p.maidenName ?? "",
       essenceLine: p.essenceLine ?? "",
       birthDateText: p.birthDateText ?? "",
       deathDateText: p.deathDateText ?? "",
@@ -566,6 +605,9 @@ export default function PersonPage({
       credentials: "include",
       body: JSON.stringify({
         displayName: editForm.displayName,
+        firstName: editForm.firstName || null,
+        lastName: editForm.lastName || null,
+        maidenName: editForm.maidenName || null,
         essenceLine: editForm.essenceLine || null,
         birthDateText: editForm.birthDateText || null,
         deathDateText: editForm.deathDateText || null,
@@ -2477,6 +2519,105 @@ function MemoryStudioRail({
   );
 }
 
+function DateSelector({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (val: string | null) => void;
+}) {
+  const [parsed, setParsed] = useState<ParsedDate>(() => parseDateText(value));
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { setParsed(parseDateText(value)); }, [value]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const displayValue = [parsed.month && MONTHS[Number(parsed.month)] ? MONTHS[Number(parsed.month)]?.slice(0, 3) : "", parsed.day, parsed.year].filter(Boolean).join(" ") || (parsed.year || "—");
+
+  return (
+    <div style={{ marginBottom: 8, position: "relative" }} ref={ref}>
+      <div style={{ fontFamily: "var(--font-ui)", fontSize: 10, color: "var(--ink-faded)", marginBottom: 2 }}>{label}</div>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        style={{
+          fontFamily: "var(--font-body)", fontSize: 14, color: displayValue !== "—" ? "var(--ink)" : "var(--ink-faded)",
+          background: open ? "rgba(78,93,66,0.05)" : "transparent", border: open ? "1px solid rgba(78,93,66,0.3)" : "1px dashed var(--rule)",
+          borderRadius: 6, padding: "6px 10px", cursor: "pointer", width: "100%", textAlign: "left",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          transition: "all 150ms cubic-bezier(0.22, 0.61, 0.36, 1)",
+        }}
+      >
+        <span>{displayValue}</span>
+        <span style={{ fontFamily: "var(--font-ui)", fontSize: 10, color: "var(--ink-faded)", marginLeft: 8 }}>✎</span>
+      </button>
+
+      {open && (
+        <div
+          style={{
+            position: "absolute", top: "100%", left: 0, zIndex: 30,
+            background: "var(--paper)", border: "1px solid var(--rule)", borderRadius: 8,
+            boxShadow: "0 8px 24px rgba(28,25,21,0.12)", padding: "12px 14px", minWidth: 220,
+          }}
+        >
+          <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 8 }}>
+            <select
+              value={parsed.month}
+              onChange={(e) => setParsed({ ...parsed, month: e.target.value })}
+              style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink)", background: "var(--paper-deep)", border: "1px solid var(--rule)", borderRadius: 4, padding: "4px 6px", flex: 1 }}
+            >
+              <option value="">Month</option>
+              {MONTHS.slice(1).map((m, i) => <option key={m} value={String(i + 1)}>{m}</option>)}
+            </select>
+            <input
+              type="text"
+              inputMode="numeric"
+              placeholder="DD"
+              value={parsed.day}
+              onChange={(e) => { const v = e.target.value.replace(/\D/g, "").slice(0, 2); setParsed({ ...parsed, day: v }); }}
+              style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink)", width: 40, background: "var(--paper-deep)", border: "1px solid var(--rule)", borderRadius: 4, padding: "4px 6px", textAlign: "center" }}
+            />
+            <input
+              type="text"
+              inputMode="numeric"
+              placeholder="YYYY"
+              value={parsed.year}
+              onChange={(e) => { const v = e.target.value.replace(/\D/g, "").slice(0, 4); setParsed({ ...parsed, year: v }); }}
+              style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink)", width: 52, background: "var(--paper-deep)", border: "1px solid var(--rule)", borderRadius: 4, padding: "4px 6px", textAlign: "center" }}
+            />
+          </div>
+          <div style={{ fontFamily: "var(--font-ui)", fontSize: 10, color: "var(--ink-faded)", marginBottom: 8 }}>
+            Format: MM/DD/YYYY or year only
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
+            <button
+              type="button"
+              onClick={() => { setParsed({ month: "", day: "", year: "" }); onChange(null); setOpen(false); }}
+              style={{ fontFamily: "var(--font-ui)", fontSize: 11, color: "var(--ink-faded)", background: "transparent", border: "1px solid var(--rule)", borderRadius: 4, padding: "4px 10px", cursor: "pointer" }}
+            >Clear</button>
+            <button
+              type="button"
+              onClick={() => { onChange(formatDateText(parsed)); setOpen(false); }}
+              style={{ fontFamily: "var(--font-ui)", fontSize: 11, color: "white", background: "var(--moss)", border: "none", borderRadius: 4, padding: "4px 12px", cursor: "pointer" }}
+            >Save</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BiographyDrawer({
   editing,
   person,
@@ -2605,6 +2746,29 @@ function BiographyDrawer({
               placeholder="Full name"
               style={inputStyle}
             />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <input
+                type="text"
+                value={editForm.firstName}
+                onChange={(event) => onChangeField("firstName", event.target.value)}
+                placeholder="First name"
+                style={inputStyle}
+              />
+              <input
+                type="text"
+                value={editForm.lastName}
+                onChange={(event) => onChangeField("lastName", event.target.value)}
+                placeholder="Last name"
+                style={inputStyle}
+              />
+            </div>
+            <input
+              type="text"
+              value={editForm.maidenName}
+              onChange={(event) => onChangeField("maidenName", event.target.value)}
+              placeholder="Maiden name"
+              style={inputStyle}
+            />
             <input
               type="text"
               value={editForm.essenceLine}
@@ -2627,22 +2791,16 @@ function BiographyDrawer({
             >
               Life details
             </p>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <input
-                type="text"
-                value={editForm.birthDateText}
-                onChange={(event) => onChangeField("birthDateText", event.target.value)}
-                placeholder="Birth date"
-                style={inputStyle}
-              />
-              <input
-                type="text"
-                value={editForm.deathDateText}
-                onChange={(event) => onChangeField("deathDateText", event.target.value)}
-                placeholder="Death date"
-                style={inputStyle}
-              />
-            </div>
+            <DateSelector
+              label="Birth date"
+              value={editForm.birthDateText}
+              onChange={(val) => onChangeField("birthDateText", val ?? "")}
+            />
+            <DateSelector
+              label="Death date"
+              value={editForm.deathDateText}
+              onChange={(val) => onChangeField("deathDateText", val ?? "")}
+            />
             <label
               style={{
                 display: "flex",
