@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { getProxiedMediaUrl } from "@/lib/media-url";
 import type { TreeHomeCoverage, TreeHomeMemory } from "./homeTypes";
-import { EASE, getHeroExcerpt, getVoiceTranscriptLabel } from "./homeUtils";
+import { getHeroExcerpt, getVoiceTranscriptLabel } from "./homeUtils";
 
 type EraValue = "all" | number;
 
@@ -32,10 +32,10 @@ export function AtriumMemoryTrail({
   openArchiveHref: string;
 }) {
   return (
-    <section style={{ padding: "30px max(20px, 5vw) 0" }}>
+    <section style={{ padding: "42px max(20px, 5vw) 0" }}>
       <div
         style={{
-          marginBottom: 18,
+          marginBottom: 26,
           display: "flex",
           alignItems: "baseline",
           gap: 12,
@@ -47,7 +47,7 @@ export function AtriumMemoryTrail({
             style={{
               margin: 0,
               fontFamily: "var(--font-display)",
-              fontSize: "clamp(26px, 3vw, 34px)",
+              fontSize: "clamp(28px, 3vw, 38px)",
               fontWeight: 400,
               color: "var(--ink)",
             }}
@@ -56,11 +56,11 @@ export function AtriumMemoryTrail({
           </h2>
           <p
             style={{
-              margin: "8px 0 0",
-              maxWidth: 720,
+              margin: "10px 0 0",
+              maxWidth: 760,
               fontFamily: "var(--font-body)",
-              fontSize: 15,
-              lineHeight: 1.75,
+              fontSize: 16,
+              lineHeight: 1.85,
               color: "var(--ink-soft)",
             }}
           >
@@ -85,7 +85,7 @@ export function AtriumMemoryTrail({
       {coverage && coverage.decadeBuckets.length > 0 && (
         <div
           style={{
-            marginBottom: 20,
+            marginBottom: 34,
             display: "flex",
             gap: 10,
             overflowX: "auto",
@@ -143,54 +143,13 @@ export function AtriumMemoryTrail({
           </p>
         </div>
       ) : (
-        <div style={{ display: "grid", gap: 22, minWidth: 0 }}>
+        <div style={{ display: "grid", gap: "clamp(72px, 10vw, 120px)" }}>
           {sections.map((section) => (
-            <article
+            <TrailSectionThread
               key={section.id}
-              style={{
-                width: "100%",
-                minWidth: 0,
-                border: "1px solid rgba(122,108,88,0.18)",
-                borderRadius: 20,
-                background:
-                  "linear-gradient(180deg, rgba(255,250,244,0.92) 0%, rgba(247,241,231,0.72) 100%)",
-                padding: "18px 0 18px",
-              }}
-            >
-              <div
-                style={{
-                  minWidth: 0,
-                  padding: "0 clamp(18px, 3vw, 28px)",
-                  marginBottom: 14,
-                }}
-              >
-                <div
-                  style={{
-                    fontFamily: "var(--font-ui)",
-                    fontSize: 11,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.08em",
-                    color: "var(--ink-faded)",
-                    marginBottom: 6,
-                  }}
-                >
-                  {section.title}
-                </div>
-                <div
-                  style={{
-                    fontFamily: "var(--font-body)",
-                    fontSize: 15,
-                    lineHeight: 1.7,
-                    color: "var(--ink-soft)",
-                    maxWidth: 720,
-                  }}
-                >
-                  {section.description}
-                </div>
-              </div>
-
-              <TrailSectionLayout section={section} onMemoryClick={onMemoryClick} />
-            </article>
+              section={section}
+              onMemoryClick={onMemoryClick}
+            />
           ))}
         </div>
       )}
@@ -198,7 +157,7 @@ export function AtriumMemoryTrail({
   );
 }
 
-function TrailSectionLayout({
+function TrailSectionThread({
   section,
   onMemoryClick,
 }: {
@@ -209,49 +168,94 @@ function TrailSectionLayout({
   if (!leadMemory) return null;
 
   return (
-    <div
+    <section
       style={{
-        display: "grid",
-        gap: 18,
+        position: "relative",
         minWidth: 0,
       }}
     >
-      <TrailLeadMemory
-        memory={leadMemory}
-        sectionTitle={section.title}
-        onClick={() => onMemoryClick(leadMemory)}
-      />
-
-      {echoes.length > 0 && (
+      <div
+        style={{
+          marginBottom: 26,
+          maxWidth: 520,
+        }}
+      >
         <div
           style={{
-            display: "flex",
-            gap: 14,
-            minWidth: 0,
-            maxWidth: "100%",
-            overflowX: "auto",
-            padding: "0 clamp(18px, 3vw, 28px)",
-            paddingBottom: 6,
-            scrollSnapType: "x proximity",
-            scrollbarWidth: "none",
+            fontFamily: "var(--font-ui)",
+            fontSize: 11,
+            textTransform: "uppercase",
+            letterSpacing: "0.12em",
+            color: "var(--ink-faded)",
+            marginBottom: 8,
           }}
         >
-          {echoes.map((memory) => (
-            <TrailEchoCard key={memory.id} memory={memory} onClick={() => onMemoryClick(memory)} />
-          ))}
+          {section.title}
         </div>
-      )}
-    </div>
+        <div
+          style={{
+            fontFamily: "var(--font-body)",
+            fontSize: 16,
+            lineHeight: 1.8,
+            color: "var(--ink-soft)",
+          }}
+        >
+          {section.description}
+        </div>
+      </div>
+
+      <div
+        style={{
+          position: "relative",
+          display: "grid",
+          gap: "clamp(28px, 6vw, 42px)",
+        }}
+      >
+        <TrailLeadScene memory={leadMemory} onClick={() => onMemoryClick(leadMemory)} />
+
+        {echoes.length > 0 && (
+          <div
+            style={{
+              position: "relative",
+              display: "grid",
+              gap: "clamp(22px, 5vw, 34px)",
+              paddingLeft: "clamp(18px, 4vw, 34px)",
+              minWidth: 0,
+            }}
+          >
+            <div
+              aria-hidden
+              style={{
+                position: "absolute",
+                left: 2,
+                top: 10,
+                bottom: 10,
+                width: 1,
+                background:
+                  "linear-gradient(180deg, transparent 0%, rgba(176,139,62,0.32) 12%, rgba(176,139,62,0.18) 88%, transparent 100%)",
+              }}
+            />
+
+            {echoes.map((memory, index) => (
+              <TrailEchoEntry
+                key={memory.id}
+                memory={memory}
+                index={index}
+                onClick={() => onMemoryClick(memory)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
-function TrailLeadMemory({
+function TrailLeadScene({
   memory,
-  sectionTitle,
   onClick,
 }: {
   memory: TreeHomeMemory;
-  sectionTitle: string;
   onClick: () => void;
 }) {
   const mediaUrl = getProxiedMediaUrl(memory.mediaUrl);
@@ -264,22 +268,22 @@ function TrailLeadMemory({
       onClick={onClick}
       style={{
         position: "relative",
-        border: "none",
-        borderRadius: 24,
-        overflow: "hidden",
-        cursor: "pointer",
-        padding: 0,
         width: "100%",
-        background:
-          usesMedia
-            ? "#181410"
-            : "linear-gradient(135deg, rgba(35,30,24,0.98) 0%, rgba(21,18,15,0.98) 100%)",
-        color: "rgba(246,241,231,0.96)",
+        minHeight: "clamp(360px, 62vw, 620px)",
+        border: "none",
+        background: "none",
+        padding: 0,
+        cursor: "pointer",
         textAlign: "left",
-        boxShadow: "0 18px 48px rgba(28,25,21,0.14)",
+        overflow: "hidden",
+        color: "inherit",
+        WebkitMaskImage:
+          "linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.96) 14%, rgba(0,0,0,0.96) 86%, transparent 100%)",
+        maskImage:
+          "linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.96) 14%, rgba(0,0,0,0.96) 86%, transparent 100%)",
       }}
     >
-      {usesMedia && (
+      {usesMedia ? (
         <>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -291,8 +295,7 @@ function TrailLeadMemory({
               width: "100%",
               height: "100%",
               objectFit: "cover",
-              opacity: 0.42,
-              filter: "grayscale(22%) sepia(10%) contrast(0.92)",
+              filter: "grayscale(24%) sepia(10%) contrast(0.94)",
             }}
           />
           <div
@@ -300,19 +303,17 @@ function TrailLeadMemory({
               position: "absolute",
               inset: 0,
               background:
-                "linear-gradient(90deg, rgba(19,17,14,0.94) 0%, rgba(19,17,14,0.76) 46%, rgba(19,17,14,0.46) 100%), linear-gradient(180deg, rgba(19,17,14,0.12) 0%, rgba(19,17,14,0.38) 100%)",
+                "linear-gradient(90deg, rgba(22,19,16,0.88) 0%, rgba(22,19,16,0.66) 44%, rgba(22,19,16,0.28) 100%), linear-gradient(180deg, rgba(22,19,16,0.10) 0%, rgba(22,19,16,0.42) 100%)",
             }}
           />
         </>
-      )}
-
-      {!usesMedia && (
+      ) : (
         <div
           style={{
             position: "absolute",
             inset: 0,
             background:
-              "radial-gradient(circle at 18% 22%, rgba(201,161,92,0.14), transparent 30%), radial-gradient(circle at 78% 20%, rgba(105,120,85,0.14), transparent 28%), linear-gradient(180deg, rgba(36,31,26,0.98) 0%, rgba(21,18,15,0.98) 100%)",
+              "radial-gradient(circle at 16% 20%, rgba(201,161,92,0.18), transparent 28%), radial-gradient(circle at 78% 18%, rgba(91,104,74,0.14), transparent 24%), linear-gradient(180deg, rgba(39,33,27,0.98) 0%, rgba(20,17,14,0.98) 100%)",
           }}
         />
       )}
@@ -320,10 +321,10 @@ function TrailLeadMemory({
       <div
         style={{
           position: "relative",
-          minHeight: "clamp(280px, 48vw, 420px)",
-          display: "grid",
-          alignItems: "end",
-          padding: "clamp(24px, 4vw, 34px)",
+          minHeight: "clamp(360px, 62vw, 620px)",
+          display: "flex",
+          alignItems: "flex-end",
+          padding: "clamp(28px, 5vw, 54px) clamp(22px, 5vw, 40px)",
         }}
       >
         <div style={{ maxWidth: 760 }}>
@@ -332,28 +333,28 @@ function TrailLeadMemory({
               display: "inline-flex",
               alignItems: "center",
               gap: 10,
-              padding: "8px 12px",
-              borderRadius: 999,
-              background: "rgba(246,241,231,0.08)",
-              backdropFilter: "blur(10px)",
+              flexWrap: "wrap",
               fontFamily: "var(--font-ui)",
               fontSize: 11,
-              color: "rgba(246,241,231,0.68)",
               textTransform: "uppercase",
               letterSpacing: "0.12em",
+              color: "rgba(246,241,231,0.64)",
             }}
           >
-            <span>{sectionTitle}</span>
-            {memory.kind && <span style={{ opacity: 0.58 }}>{formatMemoryKind(memory.kind)}</span>}
+            <span>{formatMemoryKind(memory.kind)}</span>
+            <span style={{ opacity: 0.46 }}>·</span>
+            <span>{memory.dateOfEventText ?? "Undated"}</span>
           </div>
 
           <div
             style={{
-              marginTop: 16,
+              marginTop: 14,
               fontFamily: "var(--font-display)",
-              fontSize: "clamp(30px, 5vw, 54px)",
-              lineHeight: 1.03,
-              maxWidth: "14ch",
+              fontSize: "clamp(34px, 7vw, 78px)",
+              lineHeight: 0.98,
+              color: "rgba(246,241,231,0.98)",
+              maxWidth: "13ch",
+              textWrap: "balance",
             }}
           >
             {memory.title}
@@ -361,23 +362,17 @@ function TrailLeadMemory({
 
           <div
             style={{
-              marginTop: 12,
+              marginTop: 14,
               display: "flex",
+              flexWrap: "wrap",
               alignItems: "center",
               gap: 10,
-              flexWrap: "wrap",
               fontFamily: "var(--font-ui)",
               fontSize: 13,
-              color: "rgba(246,241,231,0.74)",
+              color: "rgba(246,241,231,0.76)",
             }}
           >
-            {(memory.personName || memory.dateOfEventText) && (
-              <span>
-                {memory.personName ?? ""}
-                {memory.personName && memory.dateOfEventText ? " · " : ""}
-                {memory.dateOfEventText ?? ""}
-              </span>
-            )}
+            {memory.personName && <span>{memory.personName}</span>}
             <span
               style={{
                 padding: "5px 10px",
@@ -392,11 +387,11 @@ function TrailLeadMemory({
           {excerpt && (
             <p
               style={{
-                margin: "18px 0 0",
+                margin: "20px 0 0",
                 maxWidth: "58ch",
                 fontFamily: "var(--font-body)",
-                fontSize: 17,
-                lineHeight: 1.8,
+                fontSize: 18,
+                lineHeight: 1.85,
                 color: "rgba(246,241,231,0.84)",
               }}
             >
@@ -406,10 +401,10 @@ function TrailLeadMemory({
 
           <div
             style={{
-              marginTop: 22,
+              marginTop: 24,
               display: "inline-flex",
               alignItems: "center",
-              gap: 10,
+              gap: 12,
               fontFamily: "var(--font-ui)",
               fontSize: 13,
               color: "rgba(246,241,231,0.88)",
@@ -417,12 +412,12 @@ function TrailLeadMemory({
           >
             <span
               style={{
-                width: 42,
+                width: 48,
                 height: 1,
-                background: "rgba(246,241,231,0.35)",
+                background: "rgba(246,241,231,0.32)",
               }}
             />
-            <span>Open this memory</span>
+            <span>Step deeper into this memory</span>
           </div>
         </div>
       </div>
@@ -430,147 +425,198 @@ function TrailLeadMemory({
   );
 }
 
-function TrailEchoCard({
+function TrailEchoEntry({
   memory,
+  index,
   onClick,
 }: {
   memory: TreeHomeMemory;
+  index: number;
   onClick: () => void;
 }) {
   const mediaUrl = getProxiedMediaUrl(memory.mediaUrl);
   const excerpt = getMemoryExcerpt(memory);
+  const alignsRight = index % 2 === 1;
 
   return (
-    <article
+    <div
       style={{
-        flexShrink: 0,
-        width: "min(320px, calc(100vw - 72px))",
-        scrollSnapAlign: "start",
+        position: "relative",
+        display: "flex",
+        justifyContent: alignsRight ? "flex-end" : "flex-start",
       }}
     >
+      <span
+        aria-hidden
+        style={{
+          position: "absolute",
+          left: -2,
+          top: 22,
+          width: 5,
+          height: 5,
+          borderRadius: "50%",
+          background: "rgba(176,139,62,0.62)",
+          boxShadow: "0 0 0 6px rgba(176,139,62,0.08)",
+        }}
+      />
+
       <button
         type="button"
         onClick={onClick}
         style={{
-          width: "100%",
-          border: "1px solid rgba(122,108,88,0.18)",
-          borderRadius: 18,
-          overflow: "hidden",
+          width: "min(100%, 820px)",
+          border: "none",
+          background: "none",
           padding: 0,
-          background:
-            "linear-gradient(180deg, rgba(255,250,244,0.98) 0%, rgba(244,237,226,0.92) 100%)",
-          textAlign: "left",
           cursor: "pointer",
-          boxShadow: "0 10px 26px rgba(28,25,21,0.06)",
-          transition: `transform 220ms ${EASE}, box-shadow 220ms ${EASE}, border-color 220ms ${EASE}`,
-        }}
-        onMouseEnter={(event) => {
-          event.currentTarget.style.transform = "translateY(-2px)";
-          event.currentTarget.style.boxShadow = "0 16px 34px rgba(28,25,21,0.10)";
-          event.currentTarget.style.borderColor = "rgba(78,93,66,0.28)";
-        }}
-        onMouseLeave={(event) => {
-          event.currentTarget.style.transform = "translateY(0)";
-          event.currentTarget.style.boxShadow = "0 10px 26px rgba(28,25,21,0.06)";
-          event.currentTarget.style.borderColor = "rgba(122,108,88,0.18)";
+          textAlign: "left",
+          color: "inherit",
         }}
       >
         <div
           style={{
-            position: "relative",
-            height: 196,
-            background:
-              "radial-gradient(circle at 18% 24%, rgba(201,161,92,0.12), transparent 30%), linear-gradient(180deg, rgba(244,237,226,1) 0%, rgba(236,229,216,1) 100%)",
-            overflow: "hidden",
+            display: "grid",
+            gap: 18,
+            alignItems: "start",
+            gridTemplateColumns:
+              mediaUrl && memory.kind === "photo"
+                ? alignsRight
+                  ? "minmax(0, 1fr) minmax(200px, 320px)"
+                  : "minmax(200px, 320px) minmax(0, 1fr)"
+                : "minmax(0, 1fr)",
           }}
         >
-          {mediaUrl && memory.kind === "photo" ? (
-            <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={mediaUrl}
-                alt={memory.title}
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "cover",
-                  filter: "grayscale(18%) sepia(8%)",
-                }}
-              />
-              <div
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  background:
-                    "linear-gradient(180deg, rgba(19,17,14,0.06) 0%, rgba(19,17,14,0.18) 100%)",
-                }}
-              />
-            </>
-          ) : (
+          {mediaUrl && memory.kind === "photo" && !alignsRight && (
+            <TrailEchoImage mediaUrl={mediaUrl} title={memory.title} />
+          )}
+
+          <div
+            style={{
+              paddingTop: 2,
+              maxWidth: 540,
+              justifySelf: alignsRight ? "end" : "start",
+            }}
+          >
             <div
               style={{
-                position: "absolute",
-                inset: 0,
-                display: "flex",
+                display: "inline-flex",
                 alignItems: "center",
-                justifyContent: "center",
-                fontFamily: "var(--font-display)",
-                fontSize: 42,
-                color: "rgba(201,161,92,0.34)",
+                gap: 10,
+                flexWrap: "wrap",
+                fontFamily: "var(--font-ui)",
+                fontSize: 11,
+                textTransform: "uppercase",
+                letterSpacing: "0.12em",
+                color: "var(--ink-faded)",
               }}
             >
-              {memory.kind === "story" ? "✦" : memory.kind === "voice" ? "◉" : "▤"}
+              <span>{memory.personName ?? "Family memory"}</span>
+              {memory.dateOfEventText && (
+                <>
+                  <span style={{ opacity: 0.42 }}>·</span>
+                  <span>{memory.dateOfEventText}</span>
+                </>
+              )}
             </div>
-          )}
-        </div>
 
-        <div style={{ padding: "16px 18px 18px" }}>
-          <div
-            style={{
-              fontFamily: "var(--font-ui)",
-              fontSize: 11,
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
-              color: "var(--ink-faded)",
-              marginBottom: 8,
-            }}
-          >
-            {memory.personName ?? "Family memory"}
-            {memory.personName && memory.dateOfEventText ? " · " : ""}
-            {memory.dateOfEventText ?? ""}
-          </div>
-
-          <div
-            style={{
-              fontFamily: "var(--font-display)",
-              fontSize: 23,
-              lineHeight: 1.2,
-              color: "var(--ink)",
-            }}
-          >
-            {memory.title}
-          </div>
-
-          {excerpt && (
-            <p
+            <div
               style={{
-                margin: "10px 0 0",
-                fontFamily: "var(--font-body)",
-                fontSize: 15,
-                lineHeight: 1.7,
-                color: "var(--ink-soft)",
-                display: "-webkit-box",
-                WebkitLineClamp: 4,
-                WebkitBoxOrient: "vertical",
-                overflow: "hidden",
+                marginTop: 10,
+                fontFamily: "var(--font-display)",
+                fontSize: "clamp(28px, 4vw, 42px)",
+                lineHeight: 1.05,
+                color: "var(--ink)",
+                textWrap: "balance",
               }}
             >
-              {excerpt}
-            </p>
+              {memory.title}
+            </div>
+
+            {excerpt && (
+              <p
+                style={{
+                  margin: "14px 0 0",
+                  fontFamily: "var(--font-body)",
+                  fontSize: 17,
+                  lineHeight: 1.85,
+                  color: "var(--ink-soft)",
+                }}
+              >
+                {excerpt}
+              </p>
+            )}
+
+            <div
+              style={{
+                marginTop: 14,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 10,
+                fontFamily: "var(--font-ui)",
+                fontSize: 12,
+                color: "var(--moss)",
+              }}
+            >
+              <span
+                style={{
+                  width: 34,
+                  height: 1,
+                  background: "rgba(78,93,66,0.32)",
+                }}
+              />
+              <span>Open this echo</span>
+            </div>
+          </div>
+
+          {mediaUrl && memory.kind === "photo" && alignsRight && (
+            <TrailEchoImage mediaUrl={mediaUrl} title={memory.title} />
           )}
         </div>
       </button>
-    </article>
+    </div>
+  );
+}
+
+function TrailEchoImage({
+  mediaUrl,
+  title,
+}: {
+  mediaUrl: string;
+  title: string;
+}) {
+  return (
+    <div
+      style={{
+        position: "relative",
+        width: "100%",
+        aspectRatio: "4 / 5",
+        overflow: "hidden",
+        background: "rgba(237,230,214,0.72)",
+        WebkitMaskImage:
+          "linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.96) 12%, rgba(0,0,0,0.96) 88%, transparent 100%)",
+        maskImage:
+          "linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.96) 12%, rgba(0,0,0,0.96) 88%, transparent 100%)",
+      }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={mediaUrl}
+        alt={title}
+        style={{
+          width: "100%",
+          height: "100%",
+          objectFit: "cover",
+          filter: "grayscale(20%) sepia(10%)",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: "linear-gradient(180deg, rgba(19,17,14,0.04) 0%, rgba(19,17,14,0.18) 100%)",
+        }}
+      />
+    </div>
   );
 }
 
@@ -579,7 +625,7 @@ function getMemoryExcerpt(memory: TreeHomeMemory) {
   const excerpt =
     memory.kind === "voice" ? transcriptLabel : getHeroExcerpt(memory) ?? transcriptLabel ?? null;
   if (!excerpt) return null;
-  return excerpt.length > 220 ? `${excerpt.slice(0, 217).trimEnd()}…` : excerpt;
+  return excerpt.length > 260 ? `${excerpt.slice(0, 257).trimEnd()}…` : excerpt;
 }
 
 function formatMemoryKind(kind: TreeHomeMemory["kind"]) {
