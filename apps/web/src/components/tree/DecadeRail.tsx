@@ -70,78 +70,39 @@ export function DecadeRail({
       ref={railRef}
       style={{
         position: "absolute",
-        left: 16,
-        top: "50%",
-        transform: "translateY(-50%)",
+        left: 20,
+        top: 72,
+        bottom: 80,
         zIndex: 10,
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        gap: 2,
-        padding: "12px 8px",
-        borderRadius: 16,
-        background: "rgba(246,241,231,0.82)",
-        backdropFilter: "blur(10px)",
-        border: "1px solid var(--rule)",
-        boxShadow: "0 8px 20px rgba(28,25,21,0.06)",
+        justifyContent: "center",
         cursor: "ns-resize",
         userSelect: "none",
       }}
     >
-      {activeDecade !== null && (
-        <button
-          type="button"
-          onClick={() => onSelectDecade(null)}
-          style={{
-            background: "transparent",
-            border: "1px solid var(--rule)",
-            borderRadius: "50%",
-            width: 24,
-            height: 24,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "var(--ink-faded)",
-            cursor: "pointer",
-            fontSize: 14,
-            lineHeight: 1,
-            marginBottom: 4,
-            padding: 0,
-            transition: `background 200ms ${EASE}, border-color 200ms ${EASE}`,
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "var(--paper-deep)";
-            e.currentTarget.style.borderColor = "var(--moss)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "transparent";
-            e.currentTarget.style.borderColor = "var(--rule)";
-          }}
-          title="Show all decades"
-        >
-          ×
-        </button>
-      )}
-
       <div
         style={{
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
-          gap: 2,
           position: "relative",
+          height: "100%",
+          justifyContent: "space-evenly",
         }}
       >
         <div
           style={{
             position: "absolute",
             left: "50%",
-            top: 6,
-            bottom: 6,
+            top: 8,
+            bottom: 8,
             width: 1,
             background: "var(--rule)",
             transform: "translateX(-50%)",
-            opacity: 0.5,
+            opacity: activeDecade !== null ? 0.4 : 0.2,
+            transition: `opacity 400ms ${EASE}`,
           }}
         />
 
@@ -152,26 +113,51 @@ export function DecadeRail({
             ? Math.abs(decades.indexOf(decade) - decades.indexOf(activeDecade))
             : 0;
 
-          let fontSize = 10;
-          let fontWeight = 400;
-          let fontFamily = "var(--font-ui)";
-          let opacity = activeDecade === null ? 0.5 : Math.max(0.3, 1 - distance * 0.12);
-          let height = 22;
-          let color = "var(--ink-faded)";
+          let fontSize: number;
+          let fontWeight: number;
+          let fontFamily: string;
+          let opacity: number;
+          let color: string;
+          let letterSpacing = 0;
 
           if (isActive) {
-            fontSize = 15;
+            fontSize = 18;
             fontWeight = 500;
             fontFamily = "var(--font-display)";
             opacity = 1;
-            height = 32;
-            color = "var(--ink)";
+            color = "var(--moss)";
+            letterSpacing = 0.04;
           } else if (isHovered) {
+            fontSize = 15;
+            fontWeight = 400;
+            fontFamily = "var(--font-display)";
             opacity = 1;
-            fontSize = 13;
-          } else if (distance === 1) {
+            color = "var(--ink)";
+            letterSpacing = 0.02;
+          } else if (activeDecade === null) {
             fontSize = 12;
-            opacity = Math.max(0.45, opacity);
+            fontWeight = 400;
+            fontFamily = "var(--font-ui)";
+            opacity = 0.45;
+            color = "var(--ink-faded)";
+          } else if (distance === 1) {
+            fontSize = 14;
+            fontWeight = 400;
+            fontFamily = "var(--font-display)";
+            opacity = 0.65;
+            color = "var(--ink-soft)";
+          } else if (distance === 2) {
+            fontSize = 12;
+            fontWeight = 400;
+            fontFamily = "var(--font-ui)";
+            opacity = 0.4;
+            color = "var(--ink-faded)";
+          } else {
+            fontSize = 11;
+            fontWeight = 400;
+            fontFamily = "var(--font-ui)";
+            opacity = Math.max(0.2, 0.5 - distance * 0.04);
+            color = "var(--ink-faded)";
           }
 
           return (
@@ -184,18 +170,9 @@ export function DecadeRail({
               onMouseEnter={() => setHoveredDecade(decade)}
               onMouseLeave={() => setHoveredDecade(null)}
               style={{
-                background: isActive
-                  ? "rgba(78,93,66,0.1)"
-                  : isHovered
-                    ? "rgba(78,93,66,0.06)"
-                    : "transparent",
-                border: isActive
-                  ? "1px solid rgba(78,93,66,0.3)"
-                  : "1px solid transparent",
-                borderRadius: 8,
-                padding: "2px 10px",
-                height,
-                minWidth: 44,
+                background: "transparent",
+                border: "none",
+                padding: 0,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -204,16 +181,69 @@ export function DecadeRail({
                 fontSize,
                 fontWeight,
                 color,
+                letterSpacing,
                 opacity,
-                transition: `all 350ms ${EASE}`,
+                transition: `all 400ms ${EASE}`,
                 position: "relative",
                 zIndex: isActive ? 2 : 1,
+                lineHeight: 1,
+                whiteSpace: "nowrap",
               }}
             >
+              {isActive && (
+                <span
+                  style={{
+                    position: "absolute",
+                    left: -14,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    width: 5,
+                    height: 5,
+                    borderRadius: "50%",
+                    background: "var(--moss)",
+                    transition: `opacity 300ms ${EASE}`,
+                  }}
+                />
+              )}
               {decade}s
             </button>
           );
         })}
+
+        {activeDecade !== null && (
+          <button
+            type="button"
+            onClick={() => onSelectDecade(null)}
+            onMouseEnter={() => setHoveredDecade(null)}
+            style={{
+              background: "transparent",
+              border: "none",
+              padding: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              fontFamily: "var(--font-ui)",
+              fontSize: 9,
+              color: "var(--ink-faded)",
+              opacity: 0.35,
+              letterSpacing: 0.06,
+              textTransform: "uppercase",
+              transition: `all 250ms ${EASE}`,
+              marginTop: 4,
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.opacity = "0.7";
+              e.currentTarget.style.color = "var(--moss)";
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.opacity = "0.35";
+              e.currentTarget.style.color = "var(--ink-faded)";
+            }}
+          >
+            All
+          </button>
+        )}
       </div>
     </div>
   );
