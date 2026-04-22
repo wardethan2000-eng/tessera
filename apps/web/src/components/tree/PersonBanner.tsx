@@ -195,41 +195,41 @@ export function PersonBanner({
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               {editingName ? (
-                <div style={{ display: "flex", gap: 6 }}>
-                  <input
-                    autoFocus
-                    value={editNameValue}
-                    onChange={(e) => setEditNameValue(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") { saveField("displayName", editNameValue); setEditingName(false); } if (e.key === "Escape") setEditingName(false); }}
-                    style={{ fontFamily: "var(--font-display)", fontSize: 20, color: "var(--ink)", flex: 1, border: "none", borderBottom: "1px solid var(--moss)", background: "transparent", outline: "none", padding: "2px 0" }}
-                  />
-                  <button onClick={() => { saveField("displayName", editNameValue); setEditingName(false); }} disabled={saving} style={{ fontFamily: "var(--font-ui)", fontSize: 11, color: "var(--moss)", background: "transparent", border: "1px solid var(--moss)", borderRadius: 4, padding: "2px 8px", cursor: saving ? "default" : "pointer", opacity: saving ? 0.5 : 1 }}>{saving ? "..." : "Save"}</button>
-                </div>
+                <input
+                  autoFocus
+                  value={editNameValue}
+                  onChange={(e) => setEditNameValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { saveField("displayName", editNameValue); setEditingName(false); }
+                    if (e.key === "Escape") setEditingName(false);
+                  }}
+                  style={{ fontFamily: "var(--font-display)", fontSize: 20, color: "var(--ink)", width: "100%", border: "none", borderBottom: "2px solid var(--moss)", background: "transparent", outline: "none", padding: "4px 0", lineHeight: 1.2, letterSpacing: "-0.01em" }}
+                />
               ) : (
                 <div onClick={() => { setEditNameValue(displayName); setEditingName(true); }} style={{ fontFamily: "var(--font-display)", fontSize: 20, color: "var(--ink)", lineHeight: 1.2, letterSpacing: "-0.01em", cursor: "text", wordBreak: "break-word" }}>{displayName}</div>
               )}
-              {(!person.birthDateText && !person.deathDateText) && person.birthYear && (
+
+              {(!person.birthDateText && !person.deathDateText) && person.birthYear && !editingName && (
                 <div style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", marginTop: 4 }}>
                   {person.birthYear}{person.deathYear ? ` – ${person.deathYear}` : " –"}
                 </div>
               )}
+
               {editingEssence ? (
-                <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                  <input
-                    autoFocus
-                    value={editEssenceValue}
-                    onChange={(e) => setEditEssenceValue(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") { saveField("essenceLine", editEssenceValue || null); setEditingEssence(false); } if (e.key === "Escape") setEditingEssence(false); }}
-                    style={{ fontFamily: "var(--font-body)", fontSize: 13, fontStyle: "italic", color: "var(--ink-soft)", flex: 1, border: "none", borderBottom: "1px solid var(--moss)", background: "transparent", outline: "none", padding: "2px 0" }}
-                  />
-                  <button onClick={() => { saveField("essenceLine", editEssenceValue || null); setEditingEssence(false); }} disabled={saving} style={{ fontFamily: "var(--font-ui)", fontSize: 11, color: "var(--moss)", background: "transparent", border: "1px solid var(--moss)", borderRadius: 4, padding: "2px 8px", cursor: saving ? "default" : "pointer", opacity: saving ? 0.5 : 1 }}>{saving ? "..." : "Save"}</button>
-                </div>
+                <input
+                  autoFocus
+                  value={editEssenceValue}
+                  onChange={(e) => setEditEssenceValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { saveField("essenceLine", editEssenceValue || null); setEditingEssence(false); }
+                    if (e.key === "Escape") setEditingEssence(false);
+                  }}
+                  style={{ fontFamily: "var(--font-body)", fontSize: 13, fontStyle: "italic", color: "var(--ink-soft)", width: "100%", border: "none", borderBottom: "1px solid var(--moss)", background: "transparent", outline: "none", padding: "4px 0", marginTop: 6 }}
+                />
               ) : (
                 <div
                   onClick={() => { setEditEssenceValue(essenceLine ?? ""); setEditingEssence(true); }}
-                  style={{ fontFamily: "var(--font-body)", fontSize: 13, fontStyle: essenceLine ? "italic" : "normal", color: essenceLine ? "var(--ink-soft)" : "var(--ink-faded)", marginTop: 6, cursor: "text", lineHeight: 1.4, borderBottom: "1px dashed transparent" }}
-                  onMouseEnter={(e) => { e.currentTarget.style.borderBottom = "1px dashed var(--rule)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.borderBottom = "1px dashed transparent"; }}
+                  style={{ fontFamily: "var(--font-body)", fontSize: 13, fontStyle: essenceLine ? "italic" : "normal", color: essenceLine ? "var(--ink-soft)" : "var(--ink-faded)", marginTop: 6, cursor: "text", lineHeight: 1.4 }}
                 >
                   {essenceLine || "Add essence line…"}
                 </div>
