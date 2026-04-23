@@ -267,6 +267,32 @@ function CampaignCard({
     onChanged();
   }
 
+  async function sendTest() {
+    if (
+      !confirm(
+        `Send the next question of "${campaign.name}" right now to all ${campaign.recipients.length} recipient${campaign.recipients.length === 1 ? "" : "s"}? This will advance the schedule.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch(
+        `${API}/api/trees/${treeId}/prompt-campaigns/${campaign.id}/send-test`,
+        { method: "POST", credentials: "include" },
+      );
+      const data = (await res.json()) as { error?: string; sent?: number; recipients?: number };
+      if (!res.ok) {
+        alert(data.error ?? "Could not send test");
+      } else {
+        alert(`Sent to ${data.sent ?? 0} of ${data.recipients ?? 0} recipient${data.recipients === 1 ? "" : "s"}.`);
+      }
+    } finally {
+      setBusy(false);
+      onChanged();
+    }
+  }
+
   const nextDate = new Date(campaign.nextSendAt);
   const isOverdue = nextDate < new Date() && campaign.status === "active";
 
@@ -327,7 +353,8 @@ function CampaignCard({
             {campaign.sentCount} of {campaign.totalCount} sent
           </div>
         </div>
-        <div style={{ display: "flex", gap: 6 }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <SmallBtn onClick={sendTest}>Send test now</SmallBtn>
           {campaign.status === "active" && (
             <SmallBtn onClick={() => patch({ status: "paused" })}>Pause</SmallBtn>
           )}

@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
-import { and, asc, eq, isNull, lte } from "drizzle-orm";
+import { and, eq, lte } from "drizzle-orm";
 import { z } from "zod";
 import * as schema from "@tessera/database";
 import { db } from "../lib/db.js";
@@ -259,12 +259,215 @@ export async function promptCampaignsPlugin(app: FastifyInstance): Promise<void>
     await db.delete(schema.promptCampaigns).where(eq(schema.promptCampaigns.id, id));
     return reply.send({ ok: true });
   });
+
+  /** POST /api/trees/:treeId/prompt-campaigns/:id/send-test — send the next
+   * question of this campaign immediately, regardless of schedule or status.
+   * Advances nextSendAt like a normal tick. Useful for dogfooding. */
+  app.post("/api/trees/:treeId/prompt-campaigns/:id/send-test", async (request, reply) => {
+    const session = await getSession(request.headers);
+    if (!session) return reply.status(401).send({ error: "Unauthorized" });
+
+    const { treeId, id } = request.params as { treeId: string; id: string };
+    const membership = await verifyMembership(treeId, session.user.id);
+    if (!membership) return reply.status(403).send({ error: "Not a member of this tree" });
+    if (!canManageCampaigns(membership.role)) {
+      return reply.status(403).send({ error: "Not allowed" });
+    }
+
+    const campaign = await db.query.promptCampaigns.findFirst({
+      where: (c, { and, eq }) => and(eq(c.id, id), eq(c.treeId, treeId)),
+    });
+    if (!campaign) return reply.status(404).send({ error: "Campaign not found" });
+
+    const result = await processCampaignOnce(campaign, request.log);
+    if (!result.sent) {
+      return reply.status(400).send({ error: result.reason ?? "Nothing to send" });
+    }
+    return reply.send({
+      ok: true,
+      questionId: result.questionId,
+      recipients: result.recipientsAttempted,
+      sent: result.recipientsSent,
+    });
+  });
+}
+
+type CampaignRow = typeof schema.promptCampaigns.$inferSelect;
+
+type ProcessResult =
+  | { sent: false; reason: string }
+  | {
+      sent: true;
+      questionId: string;
+      recipientsAttempted: number;
+      recipientsSent: number;
+    };
+
+/** Send the next unsent question of a single campaign. Extracted so the
+ * scheduler loop and the manual "send test now" endpoint share one code path.
+ * Updates question.sentAt and the campaign's nextSendAt on success. */
+async function processCampaignOnce(
+  campaign: CampaignRow,
+  log: FastifyBaseLogger,
+): Promise<ProcessResult> {
+  const nextQuestion = await db.query.promptCampaignQuestions.findFirst({
+    where: (q, { and, eq, isNull }) =>
+      and(eq(q.campaignId, campaign.id), isNull(q.sentAt)),
+    orderBy: (q, { asc }) => [asc(q.position)],
+  });
+
+  if (!nextQuestion) {
+    await db
+      .update(schema.promptCampaigns)
+      .set({ status: "completed", updatedAt: new Date() })
+      .where(eq(schema.promptCampaigns.id, campaign.id));
+    return { sent: false, reason: "Campaign has no unsent questions left" };
+  }
+
+  const recipients = await db
+    .select()
+    .from(schema.promptCampaignRecipients)
+    .where(eq(schema.promptCampaignRecipients.campaignId, campaign.id));
+
+  if (recipients.length === 0) {
+    log.warn({ campaignId: campaign.id }, "Campaign has no recipients; pausing");
+    await db
+      .update(schema.promptCampaigns)
+      .set({ status: "paused", updatedAt: new Date() })
+      .where(eq(schema.promptCampaigns.id, campaign.id));
+    return { sent: false, reason: "Campaign has no recipients" };
+  }
+
+  const tree = await db.query.trees.findFirst({
+    where: (t, { eq }) => eq(t.id, campaign.treeId),
+  });
+  const fromUser = await db.query.users.findFirst({
+    where: (u, { eq }) => eq(u.id, campaign.fromUserId),
+  });
+  const person = await db.query.people.findFirst({
+    where: (p, { eq }) => eq(p.id, campaign.toPersonId),
+  });
+  if (!tree || !fromUser || !person) {
+    log.error({ campaignId: campaign.id }, "Campaign references missing entity; pausing");
+    await db
+      .update(schema.promptCampaigns)
+      .set({ status: "paused", updatedAt: new Date() })
+      .where(eq(schema.promptCampaigns.id, campaign.id));
+    return { sent: false, reason: "Missing related record (tree, sender, or subject)" };
+  }
+
+  const [prompt] = await db
+    .insert(schema.prompts)
+    .values({
+      treeId: campaign.treeId,
+      fromUserId: campaign.fromUserId,
+      toPersonId: campaign.toPersonId,
+      questionText: nextQuestion.questionText,
+      status: "pending",
+    })
+    .returning();
+  if (!prompt) {
+    return { sent: false, reason: "Failed to create prompt row" };
+  }
+
+  const fromName = fromUser.name ?? fromUser.email ?? "A family member";
+  const personName = person.displayName ?? "your family member";
+  let sentCount = 0;
+
+  for (const recipient of recipients) {
+    const email = recipient.email.toLowerCase();
+    if (!(await mayEmailUser(email, "promptsEmail"))) {
+      log.info({ campaignId: campaign.id, email }, "Recipient opted out; skipping");
+      continue;
+    }
+    const rawToken = generateToken();
+    const tokenHash = hashToken(rawToken);
+    const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+    const [link] = await db
+      .insert(schema.promptReplyLinks)
+      .values({
+        treeId: campaign.treeId,
+        promptId: prompt.id,
+        email,
+        tokenHash,
+        status: "pending",
+        createdByUserId: campaign.fromUserId,
+        expiresAt,
+      })
+      .returning();
+    if (!link) continue;
+
+    const replyUrl = `${WEB_URL}/prompts/reply?token=${encodeURIComponent(rawToken)}`;
+    try {
+      await mailer.sendMail({
+        from: MAIL_FROM,
+        to: email,
+        subject: `${campaign.name} — a question for ${personName}`,
+        html: `
+          <div style="font-family: Georgia, serif; max-width: 560px; margin: 0 auto; padding: 32px 20px; color: #1C1915; background: #F6F1E7;">
+            <h1 style="font-size: 24px; font-weight: 400; margin: 0 0 14px;">A weekly question</h1>
+            <p style="font-size: 15px; line-height: 1.7; color: #403A2E; margin: 0 0 12px;">
+              This is part of <strong>${campaign.name}</strong>, a series ${fromName} is gathering for the family archive about <strong>${personName}</strong>.
+            </p>
+            <blockquote style="margin: 0 0 20px; padding: 14px 16px; border-left: 3px solid #B08B3E; background: #EDE6D6; color: #1C1915;">
+              ${nextQuestion.questionText}
+            </blockquote>
+            <p style="margin: 0 0 24px;">
+              <a href="${replyUrl}"
+                 style="background: #4E5D42; color: #F6F1E7; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-size: 15px; display: inline-block;">
+                Share a story, voice note, photo, or document
+              </a>
+            </p>
+            <p style="font-size: 12px; color: #847A66; line-height: 1.6;">
+              This link is private and expires in 14 days. You can reply or skip — another question will arrive in ${campaign.cadenceDays} day${campaign.cadenceDays === 1 ? "" : "s"}.
+            </p>
+          </div>
+        `,
+        text: `${fromName} asked: "${nextQuestion.questionText}"\n\nReply: ${replyUrl}\n\nThis private link expires in 14 days.`,
+      });
+      sentCount += 1;
+    } catch (err) {
+      log.error(
+        { err, campaignId: campaign.id, email },
+        "Failed to send campaign email; revoking link",
+      );
+      await db
+        .delete(schema.promptReplyLinks)
+        .where(eq(schema.promptReplyLinks.id, link.id));
+    }
+  }
+
+  await db
+    .update(schema.promptCampaignQuestions)
+    .set({ sentAt: new Date(), sentPromptId: prompt.id })
+    .where(eq(schema.promptCampaignQuestions.id, nextQuestion.id));
+
+  const advance = new Date(Date.now() + campaign.cadenceDays * 24 * 60 * 60 * 1000);
+  await db
+    .update(schema.promptCampaigns)
+    .set({ nextSendAt: advance, lastSentAt: new Date(), updatedAt: new Date() })
+    .where(eq(schema.promptCampaigns.id, campaign.id));
+
+  log.info(
+    {
+      campaignId: campaign.id,
+      questionId: nextQuestion.id,
+      recipients: recipients.length,
+      sent: sentCount,
+    },
+    "Campaign question sent",
+  );
+
+  return {
+    sent: true,
+    questionId: nextQuestion.id,
+    recipientsAttempted: recipients.length,
+    recipientsSent: sentCount,
+  };
 }
 
 /** Run one tick of the campaign scheduler. Sends one due question per
- * campaign, creates email reply links per recipient, and advances the
- * campaign's next_send_at by cadenceDays. Idempotent per-question:
- * questions already marked sent_at are not re-sent. */
+ * active campaign whose nextSendAt is in the past. */
 export async function processDueCampaigns(log: FastifyBaseLogger): Promise<void> {
   const now = new Date();
   const due = await db
@@ -279,146 +482,7 @@ export async function processDueCampaigns(log: FastifyBaseLogger): Promise<void>
 
   for (const campaign of due) {
     try {
-      const nextQuestion = await db.query.promptCampaignQuestions.findFirst({
-        where: (q, { and, eq, isNull }) =>
-          and(eq(q.campaignId, campaign.id), isNull(q.sentAt)),
-        orderBy: (q, { asc }) => [asc(q.position)],
-      });
-
-      if (!nextQuestion) {
-        await db
-          .update(schema.promptCampaigns)
-          .set({ status: "completed", updatedAt: new Date() })
-          .where(eq(schema.promptCampaigns.id, campaign.id));
-        continue;
-      }
-
-      const recipients = await db
-        .select()
-        .from(schema.promptCampaignRecipients)
-        .where(eq(schema.promptCampaignRecipients.campaignId, campaign.id));
-
-      if (recipients.length === 0) {
-        log.warn({ campaignId: campaign.id }, "Campaign has no recipients; skipping send");
-        await db
-          .update(schema.promptCampaigns)
-          .set({ status: "paused", updatedAt: new Date() })
-          .where(eq(schema.promptCampaigns.id, campaign.id));
-        continue;
-      }
-
-      const tree = await db.query.trees.findFirst({
-        where: (t, { eq }) => eq(t.id, campaign.treeId),
-      });
-      const fromUser = await db.query.users.findFirst({
-        where: (u, { eq }) => eq(u.id, campaign.fromUserId),
-      });
-      const person = await db.query.people.findFirst({
-        where: (p, { eq }) => eq(p.id, campaign.toPersonId),
-      });
-      if (!tree || !fromUser || !person) {
-        log.error({ campaignId: campaign.id }, "Campaign references missing entity; pausing");
-        await db
-          .update(schema.promptCampaigns)
-          .set({ status: "paused", updatedAt: new Date() })
-          .where(eq(schema.promptCampaigns.id, campaign.id));
-        continue;
-      }
-
-      const [prompt] = await db
-        .insert(schema.prompts)
-        .values({
-          treeId: campaign.treeId,
-          fromUserId: campaign.fromUserId,
-          toPersonId: campaign.toPersonId,
-          questionText: nextQuestion.questionText,
-          status: "pending",
-        })
-        .returning();
-      if (!prompt) throw new Error("Failed to create prompt row");
-
-      const fromName = fromUser.name ?? fromUser.email ?? "A family member";
-      const personName = person.displayName ?? "your family member";
-
-      for (const recipient of recipients) {
-        const email = recipient.email.toLowerCase();
-        if (!(await mayEmailUser(email, "promptsEmail"))) {
-          log.info({ campaignId: campaign.id, email }, "Recipient opted out; skipping");
-          continue;
-        }
-        const rawToken = generateToken();
-        const tokenHash = hashToken(rawToken);
-        const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
-        const [link] = await db
-          .insert(schema.promptReplyLinks)
-          .values({
-            treeId: campaign.treeId,
-            promptId: prompt.id,
-            email,
-            tokenHash,
-            status: "pending",
-            createdByUserId: campaign.fromUserId,
-            expiresAt,
-          })
-          .returning();
-        if (!link) continue;
-
-        const replyUrl = `${WEB_URL}/prompts/reply?token=${encodeURIComponent(rawToken)}`;
-        try {
-          await mailer.sendMail({
-            from: MAIL_FROM,
-            to: email,
-            subject: `${campaign.name} — a question for ${personName}`,
-            html: `
-              <div style="font-family: Georgia, serif; max-width: 560px; margin: 0 auto; padding: 32px 20px; color: #1C1915; background: #F6F1E7;">
-                <h1 style="font-size: 24px; font-weight: 400; margin: 0 0 14px;">A weekly question</h1>
-                <p style="font-size: 15px; line-height: 1.7; color: #403A2E; margin: 0 0 12px;">
-                  This is part of <strong>${campaign.name}</strong>, a series ${fromName} is gathering for the family archive about <strong>${personName}</strong>.
-                </p>
-                <blockquote style="margin: 0 0 20px; padding: 14px 16px; border-left: 3px solid #B08B3E; background: #EDE6D6; color: #1C1915;">
-                  ${nextQuestion.questionText}
-                </blockquote>
-                <p style="margin: 0 0 24px;">
-                  <a href="${replyUrl}"
-                     style="background: #4E5D42; color: #F6F1E7; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-size: 15px; display: inline-block;">
-                    Share a story, voice note, photo, or document
-                  </a>
-                </p>
-                <p style="font-size: 12px; color: #847A66; line-height: 1.6;">
-                  This link is private and expires in 14 days. You can reply or skip — another question will arrive in ${campaign.cadenceDays} day${campaign.cadenceDays === 1 ? "" : "s"}.
-                </p>
-              </div>
-            `,
-            text: `${fromName} asked: "${nextQuestion.questionText}"\n\nReply: ${replyUrl}\n\nThis private link expires in 14 days.`,
-          });
-        } catch (err) {
-          log.error(
-            { err, campaignId: campaign.id, email },
-            "Failed to send campaign email; revoking link",
-          );
-          await db
-            .delete(schema.promptReplyLinks)
-            .where(eq(schema.promptReplyLinks.id, link.id));
-        }
-      }
-
-      await db
-        .update(schema.promptCampaignQuestions)
-        .set({ sentAt: new Date(), sentPromptId: prompt.id })
-        .where(eq(schema.promptCampaignQuestions.id, nextQuestion.id));
-
-      const advance = new Date(
-        now.getTime() + campaign.cadenceDays * 24 * 60 * 60 * 1000,
-      );
-      await db
-        .update(schema.promptCampaigns)
-        .set({ nextSendAt: advance, lastSentAt: new Date(), updatedAt: new Date() })
-        .where(eq(schema.promptCampaigns.id, campaign.id));
-
-      log.info(
-        { campaignId: campaign.id, questionId: nextQuestion.id, recipients: recipients.length },
-        "Campaign question sent",
-      );
+      await processCampaignOnce(campaign, log);
     } catch (err) {
       log.error({ err, campaignId: campaign.id }, "Failed to process campaign tick");
     }
@@ -466,6 +530,4 @@ export function startPromptCampaignScheduler(
   };
 }
 
-// Suppress unused warnings for imports kept for clarity.
-void asc;
-void isNull;
+

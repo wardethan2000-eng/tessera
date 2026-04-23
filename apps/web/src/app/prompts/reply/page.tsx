@@ -15,8 +15,9 @@ import { getProxiedMediaUrl } from "@/lib/media-url";
 import { usePendingVoiceTranscriptionRefresh } from "@/lib/usePendingVoiceTranscriptionRefresh";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const DRAFT_PREFIX = "tessera-reply-draft:";
 
-type MemoryKind = "story" | "photo" | "voice" | "document" | "other";
+type MemoryKind = "voice" | "story" | "photo";
 
 interface PromptReplyDetails {
   promptId: string;
@@ -31,7 +32,7 @@ interface PromptReplyDetails {
 
 interface SubmittedReplyMemory {
   id: string;
-  kind: MemoryKind;
+  kind: "story" | "photo" | "voice" | "document" | "other";
   title: string;
   body?: string | null;
   mediaUrl?: string | null;
@@ -47,9 +48,7 @@ function getVoiceTranscriptLabel(memory: SubmittedReplyMemory | null): string | 
   if (memory.transcriptStatus === "completed" && memory.transcriptText) {
     return memory.transcriptText;
   }
-  if (memory.transcriptStatus === "completed") {
-    return "Transcript unavailable.";
-  }
+  if (memory.transcriptStatus === "completed") return "Transcript unavailable.";
   if (memory.transcriptStatus === "failed") {
     return memory.transcriptError ?? "Transcription failed.";
   }
@@ -59,9 +58,39 @@ function getVoiceTranscriptLabel(memory: SubmittedReplyMemory | null): string | 
   return null;
 }
 
+function deriveTitle(opts: {
+  kind: MemoryKind;
+  body: string;
+  file: File | null;
+  question: string;
+}): string {
+  const { kind, body, file, question } = opts;
+  if (kind === "story") {
+    const trimmed = body.trim();
+    if (trimmed) {
+      const firstSentence = trimmed.split(/[.!?\n]/)[0]?.trim() ?? trimmed;
+      return firstSentence.slice(0, 90) || question.slice(0, 90);
+    }
+  }
+  if (kind === "photo" && file) {
+    const base = file.name.replace(/\.[^.]+$/, "");
+    if (base) return base.slice(0, 90);
+  }
+  if (kind === "voice") {
+    return `Voice reply — ${question.slice(0, 60)}`;
+  }
+  return question.slice(0, 90);
+}
+
 export default function PromptReplyPage() {
   return (
-    <Suspense fallback={<main style={pageStyle}><p style={smallTextStyle}>Loading…</p></main>}>
+    <Suspense
+      fallback={
+        <main style={pageStyle}>
+          <p style={hintStyle}>Loading…</p>
+        </main>
+      }
+    >
       <PromptReplyContent />
     </Suspense>
   );
@@ -75,25 +104,25 @@ function PromptReplyContent() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [kind, setKind] = useState<MemoryKind>("story");
-  const [title, setTitle] = useState("");
+  const [kind, setKind] = useState<MemoryKind>("voice");
   const [body, setBody] = useState("");
-  const [dateOfEventText, setDateOfEventText] = useState("");
-  const [submitterName, setSubmitterName] = useState("");
   const [file, setFile] = useState<File | null>(null);
-  const [voiceInputMode, setVoiceInputMode] = useState<"upload" | "record">("upload");
+  const [submitterName, setSubmitterName] = useState("");
+  const [showDetails, setShowDetails] = useState(false);
+  const [titleOverride, setTitleOverride] = useState("");
+  const [dateOfEventText, setDateOfEventText] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submittedMemory, setSubmittedMemory] = useState<SubmittedReplyMemory | null>(null);
 
+  // Load reply details
   useEffect(() => {
     if (!token) {
-      setLoadError("No reply token provided.");
+      setLoadError("No reply link provided.");
       setLoading(false);
       return;
     }
-
     fetch(`${API}/api/prompt-replies/${encodeURIComponent(token)}`)
       .then(async (res) => {
         if (!res.ok) {
@@ -112,19 +141,63 @@ function PromptReplyContent() {
       });
   }, [token]);
 
-  const needsFile = kind === "photo" || kind === "voice" || kind === "document";
-  const usingVoiceRecorder = kind === "voice" && voiceInputMode === "record";
+  // Restore draft text/name from localStorage
+  const draftKey = token ? `${DRAFT_PREFIX}${token}` : null;
+  useEffect(() => {
+    if (!draftKey) return;
+    try {
+      const raw = window.localStorage.getItem(draftKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as {
+        body?: string;
+        submitterName?: string;
+        kind?: MemoryKind;
+        titleOverride?: string;
+        dateOfEventText?: string;
+      };
+      if (parsed.body) setBody(parsed.body);
+      if (parsed.submitterName) setSubmitterName(parsed.submitterName);
+      if (parsed.kind === "voice" || parsed.kind === "story" || parsed.kind === "photo") {
+        setKind(parsed.kind);
+      }
+      if (parsed.titleOverride) setTitleOverride(parsed.titleOverride);
+      if (parsed.dateOfEventText) setDateOfEventText(parsed.dateOfEventText);
+    } catch {
+      // ignore
+    }
+  }, [draftKey]);
+
+  // Save draft on changes (text only — files are too large for localStorage)
+  useEffect(() => {
+    if (!draftKey || submitted) return;
+    try {
+      window.localStorage.setItem(
+        draftKey,
+        JSON.stringify({ body, submitterName, kind, titleOverride, dateOfEventText }),
+      );
+    } catch {
+      // ignore
+    }
+  }, [draftKey, body, submitterName, kind, titleOverride, dateOfEventText, submitted]);
+
+  // Clear draft on submit
+  useEffect(() => {
+    if (submitted && draftKey) {
+      try {
+        window.localStorage.removeItem(draftKey);
+      } catch {
+        // ignore
+      }
+    }
+  }, [submitted, draftKey]);
 
   const acceptedFileType = useMemo(() => {
     if (kind === "photo") return "image/*";
-    if (kind === "voice") return "audio/*";
-    if (kind === "document") return ".pdf,.doc,.docx,application/pdf,application/msword";
     return undefined;
   }, [kind]);
 
   const refreshSubmittedMemory = useCallback(async () => {
     if (!token || !submittedMemory?.id) return;
-
     const res = await fetch(
       `${API}/api/prompt-replies/${encodeURIComponent(token)}/reply-status?memoryId=${encodeURIComponent(submittedMemory.id)}`,
     );
@@ -144,23 +217,27 @@ function PromptReplyContent() {
     if (!token || !details) return;
     setSubmitError(null);
 
-    if (!title.trim()) {
-      setSubmitError("Please add a title.");
+    const needsFile = kind === "voice" || kind === "photo";
+    if (needsFile && !file) {
+      setSubmitError(
+        kind === "voice"
+          ? "Please record or upload your voice first."
+          : "Please choose a photo to share.",
+      );
       return;
     }
     if (kind === "story" && !body.trim()) {
-      setSubmitError("Stories need some text.");
+      setSubmitError("Please type a few words to share.");
       return;
     }
-    if (needsFile && !file) {
-      setSubmitError("Please upload a file for this reply.");
-      return;
-    }
+
+    const finalTitle =
+      titleOverride.trim() ||
+      deriveTitle({ kind, body, file, question: details.questionText });
 
     setSubmitting(true);
     try {
       let mediaId: string | undefined;
-
       if (needsFile && file) {
         const presignRes = await fetch(
           `${API}/api/prompt-replies/${encodeURIComponent(token)}/media/presign`,
@@ -184,13 +261,9 @@ function PromptReplyContent() {
         const uploadRes = await fetch(data.uploadUrl, {
           method: "PUT",
           body: file,
-          headers: {
-            "Content-Type": file.type || "application/octet-stream",
-          },
+          headers: { "Content-Type": file.type || "application/octet-stream" },
         });
-        if (!uploadRes.ok) {
-          throw new Error("Upload failed");
-        }
+        if (!uploadRes.ok) throw new Error("Upload failed");
       }
 
       const res = await fetch(`${API}/api/prompt-replies/${encodeURIComponent(token)}/reply`, {
@@ -198,7 +271,7 @@ function PromptReplyContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           kind,
-          title: title.trim(),
+          title: finalTitle,
           body: body.trim() || undefined,
           dateOfEventText: dateOfEventText.trim() || undefined,
           submitterName: submitterName.trim() || undefined,
@@ -223,7 +296,7 @@ function PromptReplyContent() {
   if (loading) {
     return (
       <main style={pageStyle}>
-        <p style={smallTextStyle}>Loading reply link…</p>
+        <p style={hintStyle}>Loading reply link…</p>
       </main>
     );
   }
@@ -232,8 +305,8 @@ function PromptReplyContent() {
     return (
       <main style={pageStyle}>
         <div style={cardStyle}>
-          <h1 style={headingStyle}>Reply link unavailable</h1>
-          <p style={bodyStyle}>{loadError ?? "This link is not available."}</p>
+          <h1 style={headlineStyle}>Reply link unavailable</h1>
+          <p style={leadStyle}>{loadError ?? "This link is not available."}</p>
         </div>
       </main>
     );
@@ -245,9 +318,10 @@ function PromptReplyContent() {
     return (
       <main style={pageStyle}>
         <div style={cardStyle}>
-          <h1 style={headingStyle}>Thank you</h1>
-          <p style={bodyStyle}>
-            Your reply has been added to <em>{details.treeName}</em>.
+          <div style={thankYouMarkStyle}>✓</div>
+          <h1 style={headlineStyle}>Thank you.</h1>
+          <p style={leadStyle}>
+            Your reply was added to <em>{details.treeName}</em>. The family will see it soon.
           </p>
           {submittedMemory?.kind === "voice" && (
             <div style={submissionDetailStyle}>
@@ -257,7 +331,7 @@ function PromptReplyContent() {
                 </audio>
               )}
               <div style={transcriptCardStyle}>
-                <div style={transcriptLabelStyle}>Transcript</div>
+                <div style={transcriptLabelStyle}>What you said</div>
                 <div style={transcriptBodyStyle}>
                   {transcriptLabel ?? "Your recording was saved."}
                 </div>
@@ -277,147 +351,188 @@ function PromptReplyContent() {
 
   return (
     <main style={pageStyle}>
-      <form onSubmit={handleSubmit} style={formCardStyle}>
-        <p style={smallTextStyle}>
-          Private reply for <strong>{details.treeName}</strong>
-        </p>
-        <h1 style={headingStyle}>{details.fromUserName} asked:</h1>
-        <blockquote style={quoteStyle}>{details.questionText}</blockquote>
-        <p style={smallTextStyle}>
-          For {details.toPersonName ?? "your family member"} · Link expires{" "}
-          {new Date(details.expiresAt).toLocaleDateString()}
+      <form onSubmit={handleSubmit} style={cardStyle}>
+        <p style={topMetaStyle}>
+          A private question for <strong>{details.treeName}</strong>
         </p>
 
-        <label style={labelStyle}>
-          Your name (optional)
-          <input
-            value={submitterName}
-            onChange={(e) => setSubmitterName(e.target.value)}
-            maxLength={200}
-            style={inputStyle}
-            placeholder="How should this be credited?"
-          />
-        </label>
+        <p style={askedByStyle}>{details.fromUserName} asks:</p>
+        <h1 style={questionStyle}>{details.questionText}</h1>
+        {details.toPersonName && (
+          <p style={subjectStyle}>About {details.toPersonName}</p>
+        )}
 
-        <label style={labelStyle}>
-          Reply type
-          <select
-            value={kind}
-            onChange={(e) => {
-              setKind(e.target.value as MemoryKind);
+        <div style={modeRowStyle} role="tablist" aria-label="How would you like to reply">
+          <ModeButton
+            active={kind === "voice"}
+            onClick={() => {
+              setKind("voice");
               setFile(null);
-              setVoiceInputMode("upload");
             }}
-            style={inputStyle}
-          >
-            <option value="story">Story</option>
-            <option value="photo">Photo</option>
-            <option value="voice">Voice note</option>
-            <option value="document">Document</option>
-            <option value="other">Other</option>
-          </select>
-        </label>
-
-        <label style={labelStyle}>
-          Title
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            required
-            maxLength={200}
-            style={inputStyle}
-            placeholder="Give this memory a short title"
+            icon="🎤"
+            label="Speak"
           />
-        </label>
-
-        <label style={labelStyle}>
-          Approximate date (optional)
-          <input
-            value={dateOfEventText}
-            onChange={(e) => setDateOfEventText(e.target.value)}
-            maxLength={100}
-            style={inputStyle}
-            placeholder="e.g. Summer 1978"
+          <ModeButton
+            active={kind === "story"}
+            onClick={() => {
+              setKind("story");
+              setFile(null);
+            }}
+            icon="✎"
+            label="Type"
           />
-        </label>
+          <ModeButton
+            active={kind === "photo"}
+            onClick={() => {
+              setKind("photo");
+              setFile(null);
+            }}
+            icon="📷"
+            label="Photo"
+          />
+        </div>
+
+        {kind === "voice" && (
+          <div style={primaryFieldStyle}>
+            <VoiceRecorderField value={file} onChange={setFile} />
+            <p style={hintStyle}>
+              Tap the big button to record. Take your time. You can stop and try again.
+            </p>
+          </div>
+        )}
 
         {kind === "story" && (
-          <label style={labelStyle}>
-            Story
+          <div style={primaryFieldStyle}>
             <textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
-              rows={7}
-              required
-              style={textAreaStyle}
-              placeholder="Share the memory in your own words"
+              rows={8}
+              placeholder="Write whatever comes to mind…"
+              style={bigTextAreaStyle}
+              autoFocus
             />
-          </label>
-        )}
-
-        {kind === "voice" && needsFile && (
-          <div style={labelStyle}>
-            Voice source
-            <div style={toggleGroupStyle}>
-              <button
-                type="button"
-                onClick={() => {
-                  setVoiceInputMode("record");
-                  setFile(null);
-                }}
-                style={{
-                  ...toggleButtonStyle,
-                  ...(voiceInputMode === "record" ? toggleButtonActiveStyle : null),
-                }}
-              >
-                Record in browser
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setVoiceInputMode("upload");
-                  setFile(null);
-                }}
-                style={{
-                  ...toggleButtonStyle,
-                  ...(voiceInputMode === "upload" ? toggleButtonActiveStyle : null),
-                }}
-              >
-                Upload file
-              </button>
-            </div>
+            <p style={hintStyle}>Any length is fine. Your words are saved as you type.</p>
           </div>
         )}
 
-        {needsFile && !usingVoiceRecorder && (
-          <label style={labelStyle}>
-            Upload file
-            <input
-              type="file"
-              accept={acceptedFileType}
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              required
-              style={inputStyle}
+        {kind === "photo" && (
+          <div style={primaryFieldStyle}>
+            <label style={photoDropStyle}>
+              <input
+                type="file"
+                accept={acceptedFileType}
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                style={{ display: "none" }}
+              />
+              <span style={photoDropIconStyle}>📷</span>
+              <span style={photoDropLabelStyle}>
+                {file ? file.name : "Tap to choose a photo"}
+              </span>
+            </label>
+            <textarea
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              rows={3}
+              placeholder="Add a note about this photo (optional)…"
+              style={smallTextAreaStyle}
             />
-          </label>
-        )}
-
-        {usingVoiceRecorder && (
-          <div style={labelStyle}>
-            Recording
-            <VoiceRecorderField value={file} onChange={setFile} />
           </div>
         )}
 
-        {submitError && (
-          <p style={{ ...smallTextStyle, color: "#8B2F2F" }}>{submitError}</p>
-        )}
-
-        <button type="submit" disabled={submitting} style={buttonStyle}>
-          {submitting ? "Submitting…" : "Submit reply"}
+        <button
+          type="submit"
+          disabled={submitting}
+          style={{
+            ...primaryButtonStyle,
+            opacity: submitting ? 0.6 : 1,
+            cursor: submitting ? "wait" : "pointer",
+          }}
+        >
+          {submitting ? "Sending…" : "Send my reply"}
         </button>
+
+        {submitError && <p style={errorStyle}>{submitError}</p>}
+
+        <button
+          type="button"
+          onClick={() => setShowDetails((v) => !v)}
+          style={moreButtonStyle}
+        >
+          {showDetails ? "Hide details" : "More details (optional)"}
+        </button>
+
+        {showDetails && (
+          <div style={detailsBlockStyle}>
+            <label style={smallLabelStyle}>
+              Your name (so we can credit you)
+              <input
+                value={submitterName}
+                onChange={(e) => setSubmitterName(e.target.value)}
+                maxLength={200}
+                placeholder="Optional"
+                style={smallInputStyle}
+              />
+            </label>
+
+            <label style={smallLabelStyle}>
+              Approximate date of this memory
+              <input
+                value={dateOfEventText}
+                onChange={(e) => setDateOfEventText(e.target.value)}
+                maxLength={100}
+                placeholder="e.g. Summer 1978"
+                style={smallInputStyle}
+              />
+            </label>
+
+            <label style={smallLabelStyle}>
+              Title (we'll write one for you if blank)
+              <input
+                value={titleOverride}
+                onChange={(e) => setTitleOverride(e.target.value)}
+                maxLength={200}
+                placeholder="Optional"
+                style={smallInputStyle}
+              />
+            </label>
+          </div>
+        )}
+
+        <p style={footerStyle}>
+          This private link expires {new Date(details.expiresAt).toLocaleDateString()}.
+        </p>
       </form>
     </main>
+  );
+}
+
+function ModeButton({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: string;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      style={{
+        ...modeButtonStyle,
+        ...(active ? modeButtonActiveStyle : null),
+      }}
+    >
+      <span style={modeIconStyle} aria-hidden>
+        {icon}
+      </span>
+      <span>{label}</span>
+    </button>
   );
 }
 
@@ -426,60 +541,197 @@ const pageStyle: CSSProperties = {
   background: "var(--paper)",
   color: "var(--ink)",
   display: "flex",
-  alignItems: "center",
+  alignItems: "flex-start",
   justifyContent: "center",
-  padding: 20,
+  padding: "32px 16px 80px",
 };
 
 const cardStyle: CSSProperties = {
-  width: "min(560px, 94vw)",
+  width: "min(640px, 100%)",
   background: "var(--paper-deep)",
   border: "1px solid var(--rule)",
-  borderRadius: 12,
-  padding: "30px 24px",
-};
-
-const formCardStyle: CSSProperties = {
-  ...cardStyle,
+  borderRadius: 14,
+  padding: "32px 28px",
   display: "flex",
   flexDirection: "column",
-  gap: 14,
+  gap: 18,
 };
 
-const headingStyle: CSSProperties = {
+const topMetaStyle: CSSProperties = {
+  margin: 0,
+  fontFamily: "var(--font-ui)",
+  fontSize: 13,
+  letterSpacing: "0.06em",
+  textTransform: "uppercase",
+  color: "var(--ink-faded)",
+};
+
+const askedByStyle: CSSProperties = {
+  margin: "8px 0 0",
+  fontFamily: "var(--font-ui)",
+  fontSize: 16,
+  color: "var(--ink-soft)",
+};
+
+const questionStyle: CSSProperties = {
   margin: 0,
   fontFamily: "var(--font-display)",
-  fontSize: 30,
+  fontSize: 32,
+  fontWeight: 400,
+  lineHeight: 1.25,
+  color: "var(--ink)",
+};
+
+const subjectStyle: CSSProperties = {
+  margin: 0,
+  fontFamily: "var(--font-ui)",
+  fontSize: 14,
+  color: "var(--ink-faded)",
+};
+
+const headlineStyle: CSSProperties = {
+  margin: 0,
+  fontFamily: "var(--font-display)",
+  fontSize: 32,
   fontWeight: 400,
   lineHeight: 1.2,
 };
 
-const bodyStyle: CSSProperties = {
+const leadStyle: CSSProperties = {
   margin: 0,
   fontFamily: "var(--font-body)",
-  fontSize: 16,
+  fontSize: 18,
   lineHeight: 1.6,
   color: "var(--ink-soft)",
 };
 
-const smallTextStyle: CSSProperties = {
+const modeRowStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(3, 1fr)",
+  gap: 8,
+  marginTop: 4,
+};
+
+const modeButtonStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 6,
+  padding: "16px 8px",
+  border: "1px solid var(--rule)",
+  borderRadius: 12,
+  background: "var(--paper)",
+  color: "var(--ink-soft)",
+  fontFamily: "var(--font-ui)",
+  fontSize: 15,
+  fontWeight: 500,
+  cursor: "pointer",
+};
+
+const modeButtonActiveStyle: CSSProperties = {
+  background: "var(--moss)",
+  color: "#fff",
+  borderColor: "var(--moss)",
+};
+
+const modeIconStyle: CSSProperties = {
+  fontSize: 24,
+  lineHeight: 1,
+};
+
+const primaryFieldStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 10,
+};
+
+const bigTextAreaStyle: CSSProperties = {
+  width: "100%",
+  border: "1px solid var(--rule)",
+  borderRadius: 12,
+  padding: "16px 14px",
+  background: "var(--paper)",
+  color: "var(--ink)",
+  fontFamily: "var(--font-body)",
+  fontSize: 19,
+  lineHeight: 1.55,
+  resize: "vertical",
+  minHeight: 180,
+};
+
+const smallTextAreaStyle: CSSProperties = {
+  ...bigTextAreaStyle,
+  fontSize: 16,
+  minHeight: 70,
+};
+
+const photoDropStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 10,
+  padding: "32px 16px",
+  border: "2px dashed var(--rule)",
+  borderRadius: 12,
+  background: "var(--paper)",
+  cursor: "pointer",
+  textAlign: "center",
+};
+
+const photoDropIconStyle: CSSProperties = {
+  fontSize: 38,
+  lineHeight: 1,
+};
+
+const photoDropLabelStyle: CSSProperties = {
+  fontFamily: "var(--font-ui)",
+  fontSize: 16,
+  color: "var(--ink-soft)",
+};
+
+const primaryButtonStyle: CSSProperties = {
+  marginTop: 6,
+  border: "none",
+  borderRadius: 12,
+  padding: "18px 20px",
+  background: "var(--moss)",
+  color: "#fff",
+  fontFamily: "var(--font-ui)",
+  fontSize: 19,
+  fontWeight: 600,
+  cursor: "pointer",
+};
+
+const errorStyle: CSSProperties = {
   margin: 0,
   fontFamily: "var(--font-ui)",
-  fontSize: 13,
+  fontSize: 14,
+  color: "#8B2F2F",
+};
+
+const moreButtonStyle: CSSProperties = {
+  alignSelf: "flex-start",
+  background: "transparent",
+  border: "none",
+  padding: 0,
   color: "var(--ink-faded)",
+  fontFamily: "var(--font-ui)",
+  fontSize: 13,
+  textDecoration: "underline",
+  cursor: "pointer",
 };
 
-const quoteStyle: CSSProperties = {
-  margin: 0,
-  padding: "12px 14px",
-  borderLeft: "3px solid var(--gilt)",
-  background: "var(--paper)",
-  fontFamily: "var(--font-body)",
-  fontSize: 17,
-  lineHeight: 1.6,
+const detailsBlockStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 12,
+  borderTop: "1px solid var(--rule)",
+  paddingTop: 16,
 };
 
-const labelStyle: CSSProperties = {
+const smallLabelStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
   gap: 6,
@@ -488,8 +740,7 @@ const labelStyle: CSSProperties = {
   color: "var(--ink-soft)",
 };
 
-const inputStyle: CSSProperties = {
-  width: "100%",
+const smallInputStyle: CSSProperties = {
   border: "1px solid var(--rule)",
   borderRadius: 8,
   padding: "9px 10px",
@@ -499,40 +750,38 @@ const inputStyle: CSSProperties = {
   fontSize: 14,
 };
 
-const toggleGroupStyle: CSSProperties = {
-  display: "flex",
-  gap: 8,
-  padding: 4,
-  borderRadius: 8,
-  border: "1px solid var(--rule)",
-  background: "var(--paper)",
-};
-
-const toggleButtonStyle: CSSProperties = {
-  flex: 1,
-  border: "none",
-  borderRadius: 6,
-  padding: "9px 10px",
-  background: "transparent",
-  color: "var(--ink-faded)",
+const footerStyle: CSSProperties = {
+  margin: 0,
   fontFamily: "var(--font-ui)",
   fontSize: 12,
-  cursor: "pointer",
+  color: "var(--ink-faded)",
+  textAlign: "center",
 };
 
-const toggleButtonActiveStyle: CSSProperties = {
-  background: "var(--paper-deep)",
-  color: "var(--ink)",
+const hintStyle: CSSProperties = {
+  margin: 0,
+  fontFamily: "var(--font-ui)",
+  fontSize: 14,
+  color: "var(--ink-faded)",
+  lineHeight: 1.5,
 };
 
-const textAreaStyle: CSSProperties = {
-  ...inputStyle,
-  fontFamily: "var(--font-body)",
-  resize: "vertical",
+const thankYouMarkStyle: CSSProperties = {
+  width: 56,
+  height: 56,
+  borderRadius: "50%",
+  background: "var(--moss)",
+  color: "#fff",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontSize: 28,
+  fontFamily: "var(--font-ui)",
+  marginBottom: 4,
 };
 
 const submissionDetailStyle: CSSProperties = {
-  marginTop: 18,
+  marginTop: 12,
   display: "flex",
   flexDirection: "column",
   gap: 14,
@@ -542,7 +791,7 @@ const transcriptCardStyle: CSSProperties = {
   borderRadius: 10,
   border: "1px solid var(--rule)",
   background: "var(--paper)",
-  padding: "12px 14px",
+  padding: "14px 16px",
 };
 
 const transcriptLabelStyle: CSSProperties = {
@@ -556,7 +805,7 @@ const transcriptLabelStyle: CSSProperties = {
 
 const transcriptBodyStyle: CSSProperties = {
   fontFamily: "var(--font-body)",
-  fontSize: 15,
+  fontSize: 16,
   lineHeight: 1.65,
   color: "var(--ink-soft)",
   whiteSpace: "pre-wrap",
@@ -567,17 +816,4 @@ const transcriptMetaStyle: CSSProperties = {
   fontFamily: "var(--font-ui)",
   fontSize: 11,
   color: "var(--ink-faded)",
-};
-
-const buttonStyle: CSSProperties = {
-  marginTop: 4,
-  border: "none",
-  borderRadius: 8,
-  padding: "11px 16px",
-  background: "var(--moss)",
-  color: "#fff",
-  fontFamily: "var(--font-ui)",
-  fontSize: 14,
-  fontWeight: 500,
-  cursor: "pointer",
 };
