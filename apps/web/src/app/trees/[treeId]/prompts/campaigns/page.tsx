@@ -58,8 +58,9 @@ export default function PromptCampaignsPage() {
     }
     if (pRes.ok) {
       const data = await pRes.json();
+      const list = Array.isArray(data) ? data : (data.people ?? []);
       setPeople(
-        (data.people ?? []).map((p: { id: string; displayName?: string; name?: string }) => ({
+        list.map((p: { id: string; displayName?: string; name?: string }) => ({
           id: p.id,
           name: p.displayName ?? p.name ?? "Unnamed",
         })),
