@@ -199,7 +199,10 @@ export function AddMemoryWizard({
         };
       }
       if (!promptId) {
-        body.taggedPersonIds = step3.taggedPersonIds;
+        const taggedWithAnchor = step3.taggedPersonIds.includes(step3.personId)
+          ? step3.taggedPersonIds
+          : [step3.personId, ...step3.taggedPersonIds];
+        body.taggedPersonIds = taggedWithAnchor;
         body.reach = [
           step3.shareWithImmediateFamily
             ? { kind: "immediate_family", seedPersonId: step3.personId }
@@ -1006,8 +1009,19 @@ export function AddMemoryWizard({
                     marginBottom: 6,
                   }}
                 >
-                  Anchor person *
+                  Who is this directly about? *
                 </label>
+                <div
+                  style={{
+                    fontFamily: "var(--font-ui)",
+                    fontSize: 11,
+                    color: "var(--ink-faded)",
+                    marginBottom: 8,
+                    lineHeight: 1.4,
+                  }}
+                >
+                  Pick the one person this memory most belongs to. It will appear on their page and in Drift attributed to them.
+                </div>
                 <div
                   style={{
                     display: "grid",
@@ -1126,8 +1140,19 @@ export function AddMemoryWizard({
                       marginBottom: 6,
                     }}
                   >
-                    Who is this directly about?
+                    Also about (optional)
                   </label>
+                  <div
+                    style={{
+                      fontFamily: "var(--font-ui)",
+                      fontSize: 11,
+                      color: "var(--ink-faded)",
+                      marginBottom: 8,
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    Other relatives in this memory. They'll see it on their pages too, but it stays attributed to the person above.
+                  </div>
                   <div
                     style={{
                       display: "grid",
@@ -1137,7 +1162,7 @@ export function AddMemoryWizard({
                       overflowY: "auto",
                     }}
                   >
-                    {people.map((person) => {
+                    {people.filter((person) => person.id !== step3.personId).map((person) => {
                       const selected = step3.taggedPersonIds.includes(person.id);
                       return (
                         <button
@@ -1421,7 +1446,7 @@ export function AddMemoryWizard({
               <button
                 onClick={handleSubmit}
                 disabled={
-                  (!promptId && (!step3.personId || step3.taggedPersonIds.length === 0)) ||
+                  (!promptId && !step3.personId) ||
                   submitting
                 }
                 style={{
@@ -1430,7 +1455,7 @@ export function AddMemoryWizard({
                   fontWeight: 500,
                   color: "white",
                   background:
-                    ((!promptId && (!step3.personId || step3.taggedPersonIds.length === 0)) ||
+                    ((!promptId && !step3.personId) ||
                       submitting)
                       ? "var(--ink-faded)"
                       : "var(--moss)",
@@ -1438,7 +1463,7 @@ export function AddMemoryWizard({
                   borderRadius: 6,
                   padding: "9px 20px",
                   cursor:
-                    ((!promptId && (!step3.personId || step3.taggedPersonIds.length === 0)) ||
+                    ((!promptId && !step3.personId) ||
                       submitting)
                       ? "default"
                       : "pointer",
