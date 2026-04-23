@@ -665,9 +665,16 @@ Allowed polish after the structural rewrite:
 
 - [x] transitions
 - [x] spacing
-- [ ] hover/focus states (ongoing refinement)
+- [x] hover/focus states (ongoing refinement)
 - [x] skeletons
 - [x] responsive tuning
+- [x] AtriumFamilyPresence wired into home page (was built but not rendered)
+- [x] Today banner redesigned as "anteroom notice" with upcoming-day window
+- [x] Memory trail redesigned with depth-based sections (opening/branch/widening)
+- [x] Section thresholds (gilt-rule dividers) between major atrium sections
+- [x] Person attribution changed from bubble pills to name-plate style
+- [x] "Across generations" section uses compact horizontal card grid
+- [x] Branch drift mode added to DriftChooserSheet
 
 Forbidden polish before structural rewrite:
 

@@ -604,6 +604,8 @@ type TodayBirthdayHighlight = {
   portraitUrl: string | null;
   yearsOld: number | null;
   isLiving: boolean;
+  daysUntil: number;
+  relativeLabel: string | null;
 };
 
 type TodayDeathiversaryHighlight = {
@@ -611,6 +613,8 @@ type TodayDeathiversaryHighlight = {
   name: string;
   portraitUrl: string | null;
   yearsAgo: number | null;
+  daysUntil: number;
+  relativeLabel: string | null;
 };
 
 type TodayMemoryAnniversaryHighlight = {
@@ -619,6 +623,8 @@ type TodayMemoryAnniversaryHighlight = {
   yearsAgo: number | null;
   primaryPersonId: string | null;
   primaryPersonName: string | null;
+  daysUntil: number;
+  relativeLabel: string | null;
 };
 
 type TodayHighlights = {
@@ -636,57 +642,86 @@ const MONTH_LABELS = [
 function buildTodayHighlights({
   people,
   memories,
+  upcomingDays = 7,
 }: {
   people: HomePerson[];
   memories: HomeMemory[];
+  upcomingDays?: number;
 }): TodayHighlights {
   const now = new Date();
   const todayMonth = now.getMonth();
   const todayDay = now.getDate();
   const todayYear = now.getFullYear();
 
+  function relativeLabel(daysUntil: number): string | null {
+    if (daysUntil === 0) return null;
+    if (daysUntil === 1) return "Tomorrow";
+    return `In ${daysUntil} days`;
+  }
+
+  function computeDaysAhead(targetMonth: number, targetDay: number): number | null {
+    const target = new Date(todayYear, targetMonth, targetDay);
+    const today = new Date(todayYear, todayMonth, todayDay);
+    if (target < today) target.setFullYear(target.getFullYear() + 1);
+    const diff = Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    if (diff >= 0 && diff <= upcomingDays) return diff;
+    return null;
+  }
+
   const birthdays: TodayBirthdayHighlight[] = [];
   const deathiversaries: TodayDeathiversaryHighlight[] = [];
 
   for (const person of people) {
     const birth = extractMonthDay(person.birthDateText);
-    if (birth && birth.month === todayMonth && birth.day === todayDay) {
-      const birthYear = extractYear(person.birthDateText);
-      const deathYear = extractYear(person.deathDateText);
-      const isLiving = !person.deathDateText;
-      birthdays.push({
-        personId: person.id,
-        name: person.displayName ?? "",
-        portraitUrl: person.portraitMedia
-          ? mediaUrl(person.portraitMedia.objectKey)
-          : null,
-        yearsOld:
-          birthYear !== null
-            ? (deathYear ?? todayYear) - birthYear
+    if (birth) {
+      const daysUntil = computeDaysAhead(birth.month, birth.day);
+      if (daysUntil !== null) {
+        const birthYear = extractYear(person.birthDateText);
+        const deathYear = extractYear(person.deathDateText);
+        const isLiving = !person.deathDateText;
+        birthdays.push({
+          personId: person.id,
+          name: person.displayName ?? "",
+          portraitUrl: person.portraitMedia
+            ? mediaUrl(person.portraitMedia.objectKey)
             : null,
-        isLiving,
-      });
+          yearsOld:
+            birthYear !== null
+              ? (deathYear ?? todayYear) - birthYear
+              : null,
+          isLiving,
+          daysUntil,
+          relativeLabel: relativeLabel(daysUntil),
+        });
+      }
     }
     const death = extractMonthDay(person.deathDateText);
-    if (death && death.month === todayMonth && death.day === todayDay) {
-      const deathYear = extractYear(person.deathDateText);
-      deathiversaries.push({
-        personId: person.id,
-        name: person.displayName ?? "",
-        portraitUrl: person.portraitMedia
-          ? mediaUrl(person.portraitMedia.objectKey)
-          : null,
-        yearsAgo: deathYear !== null ? todayYear - deathYear : null,
-      });
+    if (death) {
+      const daysUntil = computeDaysAhead(death.month, death.day);
+      if (daysUntil !== null) {
+        const deathYear = extractYear(person.deathDateText);
+        deathiversaries.push({
+          personId: person.id,
+          name: person.displayName ?? "",
+          portraitUrl: person.portraitMedia
+            ? mediaUrl(person.portraitMedia.objectKey)
+            : null,
+          yearsAgo: deathYear !== null ? todayYear - deathYear : null,
+          daysUntil,
+          relativeLabel: relativeLabel(daysUntil),
+        });
+      }
     }
   }
 
   const memoryAnniversaries: TodayMemoryAnniversaryHighlight[] = [];
   for (const memory of memories) {
     const md = extractMonthDay(memory.dateOfEventText);
-    if (!md || md.month !== todayMonth || md.day !== todayDay) continue;
+    if (!md) continue;
+    const daysUntil = computeDaysAhead(md.month, md.day);
+    if (daysUntil === null) continue;
     const year = extractYear(memory.dateOfEventText);
-    if (year !== null && todayYear - year < 1) continue;
+    if (year !== null && todayYear - year < 1 && daysUntil === 0) continue;
     const primary = memory.primaryPersonId
       ? people.find((p) => p.id === memory.primaryPersonId) ?? null
       : null;
@@ -698,10 +733,11 @@ function buildTodayHighlights({
       primaryPersonName: primary
         ? primary.displayName ?? null
         : null,
+      daysUntil,
+      relativeLabel: relativeLabel(daysUntil),
     });
   }
 
-  // Strongest milestones first within each list (round numbers feel weighty).
   const milestoneScore = (n: number | null) => {
     if (n === null) return 0;
     if (n === 0) return 1;
@@ -712,21 +748,18 @@ function buildTodayHighlights({
     if (n % 5 === 0) return 10;
     return 1;
   };
-  birthdays.sort(
-    (a, b) => milestoneScore(b.yearsOld) - milestoneScore(a.yearsOld),
-  );
-  deathiversaries.sort(
-    (a, b) => milestoneScore(b.yearsAgo) - milestoneScore(a.yearsAgo),
-  );
-  memoryAnniversaries.sort(
-    (a, b) => milestoneScore(b.yearsAgo) - milestoneScore(a.yearsAgo),
-  );
+
+  const todayFirst = (a: { daysUntil: number }, b: { daysUntil: number }) => a.daysUntil - b.daysUntil;
+
+  birthdays.sort((a, b) => todayFirst(a, b) || milestoneScore(b.yearsOld) - milestoneScore(a.yearsOld));
+  deathiversaries.sort((a, b) => todayFirst(a, b) || milestoneScore(b.yearsAgo) - milestoneScore(a.yearsAgo));
+  memoryAnniversaries.sort((a, b) => todayFirst(a, b) || milestoneScore(b.yearsAgo) - milestoneScore(a.yearsAgo));
 
   return {
     monthDayLabel: `${MONTH_LABELS[todayMonth]} ${todayDay}`,
     birthdays,
     deathiversaries,
-    memoryAnniversaries: memoryAnniversaries.slice(0, 6),
+    memoryAnniversaries: memoryAnniversaries.slice(0, 10),
   };
 }
 

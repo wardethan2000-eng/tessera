@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AtriumContextStrip } from "@/components/home/AtriumContextStrip";
 import { AtriumCoachmark } from "@/components/home/AtriumCoachmark";
+import { AtriumFamilyPresence } from "@/components/home/AtriumFamilyPresence";
 import { AtriumMemoryTrail } from "@/components/home/AtriumMemoryTrail";
 import { AtriumSkeleton } from "@/components/home/HomeSurfaceSkeletons";
 import { AtriumStage } from "@/components/home/AtriumStage";
@@ -337,6 +338,60 @@ export default function AtriumPage() {
     [activeFeaturedMemory, activeFocusIds, activeMemories, focusPerson?.name, relatedMemoryTrail, selectedEra],
   );
 
+  const familyPresenceGroups = useMemo(() => {
+    if (!familyPresence) return [];
+    return familyPresence.groups.map((group) => ({
+      id: group.id,
+      label: group.label,
+      people: group.personIds
+        .map((personId) => people.find((p) => p.id === personId))
+        .filter((p): p is Person => Boolean(p))
+        .map((p) => ({
+          id: p.id,
+          name: p.name,
+          portraitUrl: p.portraitUrl,
+          essenceLine: p.essenceLine,
+          birthYear: p.birthYear,
+          deathYear: p.deathYear,
+        })),
+    }));
+  }, [familyPresence, people]);
+
+  const familyNearbyPeople = useMemo(() => {
+    const focusId = familyPresence?.focusPersonId ?? activeFocusPersonId;
+    if (!focusId) return [];
+    return [...activeFocusIds]
+      .filter((id) => id !== focusId)
+      .slice(0, 8)
+      .map((id) => people.find((p) => p.id === id))
+      .filter((p): p is Person => Boolean(p))
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        portraitUrl: p.portraitUrl,
+        essenceLine: p.essenceLine,
+        birthYear: p.birthYear,
+        deathYear: p.deathYear,
+      }));
+  }, [familyPresence?.focusPersonId, activeFocusPersonId, activeFocusIds, people]);
+
+  const familyFocusPerson = useMemo(() => {
+    const focusId = familyPresence?.focusPersonId ?? activeFocusPersonId;
+    if (!focusId) return null;
+    const p = people.find((person) => person.id === focusId);
+    if (!p) return null;
+    return {
+      id: p.id,
+      name: p.name,
+      portraitUrl: p.portraitUrl,
+      essenceLine: p.essenceLine,
+      birthYear: p.birthYear,
+      deathYear: p.deathYear,
+    };
+  }, [familyPresence?.focusPersonId, activeFocusPersonId, people]);
+
+  const familyFocusPersonName = familyFocusPerson?.name ?? focusPerson?.name ?? null;
+
   if (sessionTimedOut && isPending) {
     return (
       <main
@@ -662,6 +717,8 @@ export default function AtriumPage() {
         branchCue={branchCue}
       />
 
+      {memories.length > 0 && <SectionThreshold />}
+
       {memories.length > 0 && (
         <AtriumMemoryTrail
           coverage={coverage}
@@ -675,6 +732,21 @@ export default function AtriumPage() {
             router.push(`/trees/${treeId}/memories/${memory.id}`);
           }}
           openArchiveHref={`/trees/${treeId}/tree`}
+        />
+      )}
+
+      {memories.length > 0 && <SectionThreshold />}
+
+      {memories.length > 0 && (
+        <AtriumFamilyPresence
+          focusPerson={familyFocusPerson}
+          focusPersonName={familyFocusPersonName}
+          branchCue={branchCue}
+          nearbyPeople={familyNearbyPeople}
+          groups={familyPresenceGroups}
+          fullTreeHref={`/trees/${treeId}/tree`}
+          addPersonHref={`/trees/${treeId}/people/new`}
+          onPersonClick={handlePersonClick}
         />
       )}
 
@@ -796,6 +868,46 @@ function getHeaderNavButtonStyle(active: boolean) {
     ...getHeaderNavItemStyle(active),
     cursor: "pointer",
   } as const;
+}
+
+function SectionThreshold() {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 16,
+        padding: "clamp(32px, 5vw, 56px) max(20px, 5vw) clamp(32px, 5vw, 56px) max(20px, 5vw)",
+      }}
+    >
+      <div
+        style={{
+          flex: 1,
+          height: 1,
+          background:
+            "linear-gradient(90deg, transparent 0%, rgba(176,139,62,0.24) 18%, rgba(176,139,62,0.24) 82%, transparent 100%)",
+        }}
+      />
+      <div
+        style={{
+          width: 5,
+          height: 5,
+          borderRadius: "50%",
+          background: "rgba(176,139,62,0.38)",
+          boxShadow: "0 0 0 3px rgba(176,139,62,0.08)",
+          flexShrink: 0,
+        }}
+      />
+      <div
+        style={{
+          flex: 1,
+          height: 1,
+          background:
+            "linear-gradient(90deg, transparent 0%, rgba(176,139,62,0.24) 18%, rgba(176,139,62,0.24) 82%, transparent 100%)",
+        }}
+      />
+    </div>
+  );
 }
 
 function formatArchiveScaleLabel(

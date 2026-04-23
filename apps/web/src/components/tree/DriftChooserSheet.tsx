@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import type { ApiPerson } from "./treeTypes";
 import type { DriftFilter } from "./DriftMode";
 
-type ChooserMode = "menu" | "person" | "era" | "remembrance";
+type ChooserMode = "menu" | "person" | "branch" | "era" | "remembrance";
 
 interface DriftChooserSheetProps {
   open: boolean;
@@ -123,6 +123,7 @@ export function DriftChooserSheet({
                 >
                   {mode === "menu" && "Drift through…"}
                   {mode === "person" && "About one person"}
+                  {mode === "branch" && "Through a branch"}
                   {mode === "era" && "From an era"}
                   {mode === "remembrance" && "In remembrance"}
                 </div>
@@ -136,6 +137,7 @@ export function DriftChooserSheet({
                 >
                   {mode === "menu" && "Pick a way to wander."}
                   {mode === "person" && "We'll show every memory tied to them."}
+                  {mode === "branch" && "Start with someone, then drift into their closest family."}
                   {mode === "era" && "Memories whose date falls in that window."}
                   {mode === "remembrance" &&
                     "A quieter pace, in chronological order, in their memory."}
@@ -172,6 +174,13 @@ export function DriftChooserSheet({
                   onClick={() => setMode("person")}
                 />
                 <ChoiceRow
+                  title="Through a branch"
+                  subtitle="Start with someone, then widen into their closest family."
+                  onClick={() => setMode("branch")}
+                  disabled={livingPeople.length < 2}
+                  disabledHint="Add more people to unlock branch drift."
+                />
+                <ChoiceRow
                   title="From an era"
                   subtitle="Pick a decade and step into it."
                   onClick={() => setMode("era")}
@@ -186,7 +195,7 @@ export function DriftChooserSheet({
               </div>
             )}
 
-            {(mode === "person" || mode === "remembrance") && (
+            {(mode === "person" || mode === "remembrance" || mode === "branch") && (
               <>
                 <input
                   type="text"
@@ -236,7 +245,9 @@ export function DriftChooserSheet({
                           pick(
                             mode === "remembrance"
                               ? { mode: "remembrance", personId: person.id }
-                              : { personId: person.id },
+                              : mode === "branch"
+                                ? { mode: "branch", personId: person.id }
+                                : { personId: person.id },
                           )
                         }
                         style={personRowStyle}

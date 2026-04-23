@@ -26,6 +26,8 @@ type TrailVisualMediaItem = {
   mimeType: string | null;
 };
 
+type SectionDepth = "opening" | "branch" | "widening";
+
 export function AtriumMemoryTrail({
   coverage,
   sections,
@@ -50,10 +52,10 @@ export function AtriumMemoryTrail({
   const peopleById = new Map(people.map((person) => [person.id, person]));
 
   return (
-    <section style={{ padding: "42px max(20px, 5vw) 64px" }}>
+    <section style={{ padding: "0 max(20px, 5vw) 80px" }}>
       <div
         style={{
-          marginBottom: 20,
+          marginBottom: 28,
           display: "flex",
           justifyContent: "flex-end",
         }}
@@ -74,7 +76,7 @@ export function AtriumMemoryTrail({
       {coverage && coverage.decadeBuckets.length > 0 && (
         <div
           style={{
-            marginBottom: 34,
+            marginBottom: 40,
             display: "flex",
             gap: 10,
             overflowX: "auto",
@@ -135,15 +137,180 @@ export function AtriumMemoryTrail({
         <div
           style={{
             display: "grid",
-            gap: "clamp(28px, 4vw, 48px)",
+            gap: 0,
           }}
         >
-          {sections.map((section, sectionIndex) => (
-            <TrailSectionThread
-              key={section.id}
-              section={section}
+          {sections.map((section, sectionIndex) => {
+            const depth: SectionDepth =
+              sectionIndex === 0
+                ? "opening"
+                : sectionIndex === 1
+                  ? "branch"
+                  : "widening";
+
+            return (
+              <div key={section.id}>
+                {sectionIndex > 0 && <ThresholdRule />}
+                <TrailSection
+                  section={section}
+                  peopleById={peopleById}
+                  depth={depth}
+                  onMemoryClick={onMemoryClick}
+                  onPersonClick={onPersonClick}
+                />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ThresholdRule() {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 16,
+        padding: "clamp(40px, 6vw, 72px) 0 clamp(32px, 5vw, 56px) 0",
+      }}
+    >
+      <div
+        style={{
+          flex: 1,
+          height: 1,
+          background:
+            "linear-gradient(90deg, transparent 0%, rgba(176,139,62,0.28) 20%, rgba(176,139,62,0.28) 80%, transparent 100%)",
+        }}
+      />
+      <div
+        style={{
+          width: 5,
+          height: 5,
+          borderRadius: "50%",
+          background: "rgba(176,139,62,0.44)",
+          boxShadow: "0 0 0 3px rgba(176,139,62,0.10)",
+          flexShrink: 0,
+        }}
+      />
+      <div
+        style={{
+          flex: 1,
+          height: 1,
+          background:
+            "linear-gradient(90deg, transparent 0%, rgba(176,139,62,0.28) 20%, rgba(176,139,62,0.28) 80%, transparent 100%)",
+        }}
+      />
+    </div>
+  );
+}
+
+function TrailSection({
+  section,
+  peopleById,
+  depth,
+  onMemoryClick,
+  onPersonClick,
+}: {
+  section: TrailSection;
+  peopleById: Map<string, TrailPerson>;
+  depth: SectionDepth;
+  onMemoryClick: (memory: TreeHomeMemory) => void;
+  onPersonClick: (personId: string) => void;
+}) {
+  const [leadMemory, ...rest] = section.memories;
+  if (!leadMemory) return null;
+
+  if (depth === "widening") {
+    return (
+      <TrailWideningSection
+        section={section}
+        peopleById={peopleById}
+        onMemoryClick={onMemoryClick}
+        onPersonClick={onPersonClick}
+      />
+    );
+  }
+
+  const echoes = rest;
+
+  return (
+    <section style={{ position: "relative", minWidth: 0 }}>
+      <div
+        style={{
+          fontFamily: "var(--font-ui)",
+          fontSize: 11,
+          textTransform: "uppercase",
+          letterSpacing: "0.14em",
+          color: "var(--ink-faded)",
+          marginBottom: depth === "opening" ? 8 : 20,
+          display: "flex",
+          alignItems: "baseline",
+          gap: 12,
+        }}
+      >
+        <span>{section.title}</span>
+        <span
+          style={{
+            fontFamily: "var(--font-body)",
+            fontSize: 14,
+            textTransform: "none",
+            letterSpacing: "normal",
+            color: "var(--ink-soft)",
+            fontStyle: "italic",
+          }}
+        >
+          {section.description}
+        </span>
+      </div>
+
+      {depth === "opening" ? (
+        <OpeningRoom
+          memory={leadMemory}
+          peopleById={peopleById}
+          onMemoryClick={onMemoryClick}
+          onPersonClick={onPersonClick}
+        />
+      ) : (
+        <MountedLead
+          memory={leadMemory}
+          peopleById={peopleById}
+          onMemoryClick={onMemoryClick}
+          onPersonClick={onPersonClick}
+        />
+      )}
+
+      {echoes.length > 0 && (
+        <div
+          style={{
+            position: "relative",
+            display: "grid",
+            gap: "clamp(18px, 3vw, 28px)",
+            marginTop: depth === "opening" ? "clamp(36px, 5vw, 56px)" : "clamp(24px, 3vw, 36px)",
+            paddingLeft: depth === "opening" ? "clamp(28px, 5vw, 56px)" : "clamp(20px, 4vw, 44px)",
+            minWidth: 0,
+          }}
+        >
+          <div
+            aria-hidden
+            style={{
+              position: "absolute",
+              left: 4,
+              top: 8,
+              bottom: 8,
+              width: 1,
+              background:
+                "linear-gradient(180deg, transparent 0%, rgba(176,139,62,0.30) 14%, rgba(176,139,62,0.16) 86%, transparent 100%)",
+            }}
+          />
+
+          {echoes.map((memory) => (
+            <WallLabel
+              key={memory.id}
+              memory={memory}
               peopleById={peopleById}
-              sectionIndex={sectionIndex}
               onMemoryClick={onMemoryClick}
               onPersonClick={onPersonClick}
             />
@@ -154,86 +321,186 @@ export function AtriumMemoryTrail({
   );
 }
 
-function TrailSectionThread({
-  section,
+function OpeningRoom({
+  memory,
   peopleById,
-  sectionIndex,
   onMemoryClick,
   onPersonClick,
 }: {
-  section: TrailSection;
+  memory: TreeHomeMemory;
   peopleById: Map<string, TrailPerson>;
-  sectionIndex: number;
   onMemoryClick: (memory: TreeHomeMemory) => void;
   onPersonClick: (personId: string) => void;
 }) {
-  const [leadMemory, ...echoes] = section.memories;
-  if (!leadMemory) return null;
+  const visualItems = getMemoryVisualItems(memory);
+  const mediaUrl = visualItems[0]?.mediaUrl ?? null;
+  const mediaCount = visualItems.length;
+  const excerpt = getMemoryExcerpt(memory);
+  const usesMedia = Boolean(mediaUrl && (memory.kind === "photo" || memory.kind === "document"));
+  const relatedPeople = getRelatedPeople(memory, peopleById);
+  const [ref, visible] = useTrailReveal();
 
   return (
-    <section
+    <div
+      ref={ref}
       style={{
         position: "relative",
-        minWidth: 0,
-        marginTop: sectionIndex === 0 ? 0 : "clamp(-18px, -2vw, -10px)",
+        transform: visible ? "translateY(0)" : "translateY(44px)",
+        opacity: visible ? 1 : 0.15,
+        transition: "transform 1100ms cubic-bezier(0.22, 0.61, 0.36, 1), opacity 1100ms ease",
       }}
     >
-      <div
+      <button
+        type="button"
+        onClick={() => onMemoryClick(memory)}
         style={{
           position: "relative",
-          display: "grid",
-          gap: "clamp(10px, 2vw, 18px)",
+          width: "100%",
+          minHeight: "clamp(420px, 72vh, 700px)",
+          border: "none",
+          background: "none",
+          padding: 0,
+          cursor: "pointer",
+          textAlign: "left",
+          overflow: "hidden",
+          color: "inherit",
+          borderRadius: 0,
         }}
       >
-        <TrailLeadScene
-          memory={leadMemory}
-          peopleById={peopleById}
-          onMemoryClick={onMemoryClick}
-          onPersonClick={onPersonClick}
-        />
-
-        {echoes.length > 0 && (
-          <div
-            style={{
-              position: "relative",
-              display: "grid",
-              gap: "clamp(10px, 2vw, 18px)",
-              paddingLeft: "clamp(20px, 4vw, 44px)",
-              minWidth: 0,
-              marginTop: "clamp(-40px, -5vw, -24px)",
-            }}
-          >
-            <div
-              aria-hidden
+        {usesMedia ? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={mediaUrl ?? ""}
+              alt={memory.title}
+              onError={handleMediaError}
               style={{
                 position: "absolute",
-                left: 4,
-                top: 8,
-                bottom: 8,
-                width: 1,
-                background:
-                  "linear-gradient(180deg, transparent 0%, rgba(176,139,62,0.34) 12%, rgba(176,139,62,0.18) 88%, transparent 100%)",
+                inset: 0,
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                filter: "grayscale(28%) sepia(12%) contrast(0.92)",
               }}
             />
-
-            {echoes.map((memory, index) => (
-              <TrailEchoEntry
-                key={memory.id}
-                memory={memory}
-                peopleById={peopleById}
-                index={index}
-                onMemoryClick={onMemoryClick}
-                onPersonClick={onPersonClick}
-              />
-            ))}
-          </div>
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background:
+                  "linear-gradient(100deg, rgba(16,14,12,0.92) 0%, rgba(16,14,12,0.68) 38%, rgba(16,14,12,0.22) 72%, rgba(16,14,12,0.06) 100%), linear-gradient(180deg, rgba(16,14,12,0.06) 0%, rgba(16,14,12,0.48) 100%)",
+              }}
+            />
+            {mediaCount > 1 && (
+              <MemoryStackHint items={visualItems.slice(1, 3)} totalCount={mediaCount} light />
+            )}
+          </>
+        ) : (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background:
+                "radial-gradient(ellipse at 14% 24%, rgba(201,161,92,0.22), transparent 32%), radial-gradient(ellipse at 82% 14%, rgba(78,93,66,0.16), transparent 26%), linear-gradient(180deg, rgba(32,28,24,0.98) 0%, rgba(16,14,11,0.98) 100%)",
+            }}
+          />
         )}
-      </div>
-    </section>
+
+        <div
+          style={{
+            position: "relative",
+            minHeight: "clamp(420px, 72vh, 700px)",
+            display: "flex",
+            alignItems: "flex-end",
+            padding: "clamp(36px, 6vw, 72px) clamp(28px, 5vw, 52px)",
+          }}
+        >
+          <div style={{ maxWidth: 740 }}>
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 10,
+                flexWrap: "wrap",
+                fontFamily: "var(--font-ui)",
+                fontSize: 11,
+                textTransform: "uppercase",
+                letterSpacing: "0.12em",
+                color: "rgba(246,241,231,0.56)",
+              }}
+            >
+              <span>{memory.dateOfEventText ?? "Undated"}</span>
+              {mediaCount > 1 && (
+                <>
+                  <span style={{ opacity: 0.42 }}>·</span>
+                  <span>{mediaCount} items</span>
+                </>
+              )}
+            </div>
+
+            <div
+              style={{
+                marginTop: 18,
+                fontFamily: "var(--font-display)",
+                fontSize: "clamp(36px, 7vw, 80px)",
+                lineHeight: 0.96,
+                color: "rgba(246,241,231,0.97)",
+                maxWidth: "13ch",
+                textWrap: "balance",
+              }}
+            >
+              {memory.title}
+            </div>
+
+            <div
+              style={{
+                marginTop: 16,
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: 12,
+              }}
+            >
+              {memory.personName && (
+                <NamePlate light personName={memory.personName} />
+              )}
+              {relatedPeople.length > 0 && (
+                <>
+                  {relatedPeople.slice(0, 3).map((person) => (
+                    <NamePlate
+                      key={person.id}
+                      light
+                      personName={person.name}
+                      portraitUrl={person.portraitUrl}
+                      onClick={() => onPersonClick(person.id)}
+                    />
+                  ))}
+                </>
+              )}
+            </div>
+
+            {excerpt && (
+              <p
+                style={{
+                  margin: "24px 0 0",
+                  maxWidth: "56ch",
+                  fontFamily: "var(--font-body)",
+                  fontSize: 19,
+                  lineHeight: 1.82,
+                  color: "rgba(246,241,231,0.80)",
+                }}
+              >
+                {excerpt}
+              </p>
+            )}
+          </div>
+        </div>
+      </button>
+    </div>
   );
 }
 
-function TrailLeadScene({
+function MountedLead({
   memory,
   peopleById,
   onMemoryClick,
@@ -258,7 +525,7 @@ function TrailLeadScene({
       style={{
         position: "relative",
         transform: visible ? "translateY(0)" : "translateY(38px)",
-        opacity: visible ? 1 : 0.2,
+        opacity: visible ? 1 : 0.15,
         transition: "transform 900ms cubic-bezier(0.22, 0.61, 0.36, 1), opacity 900ms ease",
       }}
     >
@@ -268,7 +535,7 @@ function TrailLeadScene({
         style={{
           position: "relative",
           width: "100%",
-          minHeight: "clamp(360px, 62vw, 620px)",
+          minHeight: "clamp(300px, 50vw, 520px)",
           border: "none",
           background: "none",
           padding: 0,
@@ -276,10 +543,7 @@ function TrailLeadScene({
           textAlign: "left",
           overflow: "hidden",
           color: "inherit",
-          WebkitMaskImage:
-            "linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.96) 12%, rgba(0,0,0,0.96) 88%, transparent 100%)",
-          maskImage:
-            "linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.96) 12%, rgba(0,0,0,0.96) 88%, transparent 100%)",
+          borderRadius: 14,
         }}
       >
         {usesMedia ? (
@@ -295,7 +559,7 @@ function TrailLeadScene({
                 width: "100%",
                 height: "100%",
                 objectFit: "cover",
-                filter: "grayscale(24%) sepia(10%) contrast(0.94)",
+                filter: "grayscale(22%) sepia(10%) contrast(0.94)",
               }}
             />
             <div
@@ -303,7 +567,8 @@ function TrailLeadScene({
                 position: "absolute",
                 inset: 0,
                 background:
-                  "linear-gradient(90deg, rgba(22,19,16,0.88) 0%, rgba(22,19,16,0.66) 44%, rgba(22,19,16,0.28) 100%), linear-gradient(180deg, rgba(22,19,16,0.10) 0%, rgba(22,19,16,0.42) 100%)",
+                  "linear-gradient(95deg, rgba(22,19,16,0.86) 0%, rgba(22,19,16,0.62) 42%, rgba(22,19,16,0.22) 100%), linear-gradient(180deg, rgba(22,19,16,0.06) 0%, rgba(22,19,16,0.40) 100%)",
+                borderRadius: 14,
               }}
             />
             {mediaCount > 1 && (
@@ -316,7 +581,8 @@ function TrailLeadScene({
               position: "absolute",
               inset: 0,
               background:
-                "radial-gradient(circle at 16% 20%, rgba(201,161,92,0.18), transparent 28%), radial-gradient(circle at 78% 18%, rgba(91,104,74,0.14), transparent 24%), linear-gradient(180deg, rgba(39,33,27,0.98) 0%, rgba(20,17,14,0.98) 100%)",
+                "radial-gradient(circle at 20% 28%, rgba(201,161,92,0.18), transparent 30%), radial-gradient(circle at 76% 20%, rgba(78,93,66,0.14), transparent 24%), linear-gradient(180deg, rgba(34,29,24,0.97) 0%, rgba(18,16,13,0.97) 100%)",
+              borderRadius: 14,
             }}
           />
         )}
@@ -324,13 +590,14 @@ function TrailLeadScene({
         <div
           style={{
             position: "relative",
-            minHeight: "clamp(360px, 62vw, 620px)",
+            minHeight: "clamp(300px, 50vw, 520px)",
             display: "flex",
             alignItems: "flex-end",
-            padding: "clamp(28px, 5vw, 54px) clamp(22px, 5vw, 40px)",
+            padding: "clamp(28px, 5vw, 48px) clamp(24px, 5vw, 40px)",
+            borderRadius: 14,
           }}
         >
-          <div style={{ maxWidth: 760 }}>
+          <div style={{ maxWidth: 700 }}>
             <div
               style={{
                 display: "inline-flex",
@@ -341,183 +608,7 @@ function TrailLeadScene({
                 fontSize: 11,
                 textTransform: "uppercase",
                 letterSpacing: "0.12em",
-                color: "rgba(246,241,231,0.64)",
-              }}
-            >
-              <span>{memory.dateOfEventText ?? "Undated"}</span>
-              {mediaCount > 1 && (
-                <>
-                  <span style={{ opacity: 0.46 }}>·</span>
-                  <span>{mediaCount} items</span>
-                </>
-              )}
-            </div>
-
-            <div
-              style={{
-                marginTop: 14,
-                fontFamily: "var(--font-display)",
-                fontSize: "clamp(34px, 7vw, 78px)",
-                lineHeight: 0.98,
-                color: "rgba(246,241,231,0.98)",
-                maxWidth: "13ch",
-                textWrap: "balance",
-              }}
-            >
-              {memory.title}
-            </div>
-
-            <div
-              style={{
-                marginTop: 14,
-                display: "flex",
-                flexWrap: "wrap",
-                alignItems: "center",
-                gap: 10,
-                fontFamily: "var(--font-ui)",
-                fontSize: 13,
-                color: "rgba(246,241,231,0.76)",
-              }}
-            >
-              {memory.personName && <span>{memory.personName}</span>}
-            </div>
-
-            {excerpt && (
-              <p
-                style={{
-                  margin: "20px 0 0",
-                  maxWidth: "58ch",
-                  fontFamily: "var(--font-body)",
-                  fontSize: 18,
-                  lineHeight: 1.85,
-                  color: "rgba(246,241,231,0.84)",
-                }}
-              >
-                {excerpt}
-              </p>
-            )}
-
-            {relatedPeople.length > 0 && (
-              <div
-                style={{
-                  marginTop: 22,
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 10,
-                }}
-              >
-                {relatedPeople.map((person) => (
-                  <PersonBubble
-                    key={person.id}
-                    person={person}
-                    light
-                    onClick={() => onPersonClick(person.id)}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </button>
-    </div>
-  );
-}
-
-function TrailEchoEntry({
-  memory,
-  peopleById,
-  index,
-  onMemoryClick,
-  onPersonClick,
-}: {
-  memory: TreeHomeMemory;
-  peopleById: Map<string, TrailPerson>;
-  index: number;
-  onMemoryClick: (memory: TreeHomeMemory) => void;
-  onPersonClick: (personId: string) => void;
-}) {
-  const visualItems = getMemoryVisualItems(memory);
-  const mediaUrl = visualItems[0]?.mediaUrl ?? null;
-  const mediaCount = visualItems.length;
-  const excerpt = getMemoryExcerpt(memory);
-  const relatedPeople = getRelatedPeople(memory, peopleById);
-  const alignsRight = index % 2 === 1;
-  const [ref, visible] = useTrailReveal();
-
-  return (
-    <div
-      ref={ref}
-      style={{
-        position: "relative",
-        display: "flex",
-        justifyContent: alignsRight ? "flex-end" : "flex-start",
-        transform: visible ? "translateY(0)" : "translateY(30px)",
-        opacity: visible ? 1 : 0.18,
-        transition: "transform 900ms cubic-bezier(0.22, 0.61, 0.36, 1), opacity 900ms ease",
-      }}
-    >
-      <span
-        aria-hidden
-        style={{
-          position: "absolute",
-          left: -2,
-          top: 18,
-          width: 5,
-          height: 5,
-          borderRadius: "50%",
-          background: "rgba(176,139,62,0.62)",
-          boxShadow: "0 0 0 6px rgba(176,139,62,0.08)",
-        }}
-      />
-
-      <button
-        type="button"
-        onClick={() => onMemoryClick(memory)}
-        style={{
-          width: "min(100%, 860px)",
-          border: "none",
-          background: "none",
-          padding: 0,
-          cursor: "pointer",
-          textAlign: "left",
-          color: "inherit",
-        }}
-      >
-        <div
-          style={{
-            display: "grid",
-            gap: 18,
-            alignItems: "start",
-            gridTemplateColumns:
-              mediaUrl && memory.kind === "photo"
-                ? alignsRight
-                  ? "minmax(0, 1fr) minmax(200px, 320px)"
-                  : "minmax(200px, 320px) minmax(0, 1fr)"
-                : "minmax(0, 1fr)",
-          }}
-        >
-          {mediaUrl && memory.kind === "photo" && !alignsRight && (
-            <TrailEchoImage items={visualItems} title={memory.title} />
-          )}
-
-          <div
-            style={{
-              paddingTop: 2,
-              maxWidth: 560,
-              justifySelf: alignsRight ? "end" : "start",
-            }}
-          >
-            <div
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 10,
-                flexWrap: "wrap",
-                fontFamily: "var(--font-ui)",
-                fontSize: 11,
-                textTransform: "uppercase",
-                letterSpacing: "0.12em",
-                color: "var(--ink-faded)",
+                color: "rgba(246,241,231,0.58)",
               }}
             >
               <span>{memory.dateOfEventText ?? "Undated"}</span>
@@ -531,10 +622,169 @@ function TrailEchoEntry({
 
             <div
               style={{
-                marginTop: 10,
+                marginTop: 14,
                 fontFamily: "var(--font-display)",
-                fontSize: "clamp(28px, 4vw, 42px)",
-                lineHeight: 1.05,
+                fontSize: "clamp(32px, 6vw, 64px)",
+                lineHeight: 0.98,
+                color: "rgba(246,241,231,0.96)",
+                maxWidth: "13ch",
+                textWrap: "balance",
+              }}
+            >
+              {memory.title}
+            </div>
+
+            <div
+              style={{
+                marginTop: 12,
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              {memory.personName && (
+                <NamePlate light personName={memory.personName} />
+              )}
+              {relatedPeople.length > 0 && relatedPeople.slice(0, 3).map((person) => (
+                <NamePlate
+                  key={person.id}
+                  light
+                  personName={person.name}
+                  portraitUrl={person.portraitUrl}
+                  onClick={() => onPersonClick(person.id)}
+                />
+              ))}
+            </div>
+
+            {excerpt && (
+              <p
+                style={{
+                  margin: "18px 0 0",
+                  maxWidth: "56ch",
+                  fontFamily: "var(--font-body)",
+                  fontSize: 17,
+                  lineHeight: 1.82,
+                  color: "rgba(246,241,231,0.80)",
+                }}
+              >
+                {excerpt}
+              </p>
+            )}
+          </div>
+        </div>
+      </button>
+    </div>
+  );
+}
+
+function WallLabel({
+  memory,
+  peopleById,
+  onMemoryClick,
+  onPersonClick,
+}: {
+  memory: TreeHomeMemory;
+  peopleById: Map<string, TrailPerson>;
+  onMemoryClick: (memory: TreeHomeMemory) => void;
+  onPersonClick: (personId: string) => void;
+}) {
+  const visualItems = getMemoryVisualItems(memory);
+  const mediaUrl = visualItems[0]?.mediaUrl ?? null;
+  const excerpt = getMemoryExcerpt(memory);
+  const relatedPeople = getRelatedPeople(memory, peopleById);
+  const [ref, visible] = useTrailReveal();
+
+  return (
+    <div
+      ref={ref}
+      style={{
+        position: "relative",
+        transform: visible ? "translateY(0)" : "translateY(28px)",
+        opacity: visible ? 1 : 0.12,
+        transition: "transform 800ms cubic-bezier(0.22, 0.61, 0.36, 1), opacity 800ms ease",
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => onMemoryClick(memory)}
+        style={{
+          width: "100%",
+          border: "none",
+          background: "none",
+          padding: 0,
+          cursor: "pointer",
+          textAlign: "left",
+          color: "inherit",
+        }}
+      >
+        <div
+          style={{
+            display: "grid",
+            gap: 18,
+            alignItems: "start",
+            gridTemplateColumns: mediaUrl && memory.kind === "photo"
+              ? "minmax(200px, 280px) minmax(0, 1fr)"
+              : "minmax(0, 1fr)",
+          }}
+        >
+          {mediaUrl && memory.kind === "photo" && (
+            <div
+              style={{
+                position: "relative",
+                width: "100%",
+                aspectRatio: "4 / 5",
+                overflow: "hidden",
+                background: "var(--paper-deep)",
+                borderRadius: 10,
+                boxShadow: "0 8px 24px rgba(40,30,18,0.10)",
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={mediaUrl}
+                alt={memory.title}
+                onError={handleMediaError}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                  filter: "grayscale(18%) sepia(8%)",
+                }}
+              />
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  background: "linear-gradient(180deg, rgba(19,17,14,0.02) 0%, rgba(19,17,14,0.14) 100%)",
+                  borderRadius: 10,
+                }}
+              />
+            </div>
+          )}
+
+          <div style={{ paddingTop: 2, maxWidth: 540 }}>
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                fontFamily: "var(--font-ui)",
+                fontSize: 11,
+                textTransform: "uppercase",
+                letterSpacing: "0.10em",
+                color: "var(--ink-faded)",
+              }}
+            >
+              <span>{memory.dateOfEventText ?? "Undated"}</span>
+            </div>
+
+            <div
+              style={{
+                marginTop: 8,
+                fontFamily: "var(--font-display)",
+                fontSize: "clamp(22px, 3vw, 32px)",
+                lineHeight: 1.08,
                 color: "var(--ink)",
                 textWrap: "balance",
               }}
@@ -542,38 +792,257 @@ function TrailEchoEntry({
               {memory.title}
             </div>
 
+            {memory.personName && (
+              <NamePlate personName={memory.personName} />
+            )}
+
             {excerpt && (
               <p
                 style={{
-                  margin: "14px 0 0",
+                  margin: "12px 0 0",
                   fontFamily: "var(--font-body)",
-                  fontSize: 17,
-                  lineHeight: 1.85,
+                  fontSize: 15,
+                  lineHeight: 1.78,
                   color: "var(--ink-soft)",
+                  maxWidth: "50ch",
                 }}
               >
                 {excerpt}
               </p>
             )}
 
-            {relatedPeople.length > 0 && (
+            {relatedPeople.length > 1 && (
               <div
                 style={{
-                  marginTop: 16,
+                  marginTop: 12,
                   display: "flex",
                   flexWrap: "wrap",
-                  gap: 10,
+                  gap: 8,
                 }}
               >
-                {relatedPeople.map((person) => (
-                  <PersonBubble key={person.id} person={person} onClick={() => onPersonClick(person.id)} />
+                {relatedPeople.slice(0, 3).map((person) => (
+                  <NamePlate
+                    key={person.id}
+                    personName={person.name}
+                    portraitUrl={person.portraitUrl}
+                    onClick={() => onPersonClick(person.id)}
+                  />
                 ))}
               </div>
             )}
           </div>
+        </div>
+      </button>
+    </div>
+  );
+}
 
-          {mediaUrl && memory.kind === "photo" && alignsRight && (
-            <TrailEchoImage items={visualItems} title={memory.title} />
+function TrailWideningSection({
+  section,
+  peopleById,
+  onMemoryClick,
+  onPersonClick,
+}: {
+  section: TrailSection;
+  peopleById: Map<string, TrailPerson>;
+  onMemoryClick: (memory: TreeHomeMemory) => void;
+  onPersonClick: (personId: string) => void;
+}) {
+  return (
+    <section style={{ position: "relative", minWidth: 0 }}>
+      <div
+        style={{
+          fontFamily: "var(--font-ui)",
+          fontSize: 11,
+          textTransform: "uppercase",
+          letterSpacing: "0.14em",
+          color: "var(--ink-faded)",
+          marginBottom: 20,
+          display: "flex",
+          alignItems: "baseline",
+          gap: 12,
+        }}
+      >
+        <span>{section.title}</span>
+        <span
+          style={{
+            fontFamily: "var(--font-body)",
+            fontSize: 14,
+            textTransform: "none",
+            letterSpacing: "normal",
+            color: "var(--ink-soft)",
+            fontStyle: "italic",
+          }}
+        >
+          {section.description}
+        </span>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(min(280px, 100%), 1fr))",
+          gap: "clamp(16px, 3vw, 24px)",
+        }}
+      >
+        {section.memories.map((memory) => (
+          <WideningCard
+            key={memory.id}
+            memory={memory}
+            peopleById={peopleById}
+            onMemoryClick={onMemoryClick}
+            onPersonClick={onPersonClick}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function WideningCard({
+  memory,
+  peopleById,
+  onMemoryClick,
+  onPersonClick,
+}: {
+  memory: TreeHomeMemory;
+  peopleById: Map<string, TrailPerson>;
+  onMemoryClick: (memory: TreeHomeMemory) => void;
+  onPersonClick: (personId: string) => void;
+}) {
+  const visualItems = getMemoryVisualItems(memory);
+  const mediaUrl = visualItems[0]?.mediaUrl ?? null;
+  const excerpt = getMemoryExcerpt(memory);
+  const relatedPeople = getRelatedPeople(memory, peopleById);
+  const [ref, visible] = useTrailReveal();
+
+  return (
+    <div
+      ref={ref}
+      style={{
+        transform: visible ? "translateY(0)" : "translateY(20px)",
+        opacity: visible ? 1 : 0.12,
+        transition: "transform 700ms cubic-bezier(0.22, 0.61, 0.36, 1), opacity 700ms ease",
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => onMemoryClick(memory)}
+        style={{
+          width: "100%",
+          border: "1px solid rgba(122,108,88,0.14)",
+          borderRadius: 14,
+          background:
+            "linear-gradient(180deg, rgba(255,250,244,0.98) 0%, rgba(244,237,226,0.92) 100%)",
+          padding: 0,
+          cursor: "pointer",
+          textAlign: "left",
+          color: "inherit",
+          overflow: "hidden",
+        }}
+      >
+        {mediaUrl && memory.kind === "photo" ? (
+          <div
+            style={{
+              position: "relative",
+              width: "100%",
+              aspectRatio: "3 / 2",
+              overflow: "hidden",
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={mediaUrl}
+              alt={memory.title}
+              onError={handleMediaError}
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                filter: "grayscale(16%) sepia(8%)",
+              }}
+            />
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "linear-gradient(180deg, transparent 50%, rgba(244,237,226,0.40) 100%)",
+              }}
+            />
+          </div>
+        ) : (
+          <div
+            style={{
+              width: "100%",
+              padding: "20px 18px 0",
+            }}
+          >
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontFamily: "var(--font-ui)",
+                fontSize: 10,
+                textTransform: "uppercase",
+                letterSpacing: "0.10em",
+                color: "var(--ink-faded)",
+              }}
+            >
+              <span>{memory.dateOfEventText ?? "Undated"}</span>
+            </div>
+          </div>
+        )}
+
+        <div style={{ padding: "14px 18px 18px" }}>
+          {mediaUrl && memory.kind === "photo" && (
+            <div
+              style={{
+                fontFamily: "var(--font-ui)",
+                fontSize: 10,
+                textTransform: "uppercase" as const,
+                letterSpacing: "0.10em",
+                color: "var(--ink-faded)",
+                marginBottom: 6,
+              }}
+            >
+              {memory.dateOfEventText ?? "Undated"}
+            </div>
+          )}
+
+          <div
+            style={{
+              fontFamily: "var(--font-display)",
+              fontSize: "clamp(18px, 2.5vw, 22px)",
+              lineHeight: 1.15,
+              color: "var(--ink)",
+            }}
+          >
+            {memory.title}
+          </div>
+
+          {memory.personName && (
+            <div style={{ marginTop: 6 }}>
+              <NamePlate personName={memory.personName} />
+            </div>
+          )}
+
+          {excerpt && (
+            <p
+              style={{
+                margin: "8px 0 0",
+                fontFamily: "var(--font-body)",
+                fontSize: 14,
+                lineHeight: 1.65,
+                color: "var(--ink-soft)",
+                display: "-webkit-box",
+                WebkitLineClamp: 3,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }}
+            >
+              {excerpt}
+            </p>
           )}
         </div>
       </button>
@@ -581,57 +1050,108 @@ function TrailEchoEntry({
   );
 }
 
-function TrailEchoImage({
-  items,
-  title,
+function NamePlate({
+  light = false,
+  personName,
+  portraitUrl,
+  onClick,
 }: {
-  items: TrailVisualMediaItem[];
-  title: string;
+  light?: boolean;
+  personName: string;
+  portraitUrl?: string | null;
+  onClick?: () => void;
 }) {
-  const primary = items[0] ?? null;
-  const layered = items.slice(1, 3);
-
-  return (
-    <div
-      style={{
-        position: "relative",
-        width: "100%",
-        aspectRatio: "4 / 5",
-        overflow: "hidden",
-        background: "rgba(237,230,214,0.72)",
-        WebkitMaskImage:
-          "linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.96) 12%, rgba(0,0,0,0.96) 88%, transparent 100%)",
-        maskImage:
-          "linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.96) 12%, rgba(0,0,0,0.96) 88%, transparent 100%)",
-      }}
-    >
-      {layered.length > 0 && (
-        <MemoryStackHint items={layered} totalCount={items.length} compact />
-      )}
-      {primary && (
-        <>
+  const content = (
+    <>
+      {portraitUrl ? (
+        <div
+          style={{
+            width: light ? 24 : 22,
+            height: light ? 24 : 22,
+            borderRadius: "50%",
+            overflow: "hidden",
+            flexShrink: 0,
+            background: light ? "rgba(246,241,231,0.14)" : "var(--paper-deep)",
+          }}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={primary.mediaUrl}
-            alt={title}
+            src={portraitUrl}
+            alt={personName}
             onError={handleMediaError}
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-              filter: "grayscale(20%) sepia(10%)",
-            }}
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
           />
-        </>
+        </div>
+      ) : (
+        <div
+          style={{
+            width: light ? 24 : 22,
+            height: light ? 24 : 22,
+            borderRadius: "50%",
+            background: light ? "rgba(246,241,231,0.12)" : "rgba(122,108,88,0.12)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontFamily: "var(--font-display)",
+            fontSize: light ? 11 : 10,
+            color: light ? "rgba(246,241,231,0.8)" : "var(--ink-faded)",
+            flexShrink: 0,
+          }}
+        >
+          {personName.charAt(0)}
+        </div>
       )}
-      <div
+      <span
         style={{
-          position: "absolute",
-          inset: 0,
-          background: "linear-gradient(180deg, rgba(19,17,14,0.04) 0%, rgba(19,17,14,0.18) 100%)",
+          fontFamily: "var(--font-ui)",
+          fontSize: light ? 12 : 12,
+          color: light ? "rgba(246,241,231,0.80)" : "var(--ink-soft)",
+          letterSpacing: "0.02em",
         }}
-      />
-    </div>
+      >
+        {personName}
+      </span>
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onClick();
+        }}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 7,
+          border: light ? "1px solid rgba(246,241,231,0.16)" : "1px solid rgba(122,108,88,0.12)",
+          background: light ? "rgba(246,241,231,0.06)" : "rgba(255,255,255,0.50)",
+          borderRadius: 999,
+          padding: "4px 10px 4px 5px",
+          cursor: "pointer",
+          backdropFilter: light ? "blur(8px)" : undefined,
+        }}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        fontFamily: "var(--font-ui)",
+        fontSize: light ? 12 : 12,
+        color: light ? "rgba(246,241,231,0.76)" : "var(--ink-soft)",
+      }}
+    >
+      {content}
+    </span>
   );
 }
 
@@ -717,82 +1237,6 @@ function MemoryStackHint({
         {totalCount} items
       </div>
     </div>
-  );
-}
-
-function PersonBubble({
-  person,
-  light = false,
-  onClick,
-}: {
-  person: TrailPerson;
-  light?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={(event) => {
-        event.stopPropagation();
-        onClick();
-      }}
-      style={{
-        border: light ? "1px solid rgba(246,241,231,0.18)" : "1px solid rgba(122,108,88,0.14)",
-        background: light ? "rgba(246,241,231,0.08)" : "rgba(255,255,255,0.62)",
-        color: light ? "rgba(246,241,231,0.92)" : "var(--ink)",
-        borderRadius: 999,
-        padding: "6px 10px 6px 6px",
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 8,
-        cursor: "pointer",
-        backdropFilter: light ? "blur(10px)" : undefined,
-      }}
-    >
-      <div
-        style={{
-          width: 28,
-          height: 28,
-          borderRadius: "50%",
-          overflow: "hidden",
-          flexShrink: 0,
-          background: light ? "rgba(246,241,231,0.14)" : "var(--paper-deep)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-{person.portraitUrl ? (
-<>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={person.portraitUrl}
-              alt={person.name}
-              onError={handleMediaError}
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            />
-          </>
-          ) : (
-          <span
-            style={{
-              fontFamily: "var(--font-display)",
-              fontSize: 14,
-              color: light ? "rgba(246,241,231,0.88)" : "var(--ink-faded)",
-            }}
-          >
-            {person.name.charAt(0)}
-          </span>
-        )}
-      </div>
-      <span
-        style={{
-          fontFamily: "var(--font-ui)",
-          fontSize: 12,
-        }}
-      >
-        {person.name}
-      </span>
-    </button>
   );
 }
 

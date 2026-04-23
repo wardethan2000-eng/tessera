@@ -279,8 +279,9 @@ Why this phase matters:
 
 Features to implement:
 
-- [x] Atrium intelligence (partial — featured memory rotation, resurfacing, and
-  era filtering exist; anniversaries and birthdays are not yet surfaced)
+- [x] Atrium intelligence (partial — featured memory rotation, resurfacing, era filtering,
+  and anniversaries/birthdays all exist; upcoming-day window now expanded to 7 days;
+  family presence section now wired into atrium)
   - Improve the atrium so it quietly surfaces:
     - recent contributions
     - unanswered prompts
@@ -289,8 +290,8 @@ Features to implement:
     - relevant seasonal or historical moments
 
 - [x] Guided drift modes (partial — `DriftMode` component exists and provides
-  passive playback; guided modes by person, decade, branch, place, event, or
-  remembrance are not yet built)
+  passive playback; branch, person, era, and remembrance drift modes are now
+  available; place drift and event drift are not yet built)
   - Extend drift beyond random playback.
   - Possible modes:
     - one person

@@ -30,7 +30,7 @@ interface DriftModeProps {
 }
 
 export type DriftFilter = {
-  mode?: "remembrance";
+  mode?: "remembrance" | "branch";
   personId?: string;
   yearStart?: number;
   yearEnd?: number;
@@ -396,6 +396,11 @@ export function DriftMode({
   const currentKind: DetectedKind | null = current ? detectItemKind(current) : null;
 
   const isRemembrance = initialFilter?.mode === "remembrance";
+  const isBranch = initialFilter?.mode === "branch";
+  const branchSubject = useMemo(() => {
+    if (!isBranch || !initialFilter?.personId) return null;
+    return people.find((p) => p.id === initialFilter.personId) ?? null;
+  }, [isBranch, initialFilter?.personId, people]);
   const remembranceSubject = useMemo(() => {
     if (!isRemembrance || !initialFilter?.personId) return null;
     return people.find((p) => p.id === initialFilter.personId) ?? null;
@@ -705,6 +710,40 @@ export function DriftMode({
           </div>
           <div style={{ fontSize: 22, fontWeight: 400, lineHeight: 1.2 }}>
             {remembranceSubject.name}
+          </div>
+        </div>
+      )}
+
+      {/* Branch overlay */}
+      {isBranch && branchSubject && (
+        <div
+          style={{
+            position: "absolute",
+            top: 56,
+            left: "50%",
+            transform: "translateX(-50%)",
+            fontFamily: "var(--font-display)",
+            color: "var(--paper)",
+            textAlign: "center",
+            zIndex: 10,
+            pointerEvents: "none",
+            textShadow: "0 1px 12px rgba(0,0,0,0.6)",
+          }}
+        >
+          <div
+            style={{
+              fontFamily: "var(--font-ui)",
+              fontSize: 10,
+              letterSpacing: 2.5,
+              textTransform: "uppercase",
+              color: "var(--ink-faded)",
+              marginBottom: 4,
+            }}
+          >
+            Close to the branch of
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 400, lineHeight: 1.2 }}>
+            {branchSubject.name}
           </div>
         </div>
       )}

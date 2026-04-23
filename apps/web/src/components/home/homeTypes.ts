@@ -114,6 +114,8 @@ export interface TreeHomeTodayBirthday {
   portraitUrl: string | null;
   yearsOld: number | null;
   isLiving: boolean;
+  daysUntil: number;
+  relativeLabel: string | null;
 }
 
 export interface TreeHomeTodayDeathiversary {
@@ -121,6 +123,8 @@ export interface TreeHomeTodayDeathiversary {
   name: string;
   portraitUrl: string | null;
   yearsAgo: number | null;
+  daysUntil: number;
+  relativeLabel: string | null;
 }
 
 export interface TreeHomeTodayMemoryAnniversary {
@@ -129,6 +133,8 @@ export interface TreeHomeTodayMemoryAnniversary {
   yearsAgo: number | null;
   primaryPersonId: string | null;
   primaryPersonName: string | null;
+  daysUntil: number;
+  relativeLabel: string | null;
 }
 
 export interface TreeHomeTodayHighlights {
