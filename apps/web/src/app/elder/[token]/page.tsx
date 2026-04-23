@@ -64,19 +64,74 @@ export default function ElderLandingPage({
 
         {showInstall && (
           <div style={installNudgeStyle}>
-            <p style={{ margin: 0, lineHeight: 1.5 }}>
-              <strong>Tip:</strong> Tap the share icon below, then{" "}
-              <strong>Add to Home Screen</strong> so this stays one tap away.
-            </p>
-            <button
-              onClick={() => {
-                window.localStorage.setItem(`elder-install-nudge:${token}`, "1");
-                setShowInstall(false);
-              }}
-              style={dismissButtonStyle}
-            >
-              Got it
-            </button>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+              <div
+                aria-hidden
+                style={{
+                  width: 54,
+                  height: 54,
+                  flexShrink: 0,
+                  background: "#4E5D42",
+                  borderRadius: 10,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#F6F1E7",
+                  fontFamily: "Georgia, serif",
+                  fontWeight: 700,
+                  fontSize: 30,
+                }}
+              >
+                T
+              </div>
+              <div style={{ flex: 1 }}>
+                <p style={{ margin: "0 0 8px", lineHeight: 1.5, fontSize: 16 }}>
+                  <strong>Add this to your home screen.</strong>
+                </p>
+                <ol
+                  style={{
+                    margin: "0 0 12px",
+                    paddingLeft: 22,
+                    lineHeight: 1.6,
+                    fontSize: 15,
+                    color: "#403A2E",
+                  }}
+                >
+                  <li>
+                    Tap the <strong>Share</strong> button{" "}
+                    <span
+                      aria-hidden
+                      style={{
+                        display: "inline-block",
+                        padding: "0 6px",
+                        border: "1px solid #B08B3E",
+                        borderRadius: 3,
+                        fontSize: 12,
+                      }}
+                    >
+                      ⬆︎
+                    </span>{" "}
+                    at the bottom of Safari.
+                  </li>
+                  <li>
+                    Scroll and tap <strong>Add to Home Screen</strong>.
+                  </li>
+                  <li>Tap <strong>Add</strong> in the top-right.</li>
+                </ol>
+                <button
+                  onClick={() => {
+                    window.localStorage.setItem(
+                      `elder-install-nudge:${token}`,
+                      "1",
+                    );
+                    setShowInstall(false);
+                  }}
+                  style={dismissButtonStyle}
+                >
+                  Got it
+                </button>
+              </div>
+            </div>
           </div>
         )}
 

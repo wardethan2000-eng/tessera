@@ -848,7 +848,40 @@ interface ElderToken {
   createdAt: string;
   lastUsedAt: string | null;
   lastUsedUserAgent: string | null;
+  lastStandaloneAt: string | null;
   revokedAt: string | null;
+}
+
+function prettifyUserAgent(ua: string | null): string {
+  if (!ua) return "";
+  if (/iPhone|iPad|iPod/.test(ua)) return "iPhone/iPad";
+  if (/Android/.test(ua)) return "Android";
+  if (/Macintosh/.test(ua)) return "Mac";
+  if (/Windows/.test(ua)) return "Windows";
+  return "Browser";
+}
+
+function elderStatus(t: ElderToken): {
+  label: string;
+  tone: "muted" | "ok" | "installed";
+} {
+  if (t.lastStandaloneAt) return { label: "Installed ✓", tone: "installed" };
+  if (t.lastUsedAt) return { label: "Opened", tone: "ok" };
+  return { label: "Invited", tone: "muted" };
+}
+
+function relativeTime(iso: string | null): string {
+  if (!iso) return "";
+  const diff = Date.now() - new Date(iso).getTime();
+  const sec = Math.max(1, Math.floor(diff / 1000));
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const d = Math.floor(hr / 24);
+  if (d < 30) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString();
 }
 
 function ElderContributorsPanel({
@@ -973,60 +1006,126 @@ function ElderContributorsPanel({
         </p>
       ) : (
         <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-          {active.map((t) => (
-            <li
-              key={t.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                padding: "10px 12px",
-                background: "var(--paper)",
-                border: "1px solid var(--rule)",
-                borderRadius: 6,
-                fontFamily: "var(--font-ui)",
-                fontSize: 13,
-                flexWrap: "wrap",
-              }}
-            >
-              <div style={{ flex: 1, minWidth: 200 }}>
-                <div style={{ color: "var(--ink)", fontWeight: 500 }}>
-                  {t.displayName ?? t.email}
-                </div>
-                <div style={{ color: "var(--ink-faded)", fontSize: 12 }}>
-                  {t.email}
-                  {t.associatedPerson && ` · about ${t.associatedPerson.name}`}
-                </div>
-              </div>
-              <div style={{ color: "var(--ink-faded)", fontSize: 12 }}>
-                {t.lastUsedAt
-                  ? `Last used ${new Date(t.lastUsedAt).toLocaleDateString()}`
-                  : "Not yet used"}
-              </div>
-              <button
-                type="button"
-                onClick={async () => {
-                  if (!confirm(`Revoke link for ${t.email}? They will no longer be able to use it.`)) return;
-                  const res = await fetch(
-                    `${API}/api/trees/${treeId}/elder-capture-tokens/${t.id}`,
-                    { method: "DELETE", credentials: "include" },
-                  );
-                  if (res.ok) await refresh();
-                }}
+          {active.map((t) => {
+            const s = elderStatus(t);
+            const ua = prettifyUserAgent(t.lastUsedUserAgent);
+            const badgeBg =
+              s.tone === "installed" ? "#4E5D42" : s.tone === "ok" ? "#B08B3E" : "#847A66";
+            return (
+              <li
+                key={t.id}
                 style={{
-                  background: "transparent",
-                  color: "#8B2F2F",
-                  border: "1px solid #C8A8A8",
-                  borderRadius: 4,
-                  padding: "4px 10px",
-                  fontSize: 12,
-                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "10px 12px",
+                  background: "var(--paper)",
+                  border: "1px solid var(--rule)",
+                  borderRadius: 6,
+                  fontFamily: "var(--font-ui)",
+                  fontSize: 13,
+                  flexWrap: "wrap",
                 }}
               >
-                Revoke
-              </button>
-            </li>
-          ))}
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <div
+                    style={{
+                      color: "var(--ink)",
+                      fontWeight: 500,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                    }}
+                  >
+                    <span>{t.displayName ?? t.email}</span>
+                    <span
+                      style={{
+                        background: badgeBg,
+                        color: "#F6F1E7",
+                        fontSize: 10,
+                        fontWeight: 600,
+                        letterSpacing: 0.3,
+                        textTransform: "uppercase",
+                        padding: "2px 6px",
+                        borderRadius: 3,
+                      }}
+                    >
+                      {s.label}
+                    </span>
+                  </div>
+                  <div style={{ color: "var(--ink-faded)", fontSize: 12 }}>
+                    {t.email}
+                    {t.associatedPerson && ` · about ${t.associatedPerson.name}`}
+                  </div>
+                </div>
+                <div
+                  style={{ color: "var(--ink-faded)", fontSize: 12, minWidth: 120 }}
+                >
+                  {t.lastUsedAt
+                    ? `Opened ${relativeTime(t.lastUsedAt)}${ua ? ` · ${ua}` : ""}`
+                    : "Not yet opened"}
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (
+                      !confirm(
+                        `Send a fresh install email to ${t.email}? This rotates their private link — the previous one will stop working.`,
+                      )
+                    )
+                      return;
+                    const res = await fetch(
+                      `${API}/api/trees/${treeId}/elder-capture-tokens/${t.id}/resend`,
+                      { method: "POST", credentials: "include" },
+                    );
+                    if (res.ok) {
+                      const d = (await res.json()) as { url?: string };
+                      if (d.url) setJustMinted(d.url);
+                      await refresh();
+                    }
+                  }}
+                  style={{
+                    background: "transparent",
+                    color: "var(--moss)",
+                    border: "1px solid var(--rule)",
+                    borderRadius: 4,
+                    padding: "4px 10px",
+                    fontSize: 12,
+                    cursor: "pointer",
+                  }}
+                >
+                  Resend
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (
+                      !confirm(
+                        `Revoke link for ${t.email}? They will no longer be able to use it.`,
+                      )
+                    )
+                      return;
+                    const res = await fetch(
+                      `${API}/api/trees/${treeId}/elder-capture-tokens/${t.id}`,
+                      { method: "DELETE", credentials: "include" },
+                    );
+                    if (res.ok) await refresh();
+                  }}
+                  style={{
+                    background: "transparent",
+                    color: "#8B2F2F",
+                    border: "1px solid #C8A8A8",
+                    borderRadius: 4,
+                    padding: "4px 10px",
+                    fontSize: 12,
+                    cursor: "pointer",
+                  }}
+                >
+                  Revoke
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
 
@@ -1067,6 +1166,10 @@ function InviteContributorModal({
   async function handleSubmit() {
     if (!email.trim()) {
       setError("Email is required");
+      return;
+    }
+    if (!associatedPersonId) {
+      setError("Choose which person their memories will be tagged to");
       return;
     }
     setSubmitting(true);
@@ -1154,11 +1257,12 @@ function InviteContributorModal({
           />
         </label>
         <label style={modalLabelStyle}>
-          About which person? (memories will be tagged to them)
+          About which person? <span style={{ color: "#8B2F2F" }}>(required — memories will be tagged to them)</span>
           <select
             value={associatedPersonId}
             onChange={(e) => setAssociatedPersonId(e.target.value)}
             style={modalInputStyle}
+            required
           >
             <option value="">— choose a person —</option>
             {people.map((p) => (

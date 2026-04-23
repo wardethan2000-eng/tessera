@@ -255,6 +255,7 @@ export async function elderCapturePlugin(app: FastifyInstance): Promise<void> {
         createdAt: r.createdAt,
         lastUsedAt: r.lastUsedAt,
         lastUsedUserAgent: r.lastUsedUserAgent,
+        lastStandaloneAt: r.lastStandaloneAt,
         revokedAt: r.revokedAt,
       })),
     });
@@ -287,6 +288,66 @@ export async function elderCapturePlugin(app: FastifyInstance): Promise<void> {
       return reply.send({ ok: true });
     },
   );
+
+  /** POST /api/trees/:treeId/elder-capture-tokens/:id/resend — rotate token + re-send install email */
+  app.post(
+    "/api/trees/:treeId/elder-capture-tokens/:id/resend",
+    async (request, reply) => {
+      const session = await getSession(request.headers);
+      if (!session) return reply.status(401).send({ error: "Unauthorized" });
+      const { treeId, id } = request.params as { treeId: string; id: string };
+      const membership = await verifyMembership(treeId, session.user.id);
+      if (!membership) return reply.status(403).send({ error: "Not a member" });
+      if (!canMintTokens(membership.role)) {
+        return reply.status(403).send({ error: "Insufficient role" });
+      }
+      const existing = await db.query.elderCaptureTokens.findFirst({
+        where: (t, { and, eq, isNull }) =>
+          and(eq(t.id, id), eq(t.treeId, treeId), isNull(t.revokedAt)),
+      });
+      if (!existing) return reply.status(404).send({ error: "Token not found" });
+      const tree = await db.query.trees.findFirst({
+        where: (t, { eq }) => eq(t.id, treeId),
+      });
+      if (!tree) return reply.status(404).send({ error: "Tree not found" });
+      const rawToken = generateToken();
+      const tokenHash = hashToken(rawToken);
+      await db
+        .update(schema.elderCaptureTokens)
+        .set({ tokenHash })
+        .where(eq(schema.elderCaptureTokens.id, existing.id));
+      const emailSent = await sendInstallEmail({
+        email: existing.email,
+        rawToken,
+        treeName: tree.name,
+        familyLabel: existing.familyLabel,
+        inviterName: session.user.name ?? session.user.email ?? "A family member",
+      });
+      return reply.send({
+        ok: true,
+        emailSent,
+        url: `${WEB_URL}/elder/${rawToken}`,
+      });
+    },
+  );
+
+  /** POST /api/elder/:token/ping — mark that the PWA is installed */
+  app.post("/api/elder/:token/ping", async (request, reply) => {
+    const { token } = request.params as { token: string };
+    const resolved = await resolveElderToken(token);
+    if (!resolved.ok) return reply.status(resolved.status).send({ error: resolved.error });
+    const body = (request.body ?? {}) as { standalone?: boolean };
+    await db
+      .update(schema.elderCaptureTokens)
+      .set({
+        lastStandaloneAt: body.standalone ? new Date() : resolved.token.lastStandaloneAt,
+        lastUsedAt: new Date(),
+        lastUsedUserAgent:
+          (request.headers["user-agent"] ?? "").toString().slice(0, 500) || null,
+      })
+      .where(eq(schema.elderCaptureTokens.id, resolved.token.id));
+    return reply.send({ ok: true });
+  });
 
   /** GET /api/elder/:token/inbox — public */
   app.get("/api/elder/:token/inbox", async (request, reply) => {

@@ -582,6 +582,7 @@ export const elderCaptureTokens = pgTable(
       .notNull(),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     lastUsedUserAgent: text("last_used_user_agent"),
+    lastStandaloneAt: timestamp("last_standalone_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
   },
   (table) => [

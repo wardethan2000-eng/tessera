@@ -141,6 +141,13 @@
       "when": 1776932207290,
       "tag": "0019_elder_capture_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1777343849000,
+      "tag": "0020_elder_last_standalone",
+      "breakpoints": true
     }
   ]
 }
