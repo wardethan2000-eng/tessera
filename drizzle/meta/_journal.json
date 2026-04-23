@@ -127,6 +127,13 @@
       "when": 1776891150316,
       "tag": "0017_special_bucky",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1777000000000,
+      "tag": "0018_prompt_campaigns",
+      "breakpoints": true
     }
   ]
 }

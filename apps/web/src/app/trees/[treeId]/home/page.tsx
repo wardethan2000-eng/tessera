@@ -36,7 +36,8 @@ import { writeLastOpenedTreeId } from "@/lib/last-opened-tree";
 import { isCanonicalTreeId, resolveCanonicalTreeId } from "@/lib/tree-route";
 import { usePendingVoiceTranscriptionRefresh } from "@/lib/usePendingVoiceTranscriptionRefresh";
 import { AddMemoryWizard } from "@/components/tree/AddMemoryWizard";
-import { DriftMode } from "@/components/tree/DriftMode";
+import { DriftMode, type DriftFilter } from "@/components/tree/DriftMode";
+import { DriftChooserSheet } from "@/components/tree/DriftChooserSheet";
 import { SearchOverlay } from "@/components/tree/SearchOverlay";
 import { GearIcon, InboxIcon } from "@/components/tree/SurfaceToolbarIcons";
 import { fetchWithTimeout } from "@/lib/fetch-timeout";
@@ -101,13 +102,12 @@ export default function AtriumPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [driftOpen, setDriftOpen] = useState(false);
-  const [driftFilter, setDriftFilter] = useState<{
-    mode?: "remembrance";
-    personId?: string;
-  } | null>(null);
+  const [driftChooserOpen, setDriftChooserOpen] = useState(false);
+  const [driftFilter, setDriftFilter] = useState<DriftFilter | null>(null);
   const openDrift = useCallback(
-    (filter?: { mode?: "remembrance"; personId?: string } | null) => {
+    (filter?: DriftFilter | null) => {
       setDriftFilter(filter ?? null);
+      setDriftChooserOpen(false);
       setDriftOpen(true);
     },
     [],
@@ -115,6 +115,12 @@ export default function AtriumPage() {
   const closeDrift = useCallback(() => {
     setDriftOpen(false);
     setDriftFilter(null);
+  }, []);
+  const openDriftChooser = useCallback(() => {
+    setDriftChooserOpen(true);
+  }, []);
+  const closeDriftChooser = useCallback(() => {
+    setDriftChooserOpen(false);
   }, []);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -505,9 +511,12 @@ export default function AtriumPage() {
             <Link href={`/trees/${treeId}/tree`} style={getHeaderNavItemStyle(false)}>
               Family tree
             </Link>
-            <button type="button" onClick={() => openDrift()} style={getHeaderNavButtonStyle(false)} title="Explore by era">
+            <button type="button" onClick={openDriftChooser} style={getHeaderNavButtonStyle(false)} title="Choose how to drift">
               Drift
             </button>
+            <Link href={`/trees/${treeId}/prompts/campaigns`} style={getHeaderNavItemStyle(false)} title="Recurring questions you're sending">
+              Campaigns
+            </Link>
           </div>
         </div>
 
@@ -642,7 +651,7 @@ export default function AtriumPage() {
             branchHref={activeFocusPersonId ? `/trees/${treeId}/people/${activeFocusPersonId}` : null}
             fullTreeHref={`/trees/${treeId}/tree`}
             resurfacingCount={activeHeroCandidates.length}
-            onDrift={() => openDrift()}
+            onDrift={openDriftChooser}
           />
         </>
       )}
@@ -668,6 +677,13 @@ export default function AtriumPage() {
           openArchiveHref={`/trees/${treeId}/tree`}
         />
       )}
+
+      <DriftChooserSheet
+        open={driftChooserOpen}
+        people={people}
+        onClose={closeDriftChooser}
+        onChoose={(filter) => openDrift(filter)}
+      />
 
       <AnimatePresence>
         {driftOpen && (

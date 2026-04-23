@@ -10,6 +10,7 @@ import { mediaPlugin } from "./routes/media.js";
 import { memoriesPlugin } from "./routes/memories.js";
 import { relationshipsPlugin } from "./routes/relationships.js";
 import { promptsPlugin } from "./routes/prompts.js";
+import { promptCampaignsPlugin } from "./routes/prompt-campaigns.js";
 import { placesPlugin } from "./routes/places.js";
 import { importPlugin } from "./routes/import.js";
 import { curationPlugin } from "./routes/curation.js";
@@ -94,6 +95,7 @@ export function buildApp() {
   app.register(invitationsPlugin);
   app.register(exportPlugin);
   app.register(promptsPlugin);
+  app.register(promptCampaignsPlugin);
   app.register(placesPlugin);
   app.register(importPlugin);
   app.register(curationPlugin);

@@ -98,6 +98,12 @@ export const promptReplyLinkStatusEnum = pgEnum("prompt_reply_link_status", [
   "expired",
 ]);
 
+export const promptCampaignStatusEnum = pgEnum("prompt_campaign_status", [
+  "active",
+  "paused",
+  "completed",
+]);
+
 export const treeScopeVisibilityEnum = pgEnum("tree_scope_visibility", [
   "all_members",
   "family_circle",
@@ -473,6 +479,83 @@ export const promptReplyLinks = pgTable(
     index("prompt_reply_links_email_idx").on(table.email),
     index("prompt_reply_links_status_idx").on(table.status),
     uniqueIndex("prompt_reply_links_token_hash_unique_idx").on(table.tokenHash),
+  ],
+);
+
+export const promptCampaigns = pgTable(
+  "prompt_campaigns",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    treeId: uuid("tree_id")
+      .notNull()
+      .references(() => trees.id, { onDelete: "cascade" }),
+    fromUserId: text("from_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    toPersonId: uuid("to_person_id")
+      .notNull()
+      .references(() => people.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 200 }).notNull(),
+    cadenceDays: integer("cadence_days").default(7).notNull(),
+    status: promptCampaignStatusEnum("status").default("active").notNull(),
+    nextSendAt: timestamp("next_send_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    lastSentAt: timestamp("last_sent_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("prompt_campaigns_tree_idx").on(table.treeId),
+    index("prompt_campaigns_status_idx").on(table.status),
+    index("prompt_campaigns_next_send_idx").on(table.nextSendAt),
+  ],
+);
+
+export const promptCampaignQuestions = pgTable(
+  "prompt_campaign_questions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    campaignId: uuid("campaign_id")
+      .notNull()
+      .references(() => promptCampaigns.id, { onDelete: "cascade" }),
+    questionText: text("question_text").notNull(),
+    position: integer("position").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    sentPromptId: uuid("sent_prompt_id").references(() => prompts.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("prompt_campaign_questions_campaign_idx").on(table.campaignId),
+    index("prompt_campaign_questions_position_idx").on(
+      table.campaignId,
+      table.position,
+    ),
+  ],
+);
+
+export const promptCampaignRecipients = pgTable(
+  "prompt_campaign_recipients",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    campaignId: uuid("campaign_id")
+      .notNull()
+      .references(() => promptCampaigns.id, { onDelete: "cascade" }),
+    email: varchar("email", { length: 320 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("prompt_campaign_recipients_campaign_idx").on(table.campaignId),
   ],
 );
 
@@ -1063,6 +1146,44 @@ export const promptReplyLinksRelations = relations(promptReplyLinks, ({ one }) =
     references: [users.id],
   }),
 }));
+
+export const promptCampaignsRelations = relations(promptCampaigns, ({ one, many }) => ({
+  tree: one(trees, { fields: [promptCampaigns.treeId], references: [trees.id] }),
+  fromUser: one(users, {
+    fields: [promptCampaigns.fromUserId],
+    references: [users.id],
+  }),
+  toPerson: one(people, {
+    fields: [promptCampaigns.toPersonId],
+    references: [people.id],
+  }),
+  questions: many(promptCampaignQuestions),
+  recipients: many(promptCampaignRecipients),
+}));
+
+export const promptCampaignQuestionsRelations = relations(
+  promptCampaignQuestions,
+  ({ one }) => ({
+    campaign: one(promptCampaigns, {
+      fields: [promptCampaignQuestions.campaignId],
+      references: [promptCampaigns.id],
+    }),
+    sentPrompt: one(prompts, {
+      fields: [promptCampaignQuestions.sentPromptId],
+      references: [prompts.id],
+    }),
+  }),
+);
+
+export const promptCampaignRecipientsRelations = relations(
+  promptCampaignRecipients,
+  ({ one }) => ({
+    campaign: one(promptCampaigns, {
+      fields: [promptCampaignRecipients.campaignId],
+      references: [promptCampaigns.id],
+    }),
+  }),
+);
 
 export const invitationsRelations = relations(invitations, ({ one }) => ({
   tree: one(trees, { fields: [invitations.treeId], references: [trees.id] }),

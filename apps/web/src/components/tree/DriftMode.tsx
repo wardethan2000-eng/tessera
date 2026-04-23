@@ -52,6 +52,7 @@ interface DriftFeedMemory {
 }
 
 const PHOTO_DURATION_MS = 6000;
+const REMEMBRANCE_PACING_MULTIPLIER = 1.6;
 const STORY_MIN_MS = 8000;
 const STORY_MAX_MS = 45000;
 const WORDS_PER_MINUTE = 200;
@@ -394,22 +395,37 @@ export function DriftMode({
   const current = items[currentIndex] ?? null;
   const currentKind: DetectedKind | null = current ? detectItemKind(current) : null;
 
+  const isRemembrance = initialFilter?.mode === "remembrance";
+  const remembranceSubject = useMemo(() => {
+    if (!isRemembrance || !initialFilter?.personId) return null;
+    return people.find((p) => p.id === initialFilter.personId) ?? null;
+  }, [isRemembrance, initialFilter?.personId, people]);
+
   const computedDurationMs = useMemo(() => {
     if (!current || !currentKind) return PHOTO_DURATION_MS;
+    let base: number;
     switch (currentKind) {
       case "image":
-        return PHOTO_DURATION_MS;
+        base = PHOTO_DURATION_MS;
+        break;
       case "text":
-        return readingTimeMs(current.memory.body ?? current.memory.transcriptText ?? "");
+        base = readingTimeMs(current.memory.body ?? current.memory.transcriptText ?? "");
+        break;
       case "link":
-        return DOCUMENT_CARD_MS;
+        base = DOCUMENT_CARD_MS;
+        break;
       case "video":
       case "audio":
-        return MEDIA_MAX_MS;
+        base = MEDIA_MAX_MS;
+        break;
       default:
-        return PHOTO_DURATION_MS;
+        base = PHOTO_DURATION_MS;
     }
-  }, [current, currentKind]);
+    if (isRemembrance && currentKind !== "video" && currentKind !== "audio") {
+      base = Math.round(base * REMEMBRANCE_PACING_MULTIPLIER);
+    }
+    return base;
+  }, [current, currentKind, isRemembrance]);
 
   const advance = useCallback(() => {
     setProgress(0);
@@ -567,18 +583,19 @@ export function DriftMode({
     return null;
   }, [current, currentKind]);
 
+  const effectiveBackdropStyle: BackdropStyle = isRemembrance ? "blur-mono" : backdropStyle;
   const activeBackdrop =
-    BACKDROP_STYLES.find((s) => s.id === backdropStyle) ?? BACKDROP_STYLES[0]!;
+    BACKDROP_STYLES.find((s) => s.id === effectiveBackdropStyle) ?? BACKDROP_STYLES[0]!;
 
   const showPhotoBackdrop =
     backdropPhotoUrl != null &&
     activeBackdrop.blurPx > 0 &&
-    backdropStyle !== "ink" &&
-    backdropStyle !== "none" &&
-    backdropStyle !== "gradient";
+    effectiveBackdropStyle !== "ink" &&
+    effectiveBackdropStyle !== "none" &&
+    effectiveBackdropStyle !== "gradient";
 
   const rootBackground =
-    backdropStyle === "none"
+    effectiveBackdropStyle === "none"
       ? "var(--ink)"
       : activeBackdrop.useGradientWhenNoPhoto && !showPhotoBackdrop
         ? gradientBackdrop
@@ -606,7 +623,7 @@ export function DriftMode({
       <AnimatePresence mode="wait">
         {showPhotoBackdrop && backdropPhotoUrl && (
           <motion.div
-            key={`backdrop:${backdropStyle}:${backdropPhotoUrl}`}
+            key={`backdrop:${effectiveBackdropStyle}:${backdropPhotoUrl}`}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -657,6 +674,40 @@ export function DriftMode({
       >
         × Exit drift
       </button>
+
+      {/* In memory of overlay (remembrance mode) */}
+      {isRemembrance && remembranceSubject && (
+        <div
+          style={{
+            position: "absolute",
+            top: 56,
+            left: "50%",
+            transform: "translateX(-50%)",
+            fontFamily: "var(--font-display)",
+            color: "var(--paper)",
+            textAlign: "center",
+            zIndex: 10,
+            pointerEvents: "none",
+            textShadow: "0 1px 12px rgba(0,0,0,0.6)",
+          }}
+        >
+          <div
+            style={{
+              fontFamily: "var(--font-ui)",
+              fontSize: 10,
+              letterSpacing: 2.5,
+              textTransform: "uppercase",
+              color: "var(--ink-faded)",
+              marginBottom: 4,
+            }}
+          >
+            In memory of
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 400, lineHeight: 1.2 }}>
+            {remembranceSubject.name}
+          </div>
+        </div>
+      )}
 
       {/* Kind chip + item N/M */}
       {current && !isLoading && currentKind && (
@@ -717,34 +768,37 @@ export function DriftMode({
         {isPlaying ? "Playing" : "Paused"}
       </button>
 
-      {/* Backdrop style selector (dev-facing knob for trying looks) */}
-      <select
-        value={backdropStyle}
-        onChange={(e) => setBackdropStyle(e.target.value as BackdropStyle)}
-        aria-label="Backdrop style"
-        style={{
-          position: "absolute",
-          top: 20,
-          right: 140,
-          background: "rgba(10,10,10,0.5)",
-          border: "1px solid rgba(217,208,188,0.3)",
-          borderRadius: 20,
-          color: "var(--paper-deep)",
-          fontFamily: "var(--font-ui)",
-          fontSize: 12,
-          cursor: "pointer",
-          padding: "5px 12px",
-          zIndex: 10,
-          appearance: "none",
-          outline: "none",
-        }}
-      >
-        {BACKDROP_STYLES.map((s) => (
-          <option key={s.id} value={s.id} style={{ background: "#1a1a1a" }}>
-            {s.label}
-          </option>
-        ))}
-      </select>
+      {/* Backdrop style selector (dev-facing knob for trying looks). Hidden in
+          remembrance mode where the mono backdrop is enforced. */}
+      {!isRemembrance && (
+        <select
+          value={backdropStyle}
+          onChange={(e) => setBackdropStyle(e.target.value as BackdropStyle)}
+          aria-label="Backdrop style"
+          style={{
+            position: "absolute",
+            top: 20,
+            right: 140,
+            background: "rgba(10,10,10,0.5)",
+            border: "1px solid rgba(217,208,188,0.3)",
+            borderRadius: 20,
+            color: "var(--paper-deep)",
+            fontFamily: "var(--font-ui)",
+            fontSize: 12,
+            cursor: "pointer",
+            padding: "5px 12px",
+            zIndex: 10,
+            appearance: "none",
+            outline: "none",
+          }}
+        >
+          {BACKDROP_STYLES.map((s) => (
+            <option key={s.id} value={s.id} style={{ background: "#1a1a1a" }}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+      )}
 
       {/* Navigation zones */}
       <button
