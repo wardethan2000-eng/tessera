@@ -10,6 +10,7 @@ import { AtriumMemoryTrail } from "@/components/home/AtriumMemoryTrail";
 import { AtriumSkeleton } from "@/components/home/HomeSurfaceSkeletons";
 import { AtriumStage } from "@/components/home/AtriumStage";
 import { AtriumStartState } from "@/components/home/AtriumStartState";
+import { AtriumTodayBanner } from "@/components/home/AtriumTodayBanner";
 import type {
   TreeHomeArchiveSummary,
   TreeHomeCoverage,
@@ -21,6 +22,7 @@ import type {
   TreeHomePersonRecord,
   TreeHomeRelationship,
   TreeHomeStats,
+  TreeHomeTodayHighlights,
 } from "@/components/home/homeTypes";
 import {
   buildAtriumMemoryTrail,
@@ -94,10 +96,26 @@ export default function AtriumPage() {
   const [homeStats, setHomeStats] = useState<TreeHomeStats | null>(null);
   const [coverage, setCoverage] = useState<TreeHomeCoverage | null>(null);
   const [relationships, setRelationships] = useState<TreeHomeRelationship[]>([]);
+  const [today, setToday] = useState<TreeHomeTodayHighlights | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [driftOpen, setDriftOpen] = useState(false);
+  const [driftFilter, setDriftFilter] = useState<{
+    mode?: "remembrance";
+    personId?: string;
+  } | null>(null);
+  const openDrift = useCallback(
+    (filter?: { mode?: "remembrance"; personId?: string } | null) => {
+      setDriftFilter(filter ?? null);
+      setDriftOpen(true);
+    },
+    [],
+  );
+  const closeDrift = useCallback(() => {
+    setDriftOpen(false);
+    setDriftFilter(null);
+  }, []);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [inboxCount, setInboxCount] = useState(0);
@@ -129,6 +147,7 @@ export default function AtriumPage() {
     setHomeStats(data.stats);
     setCoverage(data.coverage);
     setRelationships(data.relationships);
+    setToday(data.today ?? null);
     setSelectedEra((current) =>
       current === "all" || data.coverage.decadeBuckets.some((bucket) => bucket.startYear === current)
         ? current
@@ -486,7 +505,7 @@ export default function AtriumPage() {
             <Link href={`/trees/${treeId}/tree`} style={getHeaderNavItemStyle(false)}>
               Family tree
             </Link>
-            <button type="button" onClick={() => setDriftOpen(true)} style={getHeaderNavButtonStyle(false)} title="Explore by era">
+            <button type="button" onClick={() => openDrift()} style={getHeaderNavButtonStyle(false)} title="Explore by era">
               Drift
             </button>
           </div>
@@ -606,16 +625,26 @@ export default function AtriumPage() {
           onAddMemory={() => setWizardOpen(true)}
         />
       ) : (
-        <AtriumStage
-          treeName={tree?.name ?? "Family Archive"}
-          featuredMemory={activeFeaturedMemory}
-          branchCue={branchCue}
-          memoryHref={activeFeaturedMemory ? `/trees/${treeId}/memories/${activeFeaturedMemory.id}` : null}
-          branchHref={activeFocusPersonId ? `/trees/${treeId}/people/${activeFocusPersonId}` : null}
-          fullTreeHref={`/trees/${treeId}/tree`}
-          resurfacingCount={activeHeroCandidates.length}
-          onDrift={() => setDriftOpen(true)}
-        />
+        <>
+          <AtriumTodayBanner
+            treeId={treeId}
+            today={today}
+            onStartPersonDrift={(personId) => openDrift({ personId })}
+            onStartRemembrance={(personId) =>
+              openDrift({ mode: "remembrance", personId })
+            }
+          />
+          <AtriumStage
+            treeName={tree?.name ?? "Family Archive"}
+            featuredMemory={activeFeaturedMemory}
+            branchCue={branchCue}
+            memoryHref={activeFeaturedMemory ? `/trees/${treeId}/memories/${activeFeaturedMemory.id}` : null}
+            branchHref={activeFocusPersonId ? `/trees/${treeId}/people/${activeFocusPersonId}` : null}
+            fullTreeHref={`/trees/${treeId}/tree`}
+            resurfacingCount={activeHeroCandidates.length}
+            onDrift={() => openDrift()}
+          />
+        </>
       )}
 
       <AtriumContextStrip
@@ -653,9 +682,10 @@ export default function AtriumPage() {
               portraitUrl: person.portraitUrl,
               linkedUserId: person.linkedUserId,
             }))}
-            onClose={() => setDriftOpen(false)}
+            onClose={closeDrift}
             onPersonDetail={handlePersonClick}
             apiBase={API}
+            initialFilter={driftFilter}
           />
         )}
       </AnimatePresence>

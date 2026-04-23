@@ -108,6 +108,36 @@ export interface TreeHomeFamilyPresence {
   groups: TreeHomeFamilyPresenceGroup[];
 }
 
+export interface TreeHomeTodayBirthday {
+  personId: string;
+  name: string;
+  portraitUrl: string | null;
+  yearsOld: number | null;
+  isLiving: boolean;
+}
+
+export interface TreeHomeTodayDeathiversary {
+  personId: string;
+  name: string;
+  portraitUrl: string | null;
+  yearsAgo: number | null;
+}
+
+export interface TreeHomeTodayMemoryAnniversary {
+  memoryId: string;
+  title: string;
+  yearsAgo: number | null;
+  primaryPersonId: string | null;
+  primaryPersonName: string | null;
+}
+
+export interface TreeHomeTodayHighlights {
+  monthDayLabel: string;
+  birthdays: TreeHomeTodayBirthday[];
+  deathiversaries: TreeHomeTodayDeathiversary[];
+  memoryAnniversaries: TreeHomeTodayMemoryAnniversary[];
+}
+
 export interface TreeHomePayload {
   tree: TreeHomeTree;
   people: TreeHomePersonRecord[];
@@ -118,6 +148,7 @@ export interface TreeHomePayload {
   relatedMemoryTrail: TreeHomeMemoryTrailSection[];
   familyPresence: TreeHomeFamilyPresence;
   archiveSummary: TreeHomeArchiveSummary;
+  today?: TreeHomeTodayHighlights;
   inboxCount: number;
   curationCount: number;
   currentUserPersonId: string | null;

@@ -36,6 +36,62 @@ function extractYear(text?: string | null): number | null {
   return match ? Number.parseInt(match[1]!, 10) : null;
 }
 
+const MONTH_NAME_TO_INDEX: Record<string, number> = {
+  jan: 0, january: 0,
+  feb: 1, february: 1,
+  mar: 2, march: 2,
+  apr: 3, april: 3,
+  may: 4,
+  jun: 5, june: 5,
+  jul: 6, july: 6,
+  aug: 7, august: 7,
+  sep: 8, sept: 8, september: 8,
+  oct: 9, october: 9,
+  nov: 10, november: 10,
+  dec: 11, december: 11,
+};
+
+// Best-effort month/day extraction from free-form date text.
+// Recognizes ISO (1955-06-12), spelled month ("June 12, 1955" / "12 June 1955"),
+// and US-style M/D/YYYY. Returns null when only a year is present.
+function extractMonthDay(text?: string | null): { month: number; day: number } | null {
+  if (!text) return null;
+  const trimmed = text.trim();
+
+  const iso = trimmed.match(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/);
+  if (iso) {
+    const month = Number.parseInt(iso[2]!, 10) - 1;
+    const day = Number.parseInt(iso[3]!, 10);
+    if (month >= 0 && month <= 11 && day >= 1 && day <= 31) return { month, day };
+  }
+
+  const lower = trimmed.toLowerCase();
+  for (const [name, idx] of Object.entries(MONTH_NAME_TO_INDEX)) {
+    const re = new RegExp(`\\b${name}\\b[\\s.,-]*(\\d{1,2})\\b`);
+    const m = lower.match(re);
+    if (m) {
+      const day = Number.parseInt(m[1]!, 10);
+      if (day >= 1 && day <= 31) return { month: idx, day };
+    }
+    const re2 = new RegExp(`\\b(\\d{1,2})[\\s.,-]+${name}\\b`);
+    const m2 = lower.match(re2);
+    if (m2) {
+      const day = Number.parseInt(m2[1]!, 10);
+      if (day >= 1 && day <= 31) return { month: idx, day };
+    }
+  }
+
+  // M/D/YYYY or M/D
+  const slash = trimmed.match(/\b(\d{1,2})\/(\d{1,2})(?:\/\d{2,4})?\b/);
+  if (slash) {
+    const month = Number.parseInt(slash[1]!, 10) - 1;
+    const day = Number.parseInt(slash[2]!, 10);
+    if (month >= 0 && month <= 11 && day >= 1 && day <= 31) return { month, day };
+  }
+
+  return null;
+}
+
 function serializeHomePerson(person: HomePerson) {
   return {
     ...person,
@@ -542,6 +598,138 @@ function buildFamilyPresenceGroups({
     : [];
 }
 
+type TodayBirthdayHighlight = {
+  personId: string;
+  name: string;
+  portraitUrl: string | null;
+  yearsOld: number | null;
+  isLiving: boolean;
+};
+
+type TodayDeathiversaryHighlight = {
+  personId: string;
+  name: string;
+  portraitUrl: string | null;
+  yearsAgo: number | null;
+};
+
+type TodayMemoryAnniversaryHighlight = {
+  memoryId: string;
+  title: string;
+  yearsAgo: number | null;
+  primaryPersonId: string | null;
+  primaryPersonName: string | null;
+};
+
+type TodayHighlights = {
+  monthDayLabel: string;
+  birthdays: TodayBirthdayHighlight[];
+  deathiversaries: TodayDeathiversaryHighlight[];
+  memoryAnniversaries: TodayMemoryAnniversaryHighlight[];
+};
+
+const MONTH_LABELS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+function buildTodayHighlights({
+  people,
+  memories,
+}: {
+  people: HomePerson[];
+  memories: HomeMemory[];
+}): TodayHighlights {
+  const now = new Date();
+  const todayMonth = now.getMonth();
+  const todayDay = now.getDate();
+  const todayYear = now.getFullYear();
+
+  const birthdays: TodayBirthdayHighlight[] = [];
+  const deathiversaries: TodayDeathiversaryHighlight[] = [];
+
+  for (const person of people) {
+    const birth = extractMonthDay(person.birthDateText);
+    if (birth && birth.month === todayMonth && birth.day === todayDay) {
+      const birthYear = extractYear(person.birthDateText);
+      const deathYear = extractYear(person.deathDateText);
+      const isLiving = !person.deathDateText;
+      birthdays.push({
+        personId: person.id,
+        name: person.displayName ?? "",
+        portraitUrl: person.portraitMedia
+          ? mediaUrl(person.portraitMedia.objectKey)
+          : null,
+        yearsOld:
+          birthYear !== null
+            ? (deathYear ?? todayYear) - birthYear
+            : null,
+        isLiving,
+      });
+    }
+    const death = extractMonthDay(person.deathDateText);
+    if (death && death.month === todayMonth && death.day === todayDay) {
+      const deathYear = extractYear(person.deathDateText);
+      deathiversaries.push({
+        personId: person.id,
+        name: person.displayName ?? "",
+        portraitUrl: person.portraitMedia
+          ? mediaUrl(person.portraitMedia.objectKey)
+          : null,
+        yearsAgo: deathYear !== null ? todayYear - deathYear : null,
+      });
+    }
+  }
+
+  const memoryAnniversaries: TodayMemoryAnniversaryHighlight[] = [];
+  for (const memory of memories) {
+    const md = extractMonthDay(memory.dateOfEventText);
+    if (!md || md.month !== todayMonth || md.day !== todayDay) continue;
+    const year = extractYear(memory.dateOfEventText);
+    if (year !== null && todayYear - year < 1) continue;
+    const primary = memory.primaryPersonId
+      ? people.find((p) => p.id === memory.primaryPersonId) ?? null
+      : null;
+    memoryAnniversaries.push({
+      memoryId: memory.id,
+      title: memory.title ?? "Untitled memory",
+      yearsAgo: year !== null ? todayYear - year : null,
+      primaryPersonId: primary?.id ?? null,
+      primaryPersonName: primary
+        ? primary.displayName ?? null
+        : null,
+    });
+  }
+
+  // Strongest milestones first within each list (round numbers feel weighty).
+  const milestoneScore = (n: number | null) => {
+    if (n === null) return 0;
+    if (n === 0) return 1;
+    if (n % 100 === 0) return 100;
+    if (n % 50 === 0) return 60;
+    if (n % 25 === 0) return 40;
+    if (n % 10 === 0) return 20;
+    if (n % 5 === 0) return 10;
+    return 1;
+  };
+  birthdays.sort(
+    (a, b) => milestoneScore(b.yearsOld) - milestoneScore(a.yearsOld),
+  );
+  deathiversaries.sort(
+    (a, b) => milestoneScore(b.yearsAgo) - milestoneScore(a.yearsAgo),
+  );
+  memoryAnniversaries.sort(
+    (a, b) => milestoneScore(b.yearsAgo) - milestoneScore(a.yearsAgo),
+  );
+
+  return {
+    monthDayLabel: `${MONTH_LABELS[todayMonth]} ${todayDay}`,
+    birthdays,
+    deathiversaries,
+    memoryAnniversaries: memoryAnniversaries.slice(0, 6),
+  };
+}
+
 function buildArchiveSummary({
   people,
   relationships,
@@ -763,6 +951,8 @@ export async function treesPlugin(app: FastifyInstance): Promise<void> {
       focusPerson,
     });
 
+    const todayHighlights = buildTodayHighlights({ people, memories });
+
     return reply.send({
       tree: {
         ...membership.tree,
@@ -786,6 +976,7 @@ export async function treesPlugin(app: FastifyInstance): Promise<void> {
         groups: familyPresenceGroups,
       },
       archiveSummary,
+      today: todayHighlights,
       stats: {
         peopleCount: people.length,
         memoryCount: memories.length,

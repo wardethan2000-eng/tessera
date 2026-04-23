@@ -26,7 +26,15 @@ interface DriftModeProps {
   onClose: () => void;
   onPersonDetail: (personId: string) => void;
   apiBase: string;
+  initialFilter?: DriftFilter | null;
 }
+
+export type DriftFilter = {
+  mode?: "remembrance";
+  personId?: string;
+  yearStart?: number;
+  yearEnd?: number;
+};
 
 interface DriftFeedMemory {
   id: string;
@@ -233,6 +241,7 @@ export function DriftMode({
   onClose,
   onPersonDetail,
   apiBase,
+  initialFilter,
 }: DriftModeProps) {
   const [items, setItems] = useState<DriftItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -265,8 +274,18 @@ export function DriftMode({
       const peopleById = new Map(people.map((p) => [p.id, p]));
       let feed: DriftFeedMemory[] = [];
 
+      const params = new URLSearchParams();
+      if (initialFilter?.personId) params.set("personId", initialFilter.personId);
+      if (initialFilter?.mode) params.set("mode", initialFilter.mode);
+      if (initialFilter?.yearStart != null)
+        params.set("yearStart", String(initialFilter.yearStart));
+      if (initialFilter?.yearEnd != null)
+        params.set("yearEnd", String(initialFilter.yearEnd));
+      const qs = params.toString();
+      const driftUrl = `${apiBase}/api/trees/${treeId}/drift${qs ? `?${qs}` : ""}`;
+
       try {
-        const res = await fetch(`${apiBase}/api/trees/${treeId}/drift`, {
+        const res = await fetch(driftUrl, {
           credentials: "include",
         });
         if (res.ok) {
@@ -370,7 +389,7 @@ export function DriftMode({
       setIsLoading(false);
     };
     fetchAll();
-  }, [treeId, people, apiBase]);
+  }, [treeId, people, apiBase, initialFilter]);
 
   const current = items[currentIndex] ?? null;
   const currentKind: DetectedKind | null = current ? detectItemKind(current) : null;

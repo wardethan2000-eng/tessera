@@ -41,6 +41,12 @@ function seededShuffle<T>(items: T[], seed: string): T[] {
   return copy;
 }
 
+function extractYearLocal(text?: string | null): number | null {
+  if (!text) return null;
+  const match = text.match(/\b(\d{4})\b/);
+  return match ? Number.parseInt(match[1]!, 10) : null;
+}
+
 export async function driftPlugin(app: FastifyInstance) {
   app.get("/api/trees/:treeId/drift", async (request, reply) => {
     const session = await getSession(request.headers);
@@ -52,18 +58,46 @@ export async function driftPlugin(app: FastifyInstance) {
       return reply.status(403).send({ error: "Not a member of this tree" });
     }
 
-    const query = request.query as { seed?: string; limit?: string };
+    const query = request.query as {
+      seed?: string;
+      limit?: string;
+      personId?: string;
+      mode?: string;
+      yearStart?: string;
+      yearEnd?: string;
+    };
     const seed = query.seed && query.seed.length > 0 ? query.seed : `${treeId}:${Date.now()}`;
     const requestedLimit = query.limit ? Number.parseInt(query.limit, 10) : 400;
     const limit = Number.isFinite(requestedLimit)
       ? Math.min(800, Math.max(1, requestedLimit))
       : 400;
+    const personFilter = query.personId && query.personId.length > 0 ? query.personId : null;
+    const isRemembrance = query.mode === "remembrance";
+    const yearStart = query.yearStart ? Number.parseInt(query.yearStart, 10) : null;
+    const yearEnd = query.yearEnd ? Number.parseInt(query.yearEnd, 10) : null;
 
     const memories = await getTreeMemories(treeId, {
       viewerUserId: session.user.id,
     });
 
-    const serialized = memories.map((memory) => {
+    const filtered = memories.filter((memory) => {
+      if (personFilter) {
+        const matchesPrimary = memory.primaryPersonId === personFilter;
+        const matchesTag = memory.personTags?.some(
+          (tag) => tag.personId === personFilter,
+        );
+        if (!matchesPrimary && !matchesTag) return false;
+      }
+      if (yearStart != null || yearEnd != null) {
+        const year = extractYearLocal(memory.dateOfEventText);
+        if (year === null) return false;
+        if (yearStart != null && year < yearStart) return false;
+        if (yearEnd != null && year > yearEnd) return false;
+      }
+      return true;
+    });
+
+    const serialized = filtered.map((memory) => {
       const primary = memory.primaryPerson;
       const mediaItems = (memory.mediaItems ?? []).map((item) => ({
         id: item.id,
@@ -101,12 +135,20 @@ export async function driftPlugin(app: FastifyInstance) {
       };
     });
 
-    const shuffled = seededShuffle(serialized, seed).slice(0, limit);
+    const shuffled = isRemembrance
+      ? [...serialized].sort((a, b) => {
+          const ya = extractYearLocal(a.dateOfEventText) ?? 9999;
+          const yb = extractYearLocal(b.dateOfEventText) ?? 9999;
+          return ya - yb;
+        }).slice(0, limit)
+      : seededShuffle(serialized, seed).slice(0, limit);
 
     return reply.send({
       treeId,
       seed,
       count: shuffled.length,
+      mode: isRemembrance ? "remembrance" : "shuffle",
+      personId: personFilter,
       memories: shuffled,
     });
   });
