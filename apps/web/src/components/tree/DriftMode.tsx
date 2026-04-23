@@ -50,6 +50,31 @@ const WORDS_PER_MINUTE = 200;
 const MEDIA_MAX_MS = 60000;
 const DEFAULT_MEDIA_FALLBACK_MS = 15000;
 const DOCUMENT_CARD_MS = 8000;
+const SEEN_STORAGE_KEY_PREFIX = "tessera:drift:seen:";
+
+function loadSeenMap(treeId: string): Record<string, number> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(SEEN_STORAGE_KEY_PREFIX + treeId);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistSeenMap(treeId: string, map: Record<string, number>) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      SEEN_STORAGE_KEY_PREFIX + treeId,
+      JSON.stringify(map),
+    );
+  } catch {
+    // Quota errors are fine to swallow — bias is best-effort.
+  }
+}
 
 type DetectedKind = "image" | "video" | "audio" | "link" | "text";
 
@@ -156,6 +181,18 @@ export function DriftMode({
           [feed[i], feed[j]] = [feed[j]!, feed[i]!];
         }
       }
+
+      // Bias: unseen memories first (in server-provided order), then seen
+      // memories sorted by oldest-seen-first so nothing drifts back too soon.
+      const seen = loadSeenMap(treeId);
+      const unseen: DriftFeedMemory[] = [];
+      const alreadySeen: DriftFeedMemory[] = [];
+      for (const memory of feed) {
+        if (seen[memory.id]) alreadySeen.push(memory);
+        else unseen.push(memory);
+      }
+      alreadySeen.sort((a, b) => (seen[a.id] ?? 0) - (seen[b.id] ?? 0));
+      feed = [...unseen, ...alreadySeen];
 
       const flat: DriftItem[] = [];
       for (const memory of feed) {
@@ -300,6 +337,15 @@ export function DriftMode({
   useEffect(() => {
     setProgress(0);
   }, [currentIndex]);
+
+  // Record the currently-drifting memory as seen so future sessions bias
+  // toward content the viewer hasn't encountered recently.
+  useEffect(() => {
+    if (!current) return;
+    const map = loadSeenMap(treeId);
+    map[current.memory.id] = Date.now();
+    persistSeenMap(treeId, map);
+  }, [current, treeId]);
 
   // Pause/resume media when isPlaying toggles
   useEffect(() => {
@@ -530,20 +576,25 @@ export function DriftMode({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.7, ease: [0.22, 0.61, 0.36, 1] }}
             style={{
-              maxWidth: 860,
+              maxWidth:
+                currentKind === "image" || currentKind === "video" ? "100%" : 860,
               width: "100%",
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
-              padding: "0 40px",
+              padding:
+                currentKind === "image" || currentKind === "video"
+                  ? "60px 24px 140px"
+                  : "0 40px",
               gap: 20,
             }}
           >
             {currentKind === "image" && resolvedMediaUrl && (
               <div
                 style={{
-                  maxHeight: "62vh",
-                  maxWidth: "100%",
+                  width: "min(96vw, 100%)",
+                  height: "82vh",
+                  maxHeight: "82vh",
                   overflow: "hidden",
                   display: "flex",
                   alignItems: "center",
@@ -572,7 +623,7 @@ export function DriftMode({
                     ease: "linear",
                   }}
                   style={{
-                    maxHeight: "62vh",
+                    maxHeight: "82vh",
                     maxWidth: "100%",
                     objectFit: "contain",
                     display: "block",
@@ -603,8 +654,8 @@ export function DriftMode({
                 }}
                 onEnded={advance}
                 style={{
-                  maxHeight: "62vh",
-                  maxWidth: "100%",
+                  maxHeight: "82vh",
+                  width: "min(96vw, 100%)",
                   objectFit: "contain",
                   display: "block",
                   background: "black",
@@ -725,18 +776,20 @@ export function DriftMode({
               </div>
             )}
 
-            <h2
-              style={{
-                fontFamily: "var(--font-display)",
-                fontSize: currentKind === "text" ? 32 : 24,
-                color: "var(--paper-deep)",
-                textAlign: "center",
-                lineHeight: 1.3,
-                margin: 0,
-              }}
-            >
-              {current.memory.title}
-            </h2>
+            {currentKind !== "image" && currentKind !== "video" && (
+              <h2
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontSize: currentKind === "text" ? 32 : 24,
+                  color: "var(--paper-deep)",
+                  textAlign: "center",
+                  lineHeight: 1.3,
+                  margin: 0,
+                }}
+              >
+                {current.memory.title}
+              </h2>
+            )}
 
             {currentKind === "text" && (current.memory.body || current.memory.transcriptText) && (
               <p
