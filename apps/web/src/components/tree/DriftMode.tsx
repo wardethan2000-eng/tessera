@@ -383,6 +383,36 @@ export function DriftMode({
   const resolvedMediaUrl = getProxiedMediaUrl(current?.media?.mediaUrl ?? null);
   const resolvedLinkPreview = current?.media?.linkedMediaPreviewUrl ?? null;
 
+  // Backdrop: blurred copy of the current photo when available; otherwise
+  // fall back to any photo attached to the same memory (gives video/audio/text
+  // items a coherent, memory-tinted background); otherwise null and the
+  // gradient backdrop below takes over.
+  const backdropPhotoUrl = useMemo(() => {
+    if (!current) return null;
+    if (currentKind === "image" && resolvedMediaUrl) return resolvedMediaUrl;
+    const items = current.memory.mediaItems ?? [];
+    const firstPhoto = items.find(
+      (item) =>
+        item.mediaUrl &&
+        (item.mimeType?.startsWith("image/") ?? false),
+    );
+    if (firstPhoto?.mediaUrl) return getProxiedMediaUrl(firstPhoto.mediaUrl);
+    return null;
+  }, [current, currentKind, resolvedMediaUrl]);
+
+  const gradientBackdrop = useMemo(() => {
+    switch (currentKind) {
+      case "text":
+        return "radial-gradient(ellipse at 30% 20%, rgba(168,138,90,0.22), transparent 60%), radial-gradient(ellipse at 70% 80%, rgba(92,62,42,0.28), transparent 70%), var(--ink)";
+      case "audio":
+        return "radial-gradient(ellipse at 25% 25%, rgba(86,96,138,0.25), transparent 65%), radial-gradient(ellipse at 75% 75%, rgba(52,38,68,0.35), transparent 70%), var(--ink)";
+      case "link":
+        return "radial-gradient(ellipse at 40% 30%, rgba(188,148,86,0.22), transparent 60%), radial-gradient(ellipse at 60% 75%, rgba(70,52,40,0.3), transparent 70%), var(--ink)";
+      default:
+        return "var(--ink)";
+    }
+  }, [currentKind]);
+
   const bottomCaptionBody = useMemo(() => {
     if (!current) return null;
     if (currentKind === "audio") {
@@ -402,7 +432,7 @@ export function DriftMode({
         position: "fixed",
         inset: 0,
         zIndex: 60,
-        background: "var(--ink)",
+        background: gradientBackdrop,
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -410,6 +440,42 @@ export function DriftMode({
         overflow: "hidden",
       }}
     >
+      {/* Backdrop: blurred copy of the current photo for cohesion + full-bleed feel */}
+      <AnimatePresence mode="wait">
+        {backdropPhotoUrl && (
+          <motion.div
+            key={`backdrop:${backdropPhotoUrl}`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 1.2, ease: [0.22, 0.61, 0.36, 1] }}
+            style={{
+              position: "absolute",
+              inset: 0,
+              zIndex: 0,
+              backgroundImage: `url(${backdropPhotoUrl})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              filter: "blur(60px) saturate(1.25) brightness(0.55)",
+              transform: "scale(1.15)",
+              pointerEvents: "none",
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Vignette: darken edges so media always sits in a framed center.
+          Kept very subtle. Sits above the backdrop but below content. */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          zIndex: 1,
+          pointerEvents: "none",
+          background:
+            "radial-gradient(ellipse at center, transparent 45%, rgba(0,0,0,0.45) 100%)",
+        }}
+      />
       {/* Close */}
       <button
         onClick={onClose}
