@@ -44,7 +44,8 @@ export function DriftMode({
   useEffect(() => {
     const fetchAll = async () => {
       setIsLoading(true);
-      const allEntries: DriftEntry[] = [];
+      const byMemoryId = new Map<string, DriftEntry>();
+      const peopleById = new Map(people.map((p) => [p.id, p]));
       await Promise.all(
         people.map(async (person) => {
           try {
@@ -55,12 +56,15 @@ export function DriftMode({
             if (!res.ok) return;
             const data = await res.json();
             for (const memory of data.memories ?? []) {
-              allEntries.push({
+              if (byMemoryId.has(memory.id)) continue;
+              const subject =
+                peopleById.get(memory.primaryPersonId) ?? person;
+              byMemoryId.set(memory.id, {
                 memory: {
                   ...memory,
-                  personId: person.id,
+                  personId: subject.id,
                 },
-                person,
+                person: subject,
               });
             }
           } catch {
@@ -68,6 +72,7 @@ export function DriftMode({
           }
         })
       );
+      const allEntries = Array.from(byMemoryId.values());
       // Shuffle
       for (let i = allEntries.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
