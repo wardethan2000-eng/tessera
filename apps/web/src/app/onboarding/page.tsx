@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
+import { getApiBase } from "@/lib/api-base";
 import { readOnboardingSession, writeOnboardingSession } from "@/lib/onboarding-session";
 
-const API = "";
+const API = getApiBase();
 
 export default function OnboardingPage() {
   const router = useRouter();

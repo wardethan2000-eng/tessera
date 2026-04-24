@@ -4,8 +4,9 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { ApiPerson, ApiRelationship } from "./treeTypes";
 import { getProxiedMediaUrl, handleMediaError } from "@/lib/media-url";
+import { getApiBase } from "@/lib/api-base";
 
-const API = "";
+const API = getApiBase();
 const EASE = "cubic-bezier(0.22, 0.61, 0.36, 1)";
 
 const MONTHS = [

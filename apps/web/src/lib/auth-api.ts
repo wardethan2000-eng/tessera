@@ -1,8 +1,9 @@
-const API = "";
+import { getApiBase } from "@/lib/api-base";
 
 type Result<T = unknown> = { data: T | null; error: { message: string } | null };
 
 async function call<T = unknown>(path: string, body: unknown, method = "POST"): Promise<Result<T>> {
+  const API = getApiBase();
   try {
     const res = await fetch(`${API}/api/auth${path}`, {
       method,

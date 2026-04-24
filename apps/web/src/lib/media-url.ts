@@ -1,9 +1,11 @@
 "use client";
 
+import { getApiBase } from "./api-base";
+
 export function getProxiedMediaUrl(mediaUrl?: string | null): string | null {
   if (!mediaUrl) return null;
   if (mediaUrl.startsWith("/api/media?")) return mediaUrl;
-  const API_BASE = ("").replace(/\/$/, "");
+  const API_BASE = getApiBase().replace(/\/$/, "");
   const mediaPrefix = `${API_BASE}/api/media?`;
   if (mediaUrl.startsWith(mediaPrefix)) {
     return mediaUrl.slice(API_BASE.length);

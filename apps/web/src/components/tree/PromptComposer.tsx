@@ -1,4 +1,5 @@
 "use client";
+import { getApiBase } from "@/lib/api-base";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import type { ApiRelationship } from "@/components/tree/treeTypes";
@@ -57,7 +58,7 @@ export function PromptComposer({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
-  const apiBase_ = apiBase ?? ("");
+  const apiBase_ = apiBase ?? getApiBase();
 
   const canUseFamilyTarget = relationships.length > 0 && people.length > 0;
 

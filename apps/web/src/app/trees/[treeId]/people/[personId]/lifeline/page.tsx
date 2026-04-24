@@ -3,8 +3,9 @@
 import { use, useEffect, useMemo, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { getProxiedMediaUrl } from "@/lib/media-url";
+import { getApiBase } from "@/lib/api-base";
 
-const API = "";
+const API = getApiBase();
 
 type MemoryKind = "story" | "photo" | "voice" | "document" | "other";
 

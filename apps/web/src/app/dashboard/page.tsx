@@ -3,12 +3,13 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signOut, useSession } from "@/lib/auth-client";
+import { getApiBase } from "@/lib/api-base";
 import { DashboardSkeleton } from "@/components/home/HomeSurfaceSkeletons";
 import { TreeArchiveCard } from "@/components/home/TreeArchiveCard";
 import type { TreeHomePayload } from "@/components/home/homeTypes";
 import { readLastOpenedTreeId } from "@/lib/last-opened-tree";
 
-const API = "";
+const API = getApiBase();
 
 type TreeMembership = {
   id: string;

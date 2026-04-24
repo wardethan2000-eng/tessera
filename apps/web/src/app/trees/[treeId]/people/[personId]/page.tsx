@@ -3,6 +3,7 @@
 import { use, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
+import { getApiBase } from "@/lib/api-base";
 import { MemoryLightbox, type LightboxMemory } from "@/components/tree/MemoryLightbox";
 import { PromptComposer } from "@/components/tree/PromptComposer";
 import { AddMemoryWizard } from "@/components/tree/AddMemoryWizard";
@@ -17,7 +18,7 @@ import {
 } from "@/lib/tree-route";
 import { usePendingVoiceTranscriptionRefresh } from "@/lib/usePendingVoiceTranscriptionRefresh";
 
-const API = "";
+const API = getApiBase();
 
 const MONTHS = [
   "", "January", "February", "March", "April", "May", "June",

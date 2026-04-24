@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
+import { getApiBase } from "@/lib/api-base";
 
-const API = "";
+const API = getApiBase();
 
 interface CurationMemory {
   id: string;

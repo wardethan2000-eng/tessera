@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { authClient, useSession } from "@/lib/auth-client";
+import { getApiBase } from "@/lib/api-base";
 import { authApi } from "@/lib/auth-api";
 
-const API = "";
+const API = getApiBase();
 
 type Tab = "profile" | "security" | "notifications";
 

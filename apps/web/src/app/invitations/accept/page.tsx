@@ -4,8 +4,9 @@ import type { CSSProperties } from "react";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
+import { getApiBase } from "@/lib/api-base";
 
-const API = "";
+const API = getApiBase();
 
 interface InvitationDetails {
   id: string;

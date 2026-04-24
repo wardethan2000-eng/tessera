@@ -12,9 +12,10 @@ import {
 import { useSearchParams } from "next/navigation";
 import { VoiceRecorderField } from "@/components/tree/VoiceRecorderField";
 import { getProxiedMediaUrl } from "@/lib/media-url";
+import { getApiBase } from "@/lib/api-base";
 import { usePendingVoiceTranscriptionRefresh } from "@/lib/usePendingVoiceTranscriptionRefresh";
 
-const API = "";
+const API = getApiBase();
 const DRAFT_PREFIX = "tessera-reply-draft:";
 
 type MemoryKind = "voice" | "story" | "photo";

@@ -4,6 +4,7 @@ import { use, useCallback, useEffect, useMemo, useRef, useState, type ReactNode 
 import { useRouter } from "next/navigation";
 import { VoiceRecorderField } from "@/components/tree/VoiceRecorderField";
 import { useSession } from "@/lib/auth-client";
+import { getApiBase } from "@/lib/api-base";
 import {
   MemoryLightbox,
   type LightboxMemory,
@@ -21,7 +22,7 @@ import {
 } from "@/lib/tree-route";
 import { usePendingVoiceTranscriptionRefresh } from "@/lib/usePendingVoiceTranscriptionRefresh";
 
-const API = "";
+const API = getApiBase();
 
 type MemoryKind = "story" | "photo" | "voice" | "document" | "other";
 

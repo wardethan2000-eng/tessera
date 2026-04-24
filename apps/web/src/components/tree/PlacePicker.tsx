@@ -1,4 +1,5 @@
 "use client";
+import { getApiBase } from "@/lib/api-base";
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 
@@ -45,7 +46,7 @@ export function PlacePicker({
   emptyLabel = "No mapped place",
   note,
 }: PlacePickerProps) {
-  const api = apiBase ?? ("");
+  const api = apiBase ?? getApiBase();
   const [places, setPlaces] = useState<PlaceOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);

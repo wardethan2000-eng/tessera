@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
+import { getApiBase } from "@/lib/api-base";
 
-const API = "";
+const API = getApiBase();
 
 type ImportStage = "idle" | "previewing" | "ready" | "importing" | "done" | "error";
 

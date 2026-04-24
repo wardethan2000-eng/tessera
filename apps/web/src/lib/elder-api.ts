@@ -1,6 +1,4 @@
-const API = "";
-
-export const ELDER_API = API;
+import { getApiBase } from "@/lib/api-base";
 
 export type ElderInbox = {
   familyLabel: string;
@@ -25,6 +23,7 @@ export type ElderInbox = {
 };
 
 export async function fetchInbox(token: string): Promise<ElderInbox> {
+  const API = getApiBase();
   const res = await fetch(`${API}/api/elder/${encodeURIComponent(token)}/inbox`, {
     cache: "no-store",
   });
@@ -39,6 +38,7 @@ export async function presignElderUpload(
   token: string,
   file: File,
 ): Promise<{ mediaId: string; uploadUrl: string }> {
+  const API = getApiBase();
   const res = await fetch(
     `${API}/api/elder/${encodeURIComponent(token)}/media/presign`,
     {
@@ -81,6 +81,7 @@ export async function submitElderMemory(
   input: ElderSubmitInput,
   promptId?: string,
 ) {
+  const API = getApiBase();
   const path = promptId
     ? `/api/elder/${encodeURIComponent(token)}/reply/${encodeURIComponent(promptId)}`
     : `/api/elder/${encodeURIComponent(token)}/submit`;

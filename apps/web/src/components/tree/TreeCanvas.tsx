@@ -1,4 +1,5 @@
 "use client";
+import { getApiBase } from "@/lib/api-base";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -127,7 +128,7 @@ function TreeCanvasInner({
   onConstellationChanged,
   onSelectedPersonChange,
 }: TreeCanvasProps) {
-  const API = "";
+  const API = getApiBase();
   const reactFlow = useReactFlow();
   const viewport = useViewport();
   const [nodes, setNodes, onNodesChange] = useNodesState<TreeFlowNode>([]);

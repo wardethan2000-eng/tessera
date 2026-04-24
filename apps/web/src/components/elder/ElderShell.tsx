@@ -2,8 +2,9 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { fetchInbox } from "@/lib/elder-api";
+import { getApiBase } from "@/lib/api-base";
 
-const API = "";
+const API = getApiBase();
 
 export function ElderShell({
   token,

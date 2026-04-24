@@ -3,9 +3,10 @@
 import { use, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
+import { getApiBase } from "@/lib/api-base";
 import { PlacePicker } from "@/components/tree/PlacePicker";
 
-const API = "";
+const API = getApiBase();
 
 export default function NewPersonPage({
   params,

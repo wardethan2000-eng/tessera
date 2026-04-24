@@ -1,4 +1,5 @@
 "use client";
+import { getApiBase } from "@/lib/api-base";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PlacePicker } from "@/components/tree/PlacePicker";
@@ -118,7 +119,7 @@ export function AddMemoryWizard({
     }
   }, [step]);
 
-  const apiBase_ = apiBase ?? ("");
+  const apiBase_ = apiBase ?? getApiBase();
   const memoryKindLabel = step1.kind === "photo" ? "photo or video" : step1.kind;
 
   const supportsDriveLink =

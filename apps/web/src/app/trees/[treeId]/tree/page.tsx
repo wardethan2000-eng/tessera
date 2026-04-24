@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
+import { getApiBase } from "@/lib/api-base";
 import { AnimatePresence } from "framer-motion";
 import { TreeCanvas } from "@/components/tree/TreeCanvas";
 import { DriftMode } from "@/components/tree/DriftMode";
@@ -15,7 +16,7 @@ import { isCanonicalTreeId, resolveCanonicalTreeId } from "@/lib/tree-route";
 import { usePendingVoiceTranscriptionRefresh } from "@/lib/usePendingVoiceTranscriptionRefresh";
 import type { ApiPerson, ApiRelationship } from "@/components/tree/treeTypes";
 
-const API = "";
+const API = getApiBase();
 
 function extractYear(text?: string | null): number | null {
   if (!text) return null;

@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
+import { getApiBase } from "@/lib/api-base";
 import { AddMemoryWizard } from "@/components/tree/AddMemoryWizard";
 import { PromptComposer } from "@/components/tree/PromptComposer";
 import { Shimmer } from "@/components/ui/Shimmer";
 import { usePendingVoiceTranscriptionRefresh } from "@/lib/usePendingVoiceTranscriptionRefresh";
 
-const API = "";
+const API = getApiBase();
 
 interface Person {
   id: string;

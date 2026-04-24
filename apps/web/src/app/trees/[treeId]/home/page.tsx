@@ -29,6 +29,7 @@ import {
   selectAtriumFeaturedMemory,
 } from "@/components/home/homeUtils";
 import { useSession } from "@/lib/auth-client";
+import { getApiBase } from "@/lib/api-base";
 import { writeLastOpenedTreeId } from "@/lib/last-opened-tree";
 import { isCanonicalTreeId, resolveCanonicalTreeId } from "@/lib/tree-route";
 import { usePendingVoiceTranscriptionRefresh } from "@/lib/usePendingVoiceTranscriptionRefresh";
@@ -40,7 +41,7 @@ import { GearIcon, InboxIcon } from "@/components/tree/SurfaceToolbarIcons";
 import { fetchWithTimeout } from "@/lib/fetch-timeout";
 import { usePendingTimeout } from "@/lib/usePendingTimeout";
 
-const API = "";
+const API = getApiBase();
 
 type EraValue = "all" | number;
 type Tree = TreeHomePayload["tree"];
