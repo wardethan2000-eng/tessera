@@ -118,7 +118,7 @@ export function AddMemoryWizard({
     }
   }, [step]);
 
-  const apiBase_ = apiBase ?? (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000");
+  const apiBase_ = apiBase ?? ("");
   const memoryKindLabel = step1.kind === "photo" ? "photo or video" : step1.kind;
 
   const supportsDriveLink =

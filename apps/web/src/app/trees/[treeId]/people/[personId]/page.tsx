@@ -17,7 +17,7 @@ import {
 } from "@/lib/tree-route";
 import { usePendingVoiceTranscriptionRefresh } from "@/lib/usePendingVoiceTranscriptionRefresh";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const API = "";
 
 const MONTHS = [
   "", "January", "February", "March", "April", "May", "June",

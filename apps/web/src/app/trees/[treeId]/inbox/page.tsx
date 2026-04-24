@@ -8,7 +8,7 @@ import { PromptComposer } from "@/components/tree/PromptComposer";
 import { Shimmer } from "@/components/ui/Shimmer";
 import { usePendingVoiceTranscriptionRefresh } from "@/lib/usePendingVoiceTranscriptionRefresh";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const API = "";
 
 interface Person {
   id: string;

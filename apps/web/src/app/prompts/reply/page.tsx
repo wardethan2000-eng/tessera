@@ -14,7 +14,7 @@ import { VoiceRecorderField } from "@/components/tree/VoiceRecorderField";
 import { getProxiedMediaUrl } from "@/lib/media-url";
 import { usePendingVoiceTranscriptionRefresh } from "@/lib/usePendingVoiceTranscriptionRefresh";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const API = "";
 const DRAFT_PREFIX = "tessera-reply-draft:";
 
 type MemoryKind = "voice" | "story" | "photo";

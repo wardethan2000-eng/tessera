@@ -127,7 +127,7 @@ function TreeCanvasInner({
   onConstellationChanged,
   onSelectedPersonChange,
 }: TreeCanvasProps) {
-  const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+  const API = "";
   const reactFlow = useReactFlow();
   const viewport = useViewport();
   const [nodes, setNodes, onNodesChange] = useNodesState<TreeFlowNode>([]);

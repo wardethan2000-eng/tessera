@@ -57,7 +57,7 @@ export function PromptComposer({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
-  const apiBase_ = apiBase ?? (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000");
+  const apiBase_ = apiBase ?? ("");
 
   const canUseFamilyTarget = relationships.length > 0 && people.length > 0;
 

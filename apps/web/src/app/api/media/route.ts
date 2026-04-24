@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 
-const API_BASE = (process.env.API_PROXY_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000").replace(
+const API_BASE = (process.env.API_PROXY_URL || "http://localhost:4000").replace(
   /\/$/,
   "",
 );

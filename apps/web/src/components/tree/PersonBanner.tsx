@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import type { ApiPerson, ApiRelationship } from "./treeTypes";
 import { getProxiedMediaUrl, handleMediaError } from "@/lib/media-url";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const API = "";
 const EASE = "cubic-bezier(0.22, 0.61, 0.36, 1)";
 
 const MONTHS = [

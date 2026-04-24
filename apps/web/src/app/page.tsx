@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
 import { readLastOpenedTreeId } from "@/lib/last-opened-tree";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const API = "";
 
 export default function Home() {
   const router = useRouter();

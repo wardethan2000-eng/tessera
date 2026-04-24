@@ -15,7 +15,7 @@ import { isCanonicalTreeId, resolveCanonicalTreeId } from "@/lib/tree-route";
 import { usePendingVoiceTranscriptionRefresh } from "@/lib/usePendingVoiceTranscriptionRefresh";
 import type { ApiPerson, ApiRelationship } from "@/components/tree/treeTypes";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const API = "";
 
 function extractYear(text?: string | null): number | null {
   if (!text) return null;

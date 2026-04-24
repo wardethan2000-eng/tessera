@@ -40,7 +40,7 @@ import { GearIcon, InboxIcon } from "@/components/tree/SurfaceToolbarIcons";
 import { fetchWithTimeout } from "@/lib/fetch-timeout";
 import { usePendingTimeout } from "@/lib/usePendingTimeout";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const API = "";
 
 type EraValue = "all" | number;
 type Tree = TreeHomePayload["tree"];

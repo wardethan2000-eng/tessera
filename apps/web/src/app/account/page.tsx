@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { authClient, useSession } from "@/lib/auth-client";
 import { authApi } from "@/lib/auth-api";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const API = "";
 
 type Tab = "profile" | "security" | "notifications";
 

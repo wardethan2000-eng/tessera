@@ -4,7 +4,7 @@ import { use, useEffect, useMemo, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { getProxiedMediaUrl } from "@/lib/media-url";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const API = "";
 
 type MemoryKind = "story" | "photo" | "voice" | "document" | "other";
 

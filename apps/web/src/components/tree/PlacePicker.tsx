@@ -45,7 +45,7 @@ export function PlacePicker({
   emptyLabel = "No mapped place",
   note,
 }: PlacePickerProps) {
-  const api = apiBase ?? (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000");
+  const api = apiBase ?? ("");
   const [places, setPlaces] = useState<PlaceOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);

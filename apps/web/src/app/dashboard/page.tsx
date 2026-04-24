@@ -8,7 +8,7 @@ import { TreeArchiveCard } from "@/components/home/TreeArchiveCard";
 import type { TreeHomePayload } from "@/components/home/homeTypes";
 import { readLastOpenedTreeId } from "@/lib/last-opened-tree";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const API = "";
 
 type TreeMembership = {
   id: string;
