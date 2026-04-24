@@ -49,10 +49,10 @@ export function ImmersivePhotoSection({
           <div
             style={{
               position: "absolute",
-              inset: "-20%",
+              inset: 0,
               overflow: "hidden",
               filter: "blur(50px) saturate(0.3) brightness(0.25)",
-              transform: "scale(1.2)",
+              transform: "scale(1.06)",
               zIndex: 0,
             }}
           >
@@ -69,12 +69,12 @@ export function ImmersivePhotoSection({
           <motion.div
             style={{
               position: "absolute",
-              inset: "-20%",
+              inset: 0,
               backgroundImage: `url(${mediaUrl})`,
               backgroundSize: "cover",
               backgroundPosition: "center",
               filter: "blur(50px) saturate(0.3) brightness(0.25)",
-              transform: "scale(1.2)",
+              transform: "scale(1.06)",
               zIndex: 0,
             }}
           />
@@ -117,10 +117,12 @@ export function ImmersivePhotoSection({
               style={{
                 width: "100%",
                 height: "100%",
-                objectFit: "cover",
+                objectFit: "contain",
+                background: "rgba(15,13,10,0.34)",
               }}
             />
           ) : (
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={mediaUrl}
               alt={memory.title}
@@ -128,8 +130,9 @@ export function ImmersivePhotoSection({
               style={{
                 width: "100%",
                 height: "100%",
-                objectFit: "cover",
-                filter: "sepia(8%) brightness(0.62)",
+                objectFit: "contain",
+                background: "rgba(15,13,10,0.34)",
+                filter: "sepia(8%) brightness(0.76)",
               }}
             />
           )}
