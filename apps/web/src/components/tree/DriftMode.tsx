@@ -958,20 +958,20 @@ export function DriftMode({
                   initial={
                     reduceMotion
                       ? { scale: 1 }
-                      : { scale: 1.02, x: 0, y: 0 }
+                      : { scale: 1, opacity: 0.92, y: 8 }
                   }
                   animate={
                     reduceMotion
                       ? { scale: 1 }
                       : {
-                          scale: 1.08,
-                          x: ((current.itemIndex % 2 === 0 ? 1 : -1) * 18),
-                          y: ((current.itemIndex % 3 === 0 ? -1 : 1) * 10),
+                          scale: 1,
+                          opacity: 1,
+                          y: 0,
                         }
                   }
                   transition={{
-                    duration: PHOTO_DURATION_MS / 1000,
-                    ease: "linear",
+                    duration: reduceMotion ? 0 : 1.2,
+                    ease: [0.22, 0.61, 0.36, 1],
                   }}
                   style={{
                     maxHeight: "82vh",

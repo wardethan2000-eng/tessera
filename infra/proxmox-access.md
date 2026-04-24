@@ -55,6 +55,13 @@ ssh -i ~/.ssh/proxmox_key ubuntu@100.96.74.16 'sudo systemctl status cloudflared
 - App VM: `familytree-app` at `192.168.68.110` / Tailscale `100.96.74.16`
 - Data VM: `familytree-data` at `192.168.68.111`
 
+Tailscale addresses verified on 2026-04-24:
+
+- Proxmox host: `proxmox-homelab` at `100.120.201.97`
+- App VM: `familytree-app` at `100.96.74.16`
+- If direct `192.168.68.x` access fails, check whether local Tailscale has
+  `--accept-routes=false`; use the Tailscale IPs or ProxyJump through the app VM.
+
 Verified Proxmox VM IDs:
 
 - `110` → `familytree-app`
@@ -147,8 +154,8 @@ ssh -i ~/.ssh/proxmox_key ubuntu@192.168.68.110 'pwdx <pid>'
 
 Current verified live pids after media-fix deployment:
 
-- API listener pid: `37297`
-- Web wrapper pid: `37298`
+- API listener pid: `91275`
+- Web listener pid: `88813`
 
 ## Historical Startup Shape On The App VM
 
@@ -251,8 +258,34 @@ This helper intentionally avoids `pkill -f "next start"` style matches, kills li
 - Previous live checkout: `/home/ubuntu/tessera-onboarding-live`
 - Previous live checkout: `/home/ubuntu/heirloom-media-fix-live`
 - Previous live checkout: `/home/ubuntu/heirloom-dashboard-redesign-live`
+- Current live checkout: `/home/ubuntu/heirloom-decade-rail-live`
 - Historical launcher script: `/home/ubuntu/start-heirloom.sh`
 - Backup directory on data VM: `~/familytree-backups`
+
+## Media Bucket Notes
+
+Media records currently point to objects stored in the MinIO bucket
+`familytree-media`. The API defaults to `tessera-media` when `MINIO_BUCKET` is
+unset, which causes `/api/media` to return `404` even when the database rows are
+valid.
+
+The live API env was corrected on 2026-04-24 with:
+
+```bash
+MINIO_BUCKET=familytree-media
+```
+
+If images/videos fail again, verify both:
+
+```bash
+ssh -i ~/.ssh/proxmox_key ubuntu@100.96.74.16 \
+  'grep "^MINIO_BUCKET=" ~/heirloom-decade-rail-live/apps/api/.env'
+```
+
+```bash
+ssh -i ~/.ssh/proxmox_key -J ubuntu@100.96.74.16 ubuntu@192.168.68.111 \
+  'docker exec ubuntu-minio-1 sh -c "ls /data/familytree-media/trees | head"'
+```
 
 ## Recommended Next Time
 

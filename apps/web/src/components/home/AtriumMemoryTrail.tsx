@@ -227,9 +227,7 @@ function TrailSection({
     return (
       <TrailWideningSection
         section={section}
-        peopleById={peopleById}
         onMemoryClick={onMemoryClick}
-        onPersonClick={onPersonClick}
       />
     );
   }
@@ -369,19 +367,13 @@ function OpeningRoom({
       >
         {usesMedia ? (
           <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <ContainedMediaImage
               src={mediaUrl ?? ""}
+              mimeType={visualItems[0]?.mimeType ?? null}
               alt={memory.title}
-              onError={handleMediaError}
-              style={{
-                position: "absolute",
-                inset: 0,
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                filter: "grayscale(28%) sepia(12%) contrast(0.92)",
-              }}
+              foregroundFilter="grayscale(18%) sepia(10%) contrast(0.96)"
+              backdropFilter="blur(28px) grayscale(28%) sepia(12%) contrast(0.9) brightness(0.58)"
+              backdropScale={1.08}
             />
             <div
               style={{
@@ -548,19 +540,14 @@ function MountedLead({
       >
         {usesMedia ? (
           <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <ContainedMediaImage
               src={mediaUrl ?? ""}
+              mimeType={visualItems[0]?.mimeType ?? null}
               alt={memory.title}
-              onError={handleMediaError}
-              style={{
-                position: "absolute",
-                inset: 0,
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                filter: "grayscale(22%) sepia(10%) contrast(0.94)",
-              }}
+              foregroundFilter="grayscale(14%) sepia(8%) contrast(0.98)"
+              backdropFilter="blur(24px) grayscale(22%) sepia(10%) contrast(0.92) brightness(0.62)"
+              backdropScale={1.08}
+              borderRadius={14}
             />
             <div
               style={{
@@ -740,17 +727,14 @@ function WallLabel({
                 boxShadow: "0 8px 24px rgba(40,30,18,0.10)",
               }}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <ContainedMediaImage
                 src={mediaUrl}
+                mimeType={visualItems[0]?.mimeType ?? null}
                 alt={memory.title}
-                onError={handleMediaError}
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "cover",
-                  filter: "grayscale(18%) sepia(8%)",
-                }}
+                foregroundFilter="grayscale(10%) sepia(6%)"
+                backdropFilter="blur(18px) grayscale(18%) sepia(8%) brightness(0.78)"
+                backdropScale={1.06}
+                borderRadius={10}
               />
               <div
                 style={{
@@ -839,14 +823,10 @@ function WallLabel({
 
 function TrailWideningSection({
   section,
-  peopleById,
   onMemoryClick,
-  onPersonClick,
 }: {
   section: TrailSection;
-  peopleById: Map<string, TrailPerson>;
   onMemoryClick: (memory: TreeHomeMemory) => void;
-  onPersonClick: (personId: string) => void;
 }) {
   return (
     <section style={{ position: "relative", minWidth: 0 }}>
@@ -889,9 +869,7 @@ function TrailWideningSection({
           <WideningCard
             key={memory.id}
             memory={memory}
-            peopleById={peopleById}
             onMemoryClick={onMemoryClick}
-            onPersonClick={onPersonClick}
           />
         ))}
       </div>
@@ -901,19 +879,14 @@ function TrailWideningSection({
 
 function WideningCard({
   memory,
-  peopleById,
   onMemoryClick,
-  onPersonClick,
 }: {
   memory: TreeHomeMemory;
-  peopleById: Map<string, TrailPerson>;
   onMemoryClick: (memory: TreeHomeMemory) => void;
-  onPersonClick: (personId: string) => void;
 }) {
   const visualItems = getMemoryVisualItems(memory);
   const mediaUrl = visualItems[0]?.mediaUrl ?? null;
   const excerpt = getMemoryExcerpt(memory);
-  const relatedPeople = getRelatedPeople(memory, peopleById);
   const [ref, visible] = useTrailReveal();
 
   return (
@@ -950,17 +923,13 @@ function WideningCard({
               overflow: "hidden",
             }}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <ContainedMediaImage
               src={mediaUrl}
+              mimeType={visualItems[0]?.mimeType ?? null}
               alt={memory.title}
-              onError={handleMediaError}
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                filter: "grayscale(16%) sepia(8%)",
-              }}
+              foregroundFilter="grayscale(8%) sepia(6%)"
+              backdropFilter="blur(18px) grayscale(16%) sepia(8%) brightness(0.82)"
+              backdropScale={1.06}
             />
             <div
               style={{
@@ -1237,6 +1206,106 @@ function MemoryStackHint({
         {totalCount} items
       </div>
     </div>
+  );
+}
+
+function ContainedMediaImage({
+  src,
+  mimeType,
+  alt,
+  foregroundFilter,
+  backdropFilter,
+  backdropScale = 1.06,
+  borderRadius = 0,
+}: {
+  src: string;
+  mimeType?: string | null;
+  alt: string;
+  foregroundFilter: string;
+  backdropFilter: string;
+  backdropScale?: number;
+  borderRadius?: number;
+}) {
+  const isVideo = mimeType?.toLowerCase().startsWith("video/") ?? false;
+
+  return (
+    <>
+      {isVideo ? (
+        <>
+          <video
+            src={src}
+            aria-hidden="true"
+            muted
+            loop
+            playsInline
+            autoPlay
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              filter: backdropFilter,
+              transform: `scale(${backdropScale})`,
+              borderRadius,
+            }}
+          />
+          <video
+            src={src}
+            muted
+            loop
+            playsInline
+            autoPlay
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              objectFit: "contain",
+              filter: foregroundFilter,
+              display: "block",
+              borderRadius,
+            }}
+          />
+        </>
+      ) : (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={src}
+            alt=""
+            aria-hidden="true"
+            onError={handleMediaError}
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              filter: backdropFilter,
+              transform: `scale(${backdropScale})`,
+              borderRadius,
+            }}
+          />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={src}
+            alt={alt}
+            onError={handleMediaError}
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              objectFit: "contain",
+              filter: foregroundFilter,
+              display: "block",
+              borderRadius,
+            }}
+          />
+        </>
+      )}
+    </>
   );
 }
 
