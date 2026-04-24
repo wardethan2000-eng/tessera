@@ -18,9 +18,9 @@ interface DominantColors {
 }
 
 const FALLBACK_COLORS: DominantColors = {
-  primary: "rgba(176,139,62,0.18)",
-  secondary: "rgba(78,93,66,0.10)",
-  tertiary: "rgba(138,92,58,0.10)",
+  primary: "rgba(176,139,62,0.40)",
+  secondary: "rgba(120,100,60,0.28)",
+  tertiary: "rgba(90,72,42,0.20)",
 };
 
 function useDominantColors(src: string | null, isVideo: boolean): DominantColors {
@@ -87,9 +87,9 @@ function useDominantColors(src: string | null, isVideo: boolean): DominantColors
         };
 
         setColors({
-          primary: rgba(topSlice, 0.22),
-          secondary: midSlice.length > 0 ? rgba(midSlice, 0.14) : rgba(topSlice, 0.10),
-          tertiary: bottomSlice.length > 0 ? rgba(bottomSlice, 0.10) : rgba(topSlice, 0.08),
+          primary: rgba(topSlice, 0.48),
+          secondary: midSlice.length > 0 ? rgba(midSlice, 0.32) : rgba(topSlice, 0.24),
+          tertiary: bottomSlice.length > 0 ? rgba(bottomSlice, 0.22) : rgba(topSlice, 0.18),
         });
       } catch {
         // CORS or canvas error – keep fallback
@@ -161,22 +161,11 @@ export function ImmersivePhotoSection({
             position: "absolute",
             inset: 0,
             background:
-              `radial-gradient(ellipse at 28% 45%, ${colors.primary}, transparent 52%), ` +
-              `radial-gradient(ellipse at 72% 38%, ${colors.secondary}, transparent 48%), ` +
-              `radial-gradient(ellipse at 55% 85%, ${colors.tertiary}, transparent 50%), ` +
+              `radial-gradient(ellipse 80% 70% at 25% 45%, ${colors.primary}, transparent 70%), ` +
+              `radial-gradient(ellipse 70% 65% at 75% 35%, ${colors.secondary}, transparent 65%), ` +
+              `radial-gradient(ellipse 60% 55% at 50% 90%, ${colors.tertiary}, transparent 60%), ` +
               "#0d0b08",
             transition: "background 1.8s cubic-bezier(0.22, 0.61, 0.36, 1)",
-          }}
-        />
-
-        <div
-          aria-hidden
-          style={{
-            position: "absolute",
-            inset: 0,
-            background:
-              "radial-gradient(ellipse at 50% 50%, transparent 30%, rgba(13,11,8,0.45) 100%)",
-            pointerEvents: "none",
           }}
         />
 
