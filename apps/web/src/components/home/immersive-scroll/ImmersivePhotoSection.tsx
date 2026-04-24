@@ -60,13 +60,13 @@ function useDominantColors(src: string | null, isVideo: boolean): DominantColors
         if (buckets.length < 10) return;
 
         const weighted = buckets
-            .map(([r, g, b, lum]) => {
-              const centrality = 1 - Math.abs(lum - 128) / 128;
-              const sat = Math.max(r, g, b) - Math.min(r, g, b);
-              const weight = (0.3 + sat / 255 * 0.5) * (0.4 + centrality * 0.6);
-              return { r, g, b, weight: weight };
-            })
-            .sort((a, b) => b.weight - a.weight);
+          .map(([r, g, b, lum]) => {
+            const centrality = 1 - Math.abs(lum - 128) / 128;
+            const sat = Math.max(r, g, b) - Math.min(r, g, b);
+            const weight = (0.3 + (sat / 255) * 0.5) * (0.4 + centrality * 0.6);
+            return { r, g, b, weight };
+          })
+          .sort((a, b) => b.weight - a.weight);
 
         const topThird = Math.max(10, Math.floor(weighted.length * 0.3));
         const midStart = Math.floor(weighted.length * 0.3);
@@ -74,7 +74,9 @@ function useDominantColors(src: string | null, isVideo: boolean): DominantColors
 
         const avgChannel = (slice: typeof weighted, ch: "r" | "g" | "b") => {
           const totalW = slice.reduce((s, p) => s + p.weight, 0);
-          return Math.round(slice.reduce((s, p) => s + p[ch] * p.weight, 0) / totalW);
+          return Math.round(
+            slice.reduce((s, p) => s + p[ch] * p.weight, 0) / totalW,
+          );
         };
 
         const topSlice = weighted.slice(0, topThird);
@@ -128,10 +130,10 @@ export function ImmersivePhotoSection({
     offset: ["start end", "end start"],
   });
 
-  const scale = useTransform(scrollYProgress, [0.1, 0.35], [0.35, 1]);
-  const borderRadius = useTransform(scrollYProgress, [0.1, 0.35], [16, 6]);
+  const mediaScale = useTransform(scrollYProgress, [0.1, 0.35], [0.35, 1]);
+  const mediaRadius = useTransform(scrollYProgress, [0.1, 0.35], [16, 4]);
   const vignetteOpacity = useTransform(scrollYProgress, [0.15, 0.35], [0, 1]);
-  const cardOpacity = useTransform(scrollYProgress, [0, 0.1, 0.88, 1], [0, 1, 1, 0]);
+  const mediaOpacity = useTransform(scrollYProgress, [0, 0.1, 0.88, 1], [0, 1, 1, 0]);
 
   const isVideo = isVideoMemory(memory);
   const relatedPeople = getRelatedPeople(memory, people);
@@ -156,6 +158,8 @@ export function ImmersivePhotoSection({
     return () => observer.disconnect();
   }, []);
 
+  const hasContext = Boolean(memory.primaryPersonId || relatedPeople.length > 0 || commentary);
+
   return (
     <div
       ref={sectionRef}
@@ -167,9 +171,6 @@ export function ImmersivePhotoSection({
           position: "sticky",
           top: 0,
           height: "100vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
           overflow: "hidden",
           background: "#0d0b08",
         }}
@@ -203,367 +204,385 @@ export function ImmersivePhotoSection({
           }}
         />
 
-        <motion.a
-          href={href}
-          aria-label={`Open ${memory.title}`}
-          style={{
-            display: "block",
-            position: "relative",
-            zIndex: 2,
-            width: "calc(100% - clamp(210px, 23vw, 320px))",
-            height: "100%",
-            scale,
-            borderRadius,
-            opacity: cardOpacity,
-            overflow: "hidden",
-            textDecoration: "none",
-            color: "inherit",
-          }}
-        >
-          {isVideo ? (
-            <video
-              src={mediaUrl}
-              muted
-              playsInline
-              autoPlay
-              loop
-              style={{
-                position: "absolute",
-                inset: 0,
-                width: "100%",
-                height: "100%",
-                objectFit: "contain",
-              }}
-            />
-          ) : (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={mediaUrl}
-              alt={memory.title}
-              onError={handleMediaError}
-              style={{
-                position: "absolute",
-                inset: 0,
-                width: "100%",
-                height: "100%",
-                objectFit: "contain",
-              }}
-            />
-          )}
-
-          <motion.div
-            aria-hidden
-            style={{
-              position: "absolute",
-              inset: 0,
-              background:
-                "radial-gradient(ellipse at 50% 45%, transparent 40%, rgba(13,11,8,0.6) 100%), " +
-                "linear-gradient(180deg, rgba(13,11,8,0.12) 0%, transparent 30%, transparent 55%, rgba(13,11,8,0.8) 100%)",
-              opacity: vignetteOpacity,
-              pointerEvents: "none",
-            }}
-          />
-
-          <motion.div
-            style={{
-              position: "absolute",
-              bottom: 0,
-              left: 0,
-              right: 0,
-              padding: "clamp(28px, 5vw, 64px) clamp(28px, 4vw, 56px)",
-              zIndex: 3,
-            }}
-          >
-            <div style={{ maxWidth: 580 }}>
-              <div
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 8,
-                  fontFamily: "var(--font-ui)",
-                  fontSize: 11,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.14em",
-                  color: "rgba(246,241,231,0.40)",
-                  marginBottom: 10,
-                }}
-              >
-                <span>{isVideo ? "Video" : "Photo"}</span>
-                {mediaCount > 1 && (
-                  <>
-                    <span style={{ opacity: 0.42 }}>·</span>
-                    <span>{mediaCount} items</span>
-                  </>
-                )}
-                {memory.dateOfEventText && (
-                  <>
-                    <span style={{ opacity: 0.42 }}>·</span>
-                    <span>{memory.dateOfEventText}</span>
-                  </>
-                )}
-              </div>
-
-              <div
-                style={{
-                  fontFamily: "var(--font-display)",
-                  fontSize: "clamp(22px, 3.5vw, 44px)",
-                  lineHeight: 1.12,
-                  color: "rgba(246,241,231,0.95)",
-                  maxWidth: "16ch",
-                  textWrap: "balance",
-                }}
-              >
-                {memory.title}
-              </div>
-            </div>
-          </motion.div>
-        </motion.a>
-
         <div
-          ref={contextRef}
-          className={`immersive-context-rail ${contextVisible ? "immersive-context-rail--visible" : ""}`}
+          className="immersive-media-zone"
           style={{
             position: "absolute",
-            zIndex: 3,
-            right: "clamp(16px, 2.5vw, 40px)",
-            top: "50%",
-            transform: "translateY(-50%)",
-            width: "clamp(180px, 20vw, 280px)",
+            inset: 0,
             display: "flex",
-            flexDirection: "column",
-            gap: 14,
-            pointerEvents: "auto",
+            alignItems: "center",
+            justifyContent: "center",
           }}
         >
-          {memory.primaryPersonId && (
+          <motion.div
+            className="immersive-media-card"
+            style={{
+              position: "relative",
+              width: hasContext ? "calc(100% - clamp(220px, 24vw, 340px))" : "100%",
+              height: "100%",
+              scale: mediaScale,
+              borderRadius: mediaRadius,
+              opacity: mediaOpacity,
+              overflow: "hidden",
+            }}
+          >
+            <a
+              href={href}
+              aria-label={`Open ${memory.title}`}
+              style={{
+                position: "absolute",
+                inset: 0,
+                textDecoration: "none",
+                color: "inherit",
+              }}
+            >
+              {isVideo ? (
+                <video
+                  src={mediaUrl}
+                  muted
+                  playsInline
+                  autoPlay
+                  loop
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "contain",
+                  }}
+                />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={mediaUrl}
+                  alt={memory.title}
+                  onError={handleMediaError}
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "contain",
+                  }}
+                />
+              )}
+
+              <motion.div
+                aria-hidden
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  background:
+                    "radial-gradient(ellipse at 50% 45%, transparent 40%, rgba(13,11,8,0.6) 100%), " +
+                    "linear-gradient(180deg, rgba(13,11,8,0.12) 0%, transparent 30%, transparent 55%, rgba(13,11,8,0.8) 100%)",
+                  opacity: vignetteOpacity,
+                  pointerEvents: "none",
+                }}
+              />
+
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  padding: "clamp(28px, 5vw, 64px) clamp(28px, 4vw, 56px)",
+                  zIndex: 3,
+                }}
+              >
+                <div style={{ maxWidth: 580 }}>
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      fontFamily: "var(--font-ui)",
+                      fontSize: 11,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.14em",
+                      color: "rgba(246,241,231,0.40)",
+                      marginBottom: 10,
+                    }}
+                  >
+                    <span>{isVideo ? "Video" : "Photo"}</span>
+                    {mediaCount > 1 && (
+                      <>
+                        <span style={{ opacity: 0.42 }}>·</span>
+                        <span>{mediaCount} items</span>
+                      </>
+                    )}
+                    {memory.dateOfEventText && (
+                      <>
+                        <span style={{ opacity: 0.42 }}>·</span>
+                        <span>{memory.dateOfEventText}</span>
+                      </>
+                    )}
+                  </div>
+
+                  <div
+                    style={{
+                      fontFamily: "var(--font-display)",
+                      fontSize: "clamp(22px, 3.5vw, 44px)",
+                      lineHeight: 1.12,
+                      color: "rgba(246,241,231,0.95)",
+                      maxWidth: "16ch",
+                      textWrap: "balance",
+                    }}
+                  >
+                    {memory.title}
+                  </div>
+                </div>
+              </div>
+            </a>
+          </motion.div>
+        </div>
+
+        {hasContext && (
+          <div
+            ref={contextRef}
+            className={`immersive-context-rail ${contextVisible ? "immersive-context-rail--visible" : ""}`}
+            style={{
+              position: "absolute",
+              zIndex: 4,
+              right: "clamp(16px, 2.5vw, 40px)",
+              top: "50%",
+              width: "clamp(180px, 20vw, 280px)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 14,
+              pointerEvents: "auto",
+            }}
+          >
+            {memory.primaryPersonId && (
+              <button
+                type="button"
+                onClick={() => onPersonClick(memory.primaryPersonId!)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  width: "100%",
+                  border: "1px solid rgba(246,241,231,0.12)",
+                  borderRadius: 10,
+                  background: "rgba(246,241,231,0.04)",
+                  backdropFilter: "blur(16px)",
+                  color: "rgba(246,241,231,0.85)",
+                  padding: "10px 12px",
+                  cursor: "pointer",
+                  fontFamily: "var(--font-ui)",
+                  fontSize: 13,
+                  textAlign: "left",
+                  transition: "background 200ms, border-color 200ms",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "rgba(246,241,231,0.10)";
+                  e.currentTarget.style.borderColor = "rgba(246,241,231,0.24)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "rgba(246,241,231,0.04)";
+                  e.currentTarget.style.borderColor = "rgba(246,241,231,0.12)";
+                }}
+              >
+                {memory.personPortraitUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={memory.personPortraitUrl}
+                    alt={memory.personName ?? ""}
+                    style={{ width: 30, height: 30, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      width: 30,
+                      height: 30,
+                      borderRadius: "50%",
+                      background: "rgba(246,241,231,0.08)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontFamily: "var(--font-display)",
+                      fontSize: 13,
+                      color: "rgba(246,241,231,0.55)",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {memory.personName?.charAt(0) ?? "?"}
+                  </div>
+                )}
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.2 }}>
+                    {memory.personName ?? "View person"}
+                  </div>
+                  {memory.dateOfEventText && (
+                    <div style={{ fontSize: 11, color: "rgba(246,241,231,0.40)", marginTop: 2 }}>
+                      {memory.dateOfEventText}
+                    </div>
+                  )}
+                </div>
+              </button>
+            )}
+
+            {relatedPeople.length > 0 && (
+              <div
+                style={{
+                  border: "1px solid rgba(246,241,231,0.08)",
+                  borderRadius: 10,
+                  background: "rgba(246,241,231,0.03)",
+                  backdropFilter: "blur(14px)",
+                  padding: "10px 10px 8px",
+                }}
+              >
+                <div
+                  style={{
+                    fontFamily: "var(--font-ui)",
+                    fontSize: 9,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.12em",
+                    color: "rgba(246,241,231,0.30)",
+                    marginBottom: 6,
+                  }}
+                >
+                  Tagged
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                  {relatedPeople.slice(0, 5).map((person) => (
+                    <button
+                      key={person.id}
+                      type="button"
+                      onClick={() => onPersonClick(person.id)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        border: "none",
+                        borderRadius: 6,
+                        background: "transparent",
+                        color: "rgba(246,241,231,0.62)",
+                        padding: "5px 6px",
+                        cursor: "pointer",
+                        fontFamily: "var(--font-ui)",
+                        fontSize: 12,
+                        textAlign: "left",
+                        transition: "background 180ms, color 180ms",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = "rgba(246,241,231,0.08)";
+                        e.currentTarget.style.color = "rgba(246,241,231,0.92)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "transparent";
+                        e.currentTarget.style.color = "rgba(246,241,231,0.62)";
+                      }}
+                    >
+                      {person.portraitUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={person.portraitUrl}
+                          alt={person.name}
+                          style={{ width: 22, height: 22, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }}
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            width: 22,
+                            height: 22,
+                            borderRadius: "50%",
+                            background: "rgba(246,241,231,0.06)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontFamily: "var(--font-display)",
+                            fontSize: 10,
+                            color: "rgba(246,241,231,0.35)",
+                            flexShrink: 0,
+                          }}
+                        >
+                          {person.name.charAt(0)}
+                        </div>
+                      )}
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {person.name}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {commentary && (
+              <div
+                style={{
+                  border: "1px solid rgba(246,241,231,0.06)",
+                  borderRadius: 10,
+                  background: "rgba(246,241,231,0.02)",
+                  backdropFilter: "blur(12px)",
+                  padding: "10px 12px",
+                }}
+              >
+                <div
+                  style={{
+                    fontFamily: "var(--font-ui)",
+                    fontSize: 9,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.12em",
+                    color: "rgba(246,241,231,0.28)",
+                    marginBottom: 6,
+                  }}
+                >
+                  Context
+                </div>
+                <p
+                  style={{
+                    margin: 0,
+                    fontFamily: "var(--font-body)",
+                    fontSize: 13,
+                    lineHeight: 1.65,
+                    color: "rgba(246,241,231,0.58)",
+                    display: "-webkit-box",
+                    WebkitLineClamp: 6,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                  }}
+                >
+                  {commentary}
+                </p>
+              </div>
+            )}
+
             <button
               type="button"
-              onClick={() => onPersonClick(memory.primaryPersonId!)}
+              onClick={() => onMemoryClick(memory)}
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 10,
+                justifyContent: "center",
+                gap: 6,
                 width: "100%",
-                border: "1px solid rgba(246,241,231,0.12)",
+                border: "1px solid rgba(246,241,231,0.10)",
                 borderRadius: 10,
                 background: "rgba(246,241,231,0.04)",
-                backdropFilter: "blur(16px)",
-                color: "rgba(246,241,231,0.85)",
-                padding: "10px 12px",
+                backdropFilter: "blur(10px)",
+                color: "rgba(246,241,231,0.72)",
+                padding: "9px 14px",
                 cursor: "pointer",
                 fontFamily: "var(--font-ui)",
-                fontSize: 13,
-                textAlign: "left",
-                transition: "background 200ms, border-color 200ms",
+                fontSize: 12,
+                letterSpacing: "0.04em",
+                transition: "background 200ms, color 200ms",
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = "rgba(246,241,231,0.10)";
-                e.currentTarget.style.borderColor = "rgba(246,241,231,0.24)";
+                e.currentTarget.style.background = "rgba(246,241,231,0.12)";
+                e.currentTarget.style.color = "rgba(246,241,231,0.95)";
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = "rgba(246,241,231,0.04)";
-                e.currentTarget.style.borderColor = "rgba(246,241,231,0.12)";
+                e.currentTarget.style.color = "rgba(246,241,231,0.72)";
               }}
             >
-              {memory.personPortraitUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={memory.personPortraitUrl}
-                  alt={memory.personName ?? ""}
-                  style={{ width: 30, height: 30, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }}
-                />
-              ) : (
-                <div
-                  style={{
-                    width: 30,
-                    height: 30,
-                    borderRadius: "50%",
-                    background: "rgba(246,241,231,0.08)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontFamily: "var(--font-display)",
-                    fontSize: 13,
-                    color: "rgba(246,241,231,0.55)",
-                    flexShrink: 0,
-                  }}
-                >
-                  {memory.personName?.charAt(0) ?? "?"}
-                </div>
-              )}
-              <div style={{ minWidth: 0 }}>
-                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.2 }}>
-                  {memory.personName ?? "View person"}
-                </div>
-                {memory.dateOfEventText && (
-                  <div style={{ fontSize: 11, color: "rgba(246,241,231,0.40)", marginTop: 2 }}>
-                    {memory.dateOfEventText}
-                  </div>
-                )}
-              </div>
+              Open memory
             </button>
-          )}
-
-          {relatedPeople.length > 0 && (
-            <div
-              style={{
-                border: "1px solid rgba(246,241,231,0.08)",
-                borderRadius: 10,
-                background: "rgba(246,241,231,0.03)",
-                backdropFilter: "blur(14px)",
-                padding: "10px 10px 8px",
-              }}
-            >
-              <div
-                style={{
-                  fontFamily: "var(--font-ui)",
-                  fontSize: 9,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.12em",
-                  color: "rgba(246,241,231,0.30)",
-                  marginBottom: 6,
-                }}
-              >
-                Tagged
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                {relatedPeople.slice(0, 5).map((person) => (
-                  <button
-                    key={person.id}
-                    type="button"
-                    onClick={() => onPersonClick(person.id)}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      border: "none",
-                      borderRadius: 6,
-                      background: "transparent",
-                      color: "rgba(246,241,231,0.62)",
-                      padding: "5px 6px",
-                      cursor: "pointer",
-                      fontFamily: "var(--font-ui)",
-                      fontSize: 12,
-                      textAlign: "left",
-                      transition: "background 180ms, color 180ms",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = "rgba(246,241,231,0.08)";
-                      e.currentTarget.style.color = "rgba(246,241,231,0.92)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = "transparent";
-                      e.currentTarget.style.color = "rgba(246,241,231,0.62)";
-                    }}
-                  >
-                    {person.portraitUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={person.portraitUrl}
-                        alt={person.name}
-                        style={{ width: 22, height: 22, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }}
-                      />
-                    ) : (
-                      <div
-                        style={{
-                          width: 22,
-                          height: 22,
-                          borderRadius: "50%",
-                          background: "rgba(246,241,231,0.06)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontFamily: "var(--font-display)",
-                          fontSize: 10,
-                          color: "rgba(246,241,231,0.35)",
-                          flexShrink: 0,
-                        }}
-                      >
-                        {person.name.charAt(0)}
-                      </div>
-                    )}
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {person.name}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {commentary && (
-            <div
-              style={{
-                border: "1px solid rgba(246,241,231,0.06)",
-                borderRadius: 10,
-                background: "rgba(246,241,231,0.02)",
-                backdropFilter: "blur(12px)",
-                padding: "10px 12px",
-              }}
-            >
-              <div
-                style={{
-                  fontFamily: "var(--font-ui)",
-                  fontSize: 9,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.12em",
-                  color: "rgba(246,241,231,0.28)",
-                  marginBottom: 6,
-                }}
-              >
-                Context
-              </div>
-              <p
-                style={{
-                  margin: 0,
-                  fontFamily: "var(--font-body)",
-                  fontSize: 13,
-                  lineHeight: 1.65,
-                  color: "rgba(246,241,231,0.58)",
-                  display: "-webkit-box",
-                  WebkitLineClamp: 6,
-                  WebkitBoxOrient: "vertical",
-                  overflow: "hidden",
-                }}
-              >
-                {commentary}
-              </p>
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={() => onMemoryClick(memory)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 6,
-              width: "100%",
-              border: "1px solid rgba(246,241,231,0.10)",
-              borderRadius: 10,
-              background: "rgba(246,241,231,0.04)",
-              backdropFilter: "blur(10px)",
-              color: "rgba(246,241,231,0.72)",
-              padding: "9px 14px",
-              cursor: "pointer",
-              fontFamily: "var(--font-ui)",
-              fontSize: 12,
-              letterSpacing: "0.04em",
-              transition: "background 200ms, color 200ms",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "rgba(246,241,231,0.12)";
-              e.currentTarget.style.color = "rgba(246,241,231,0.95)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "rgba(246,241,231,0.04)";
-              e.currentTarget.style.color = "rgba(246,241,231,0.72)";
-            }}
-          >
-            Open memory
-          </button>
-        </div>
+          </div>
+        )}
 
         <style jsx>{`
           .immersive-context-rail {
@@ -576,11 +595,14 @@ export function ImmersivePhotoSection({
             opacity: 1;
             transform: translateY(-50%) translateX(0);
           }
+          .immersive-media-card {
+            background: transparent;
+          }
           @media (max-width: 768px) {
             .immersive-context-rail {
               display: none !important;
             }
-            .immersive-photo-section a {
+            .immersive-media-card {
               width: 100% !important;
             }
           }
