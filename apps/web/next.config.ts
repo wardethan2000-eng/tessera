@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
       afterFiles: [
         {
           source: "/api/:path*",
-          destination: `${process.env.API_PROXY_URL ?? "http://localhost:4000"}/api/:path*`,
+          destination: `${process.env.API_PROXY_URL || "http://localhost:4000"}/api/:path*`,
         },
       ],
     };
