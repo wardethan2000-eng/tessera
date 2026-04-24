@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, useScroll, useTransform } from "framer-motion";
 import type { TreeHomeMemory } from "../homeTypes";
 import { isVideoMemory } from "../homeUtils";
@@ -98,7 +98,6 @@ function useDominantColors(src: string | null, isVideo: boolean): DominantColors
     img.src = src;
   }, [src, isVideo]);
 
-  // Extract on mount and when src changes
   if (typeof window !== "undefined" && src && !isVideo && extractedRef.current !== src) {
     extract();
   }
@@ -122,6 +121,8 @@ export function ImmersivePhotoSection({
   onMemoryClick: (memory: TreeHomeMemory) => void;
 }) {
   const sectionRef = useRef<HTMLDivElement>(null);
+  const contextRef = useRef<HTMLDivElement>(null);
+  const [contextVisible, setContextVisible] = useState(false);
   const { scrollYProgress } = useScroll({
     target: sectionRef,
     offset: ["start end", "end start"],
@@ -131,14 +132,29 @@ export function ImmersivePhotoSection({
   const borderRadius = useTransform(scrollYProgress, [0.1, 0.35], [16, 6]);
   const vignetteOpacity = useTransform(scrollYProgress, [0.15, 0.35], [0, 1]);
   const cardOpacity = useTransform(scrollYProgress, [0, 0.1, 0.88, 1], [0, 1, 1, 0]);
-  const contextOpacity = useTransform(scrollYProgress, [0.44, 0.56, 0.80, 0.92], [0, 1, 1, 0]);
-  const contextX = useTransform(contextOpacity, [0, 1], [24, 0]);
 
   const isVideo = isVideoMemory(memory);
   const relatedPeople = getRelatedPeople(memory, people);
   const commentary = getMemoryCommentary(memory);
   const mediaCount = memory.mediaItems?.length ?? (memory.mediaUrl ? 1 : 0);
   const colors = useDominantColors(isVideo ? null : mediaUrl, isVideo);
+
+  useEffect(() => {
+    const el = contextRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry?.isIntersecting) {
+          setContextVisible(true);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.2, rootMargin: "0px 0px -10% 0px" },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <div
@@ -311,18 +327,16 @@ export function ImmersivePhotoSection({
             </motion.div>
           </motion.a>
 
-          <motion.aside
-            className="immersive-context-rail"
+          <aside
+            ref={contextRef}
+            className={`immersive-context-rail ${contextVisible ? "immersive-context-rail--visible" : ""}`}
             style={{
-              opacity: contextOpacity,
-              x: contextX,
               height: "100vh",
               display: "flex",
               flexDirection: "column",
               justifyContent: "center",
               padding: "clamp(20px, 3vw, 40px) clamp(14px, 2vw, 28px)",
               gap: 16,
-              pointerEvents: "auto",
             }}
           >
             {memory.primaryPersonId && (
@@ -336,8 +350,8 @@ export function ImmersivePhotoSection({
                   width: "100%",
                   border: "1px solid rgba(246,241,231,0.10)",
                   borderRadius: 10,
-                  background: "rgba(13,11,8,0.48)",
-                  backdropFilter: "blur(14px)",
+                  background: "rgba(246,241,231,0.04)",
+                  backdropFilter: "blur(18px)",
                   color: "rgba(246,241,231,0.85)",
                   padding: "10px 12px",
                   cursor: "pointer",
@@ -351,7 +365,7 @@ export function ImmersivePhotoSection({
                   e.currentTarget.style.borderColor = "rgba(246,241,231,0.22)";
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "rgba(13,11,8,0.48)";
+                  e.currentTarget.style.background = "rgba(246,241,231,0.04)";
                   e.currentTarget.style.borderColor = "rgba(246,241,231,0.10)";
                 }}
               >
@@ -397,10 +411,10 @@ export function ImmersivePhotoSection({
             {relatedPeople.length > 0 && (
               <div
                 style={{
-                  border: "1px solid rgba(246,241,231,0.07)",
+                  border: "1px solid rgba(246,241,231,0.08)",
                   borderRadius: 10,
-                  background: "rgba(13,11,8,0.38)",
-                  backdropFilter: "blur(10px)",
+                  background: "rgba(246,241,231,0.03)",
+                  backdropFilter: "blur(14px)",
                   padding: "10px 10px 8px",
                 }}
               >
@@ -484,10 +498,10 @@ export function ImmersivePhotoSection({
             {commentary && (
               <div
                 style={{
-                  border: "1px solid rgba(246,241,231,0.07)",
+                  border: "1px solid rgba(246,241,231,0.06)",
                   borderRadius: 10,
-                  background: "rgba(13,11,8,0.32)",
-                  backdropFilter: "blur(8px)",
+                  background: "rgba(246,241,231,0.02)",
+                  backdropFilter: "blur(12px)",
                   padding: "10px 12px",
                 }}
               >
@@ -532,7 +546,8 @@ export function ImmersivePhotoSection({
                 width: "100%",
                 border: "1px solid rgba(246,241,231,0.10)",
                 borderRadius: 10,
-                background: "rgba(246,241,231,0.06)",
+                background: "rgba(246,241,231,0.05)",
+                backdropFilter: "blur(10px)",
                 color: "rgba(246,241,231,0.72)",
                 padding: "9px 14px",
                 cursor: "pointer",
@@ -546,16 +561,26 @@ export function ImmersivePhotoSection({
                 e.currentTarget.style.color = "rgba(246,241,231,0.95)";
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = "rgba(246,241,231,0.06)";
+                e.currentTarget.style.background = "rgba(246,241,231,0.05)";
                 e.currentTarget.style.color = "rgba(246,241,231,0.72)";
               }}
             >
               Open memory
             </button>
-          </motion.aside>
+          </aside>
         </div>
 
         <style jsx>{`
+          .immersive-context-rail {
+            opacity: 0;
+            transform: translateX(28px);
+            transition: opacity 700ms cubic-bezier(0.22, 0.61, 0.36, 1),
+                        transform 700ms cubic-bezier(0.22, 0.61, 0.36, 1);
+          }
+          .immersive-context-rail--visible {
+            opacity: 1;
+            transform: translateX(0);
+          }
           @media (max-width: 1024px) {
             .immersive-layout {
               grid-template-columns: 1fr clamp(160px, 18vw, 240px) !important;
