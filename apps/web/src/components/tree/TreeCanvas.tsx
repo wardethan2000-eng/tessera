@@ -2486,14 +2486,12 @@ function ParentChildEdge({
   data,
 }: EdgeProps<TreeEdge>) {
   const edgeData = data as ConstellationEdgeData | undefined;
-  const stroke = "rgba(177, 165, 145, 0.95)";
-  const opacity = edgeData?.opacity ?? 1;
+  const isDimmed = (edgeData?.opacity ?? 1) < 0.5;
   const strokeWidth = edgeData?.strokeWidth ?? 1.3;
   const sourceX = edgeData?.renderSourceX;
   const sourceY = edgeData?.renderSourceY;
   const targetX = edgeData?.renderTargetX;
   const targetY = edgeData?.renderTargetY;
-  const isDimmed = opacity < 0.5;
 
   if (
     sourceX === undefined ||
@@ -2505,6 +2503,7 @@ function ParentChildEdge({
   }
 
   const edgeClass = isDimmed ? "edge-dimmed" : "edge-pulse";
+  const stroke = isDimmed ? "rgba(177, 165, 145, 0.45)" : "rgba(177, 165, 145, 0.95)";
 
   if (
     edgeData?.unionX === undefined ||
@@ -2522,7 +2521,7 @@ function ParentChildEdge({
         path={path}
         interactionWidth={32}
         className={edgeClass}
-        style={{ stroke, opacity, strokeWidth, cursor: "pointer" }}
+        style={{ stroke, strokeWidth, cursor: "pointer" }}
       />
     );
   }
@@ -2545,7 +2544,7 @@ function ParentChildEdge({
       path={path}
       interactionWidth={32}
       className={edgeClass}
-      style={{ stroke, opacity, strokeWidth, cursor: "pointer" }}
+      style={{ stroke, strokeWidth, cursor: "pointer" }}
     />
   );
 }
@@ -2555,14 +2554,12 @@ function SpouseEdge({
   data,
 }: EdgeProps<TreeEdge>) {
   const edgeData = data as ConstellationEdgeData | undefined;
-  const stroke = "rgba(177, 165, 145, 0.95)";
-  const opacity = edgeData?.opacity ?? 1;
+  const isDimmed = (edgeData?.opacity ?? 1) < 0.5;
   const strokeWidth = edgeData?.strokeWidth ?? 1.2;
   const sourceX = edgeData?.renderSourceX;
   const sourceY = edgeData?.renderSourceY;
   const targetX = edgeData?.renderTargetX;
   const targetY = edgeData?.renderTargetY;
-  const isDimmed = opacity < 0.5;
 
   if (
     sourceX === undefined ||
@@ -2574,6 +2571,7 @@ function SpouseEdge({
   }
 
   const edgeClass = isDimmed ? "edge-dimmed" : "edge-shimmer";
+  const stroke = isDimmed ? "rgba(177, 165, 145, 0.45)" : "rgba(177, 165, 145, 0.95)";
 
   const controlY = Math.min(sourceY, targetY) - 18;
   const path = [
@@ -2588,7 +2586,6 @@ function SpouseEdge({
       className={edgeClass}
       style={{
         stroke,
-        opacity,
         strokeWidth,
         strokeDasharray: edgeData?.strokeDasharray,
         cursor: "pointer",
