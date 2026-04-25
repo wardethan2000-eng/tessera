@@ -6,16 +6,15 @@ import type { ReactFlowInstance } from "@xyflow/react";
 const ZOOM_STEP = 1.25;
 const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 2.5;
-const PAN_MOMENTUM_DECAY = 0.92;
-const PAN_MOMENTUM_THRESHOLD = 0.15;
-const PAN_MOMENTUM_INTERVAL = 16;
 
 export function useMomentumCamera(
   reactFlow: ReactFlowInstance,
 ) {
   const velocityRef = useRef({ x: 0, y: 0 });
   const momentumRafRef = useRef<number | null>(null);
-  const lastPanEventRef = useRef<{ x: number; y: number; t: number } | null>(null);
+  const PAN_MOMENTUM_DECAY = 0.92;
+  const PAN_MOMENTUM_THRESHOLD = 0.15;
+  const PAN_MOMENTUM_INTERVAL = 16;
 
   const stopMomentum = useCallback(() => {
     if (momentumRafRef.current != null) {
@@ -23,7 +22,6 @@ export function useMomentumCamera(
       momentumRafRef.current = null;
     }
     velocityRef.current = { x: 0, y: 0 };
-    lastPanEventRef.current = null;
   }, []);
 
   const momentumTick = useCallback(() => {
@@ -56,6 +54,19 @@ export function useMomentumCamera(
     if (momentumRafRef.current != null) return;
     momentumRafRef.current = requestAnimationFrame(momentumTick);
   }, [momentumTick]);
+
+  const handleMoveEnd = useCallback(
+    (_event: MouseEvent | TouchEvent | null) => {
+      if (Math.abs(velocityRef.current.x) > PAN_MOMENTUM_THRESHOLD || Math.abs(velocityRef.current.y) > PAN_MOMENTUM_THRESHOLD) {
+        startMomentum();
+      }
+    },
+    [startMomentum],
+  );
+
+  const handleMoveStart = useCallback(() => {
+    stopMomentum();
+  }, [stopMomentum]);
 
   const handleWheel = useCallback(
     (e: WheelEvent) => {
@@ -98,55 +109,6 @@ export function useMomentumCamera(
     [reactFlow, stopMomentum],
   );
 
-  const handlePointerDown = useCallback(
-    (e: PointerEvent) => {
-      if (e.button !== 0) return;
-      if ((e.target as Element).closest(".react-flow__node")) return;
-      stopMomentum();
-      lastPanEventRef.current = { x: e.clientX, y: e.clientY, t: Date.now() };
-    },
-    [stopMomentum],
-  );
-
-  const handlePointerMove = useCallback(
-    (e: PointerEvent) => {
-      if (!lastPanEventRef.current) return;
-      if ((e.target as Element).closest(".react-flow__node")) return;
-
-      const prev = lastPanEventRef.current;
-      const dx = e.clientX - prev.x;
-      const dy = e.clientY - prev.y;
-      const dt = Date.now() - prev.t;
-
-      const viewport = reactFlow.getViewport();
-      reactFlow.setViewport(
-        {
-          x: viewport.x + dx,
-          y: viewport.y + dy,
-          zoom: viewport.zoom,
-        },
-        { duration: 0 },
-      );
-
-      if (dt > 0) {
-        velocityRef.current = {
-          x: (dx / dt) * PAN_MOMENTUM_INTERVAL,
-          y: (dy / dt) * PAN_MOMENTUM_INTERVAL,
-        };
-      }
-
-      lastPanEventRef.current = { x: e.clientX, y: e.clientY, t: Date.now() };
-    },
-    [reactFlow],
-  );
-
-  const handlePointerUp = useCallback(() => {
-    if (lastPanEventRef.current) {
-      lastPanEventRef.current = null;
-      startMomentum();
-    }
-  }, [startMomentum]);
-
   const fitViewSmooth = useCallback(
     (options?: { padding?: number; duration?: number }) => {
       stopMomentum();
@@ -185,9 +147,8 @@ export function useMomentumCamera(
 
   return {
     handleWheel,
-    handlePointerDown,
-    handlePointerMove,
-    handlePointerUp,
+    handleMoveStart,
+    handleMoveEnd,
     fitViewSmooth,
     fitBoundsSmooth,
     setCenterSmooth,

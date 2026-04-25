@@ -122,13 +122,13 @@
 }
 
 @keyframes edgePulse {
-  0% { stroke-dashoffset: 0; }
-  100% { stroke-dashoffset: -20; }
+  0%, 100% { stroke-opacity: 0.85; }
+  50% { stroke-opacity: 1; }
 }
 
 @keyframes edgeShimmer {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.97; }
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.03); }
 }
 
 /* ─── Base styles ────────────────────────────────────────────────────────── */
@@ -151,8 +151,7 @@ body {
 }
 
 .edge-pulse path {
-  stroke-dasharray: 2 18;
-  animation: edgePulse 10s linear infinite;
+  animation: edgePulse 10s ease-in-out infinite;
 }
 
 .edge-shimmer path {

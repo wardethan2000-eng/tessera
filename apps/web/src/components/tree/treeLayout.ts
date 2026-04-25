@@ -2595,39 +2595,40 @@ export function computeClusterCentroids(
 ): FamilyCluster[] {
   if (people.length === 0) return [];
 
-  const parentId = new Map<string, string>();
-  for (const r of relationships) {
-    if (r.type === "parent_child") {
-      parentId.set(r.toPersonId, r.fromPersonId);
-      parentId.set(r.fromPersonId, r.fromPersonId);
-      for (const r2 of relationships) {
-        if (r2.type === "parent_child" && r2.toPersonId === r.toPersonId && r2.fromPersonId !== r.fromPersonId) {
-          parentId.set(r2.fromPersonId, r.fromPersonId);
-        }
-      }
+  const parent = new Map<string, string>();
+  function find(id: string): string {
+    let root = id;
+    let current = parent.get(root);
+    while (current != null && current !== root) {
+      root = current;
+      current = parent.get(root);
     }
-    if (r.type === "spouse") {
-      const aRoot = parentId.get(r.fromPersonId);
-      const bRoot = parentId.get(r.toPersonId);
-      if (aRoot && bRoot && aRoot !== bRoot) {
-        for (const [k, v] of parentId) {
-          if (v === bRoot) parentId.set(k, aRoot);
-        }
-      } else if (aRoot) {
-        parentId.set(r.toPersonId, aRoot);
-      } else if (bRoot) {
-        parentId.set(r.fromPersonId, bRoot);
-      }
+    return root;
+  }
+  function union(a: string, b: string) {
+    const rootA = find(a);
+    const rootB = find(b);
+    if (rootA !== rootB) {
+      parent.set(rootA, rootB);
     }
   }
 
-  const clusters = new Map<string, { ids: string[]; name: string | null }>();
-  for (const person of people) {
-    const root = parentId.get(person.id) ?? person.id;
-    if (!clusters.has(root)) {
-      clusters.set(root, { ids: [], name: null });
+  for (const r of relationships) {
+    if (r.type === "parent_child") {
+      union(r.fromPersonId, r.toPersonId);
     }
-    const cluster = clusters.get(root)!;
+    if (r.type === "spouse") {
+      union(r.fromPersonId, r.toPersonId);
+    }
+  }
+
+  const clusterMap = new Map<string, { ids: string[]; name: string | null }>();
+  for (const person of people) {
+    const root = find(person.id);
+    if (!clusterMap.has(root)) {
+      clusterMap.set(root, { ids: [], name: null });
+    }
+    const cluster = clusterMap.get(root)!;
     cluster.ids.push(person.id);
     if (!cluster.name) {
       const name = person.lastName?.trim() || person.maidenName?.trim();
@@ -2637,7 +2638,7 @@ export function computeClusterCentroids(
 
   const result: FamilyCluster[] = [];
   let clusterIndex = 0;
-  for (const [rootId, cluster] of clusters) {
+  for (const [, cluster] of clusterMap) {
     if (cluster.ids.length < 2) continue;
 
     const coords = cluster.ids

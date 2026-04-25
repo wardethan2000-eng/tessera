@@ -184,7 +184,7 @@ function PersonNodeComponent({ data }: NodeProps<PersonFlowNode>) {
           style={{
             fontFamily: "var(--font-display)",
             fontSize: 11,
-            color: "var(--ink)",
+            color: isDimmed ? "var(--ink-faded)" : "var(--ink)",
             textAlign: "center",
             lineHeight: 1.25,
             maxWidth: 74,

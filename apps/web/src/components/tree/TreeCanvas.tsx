@@ -328,7 +328,7 @@ function TreeCanvasInner({
     if (initialSelectedPersonId && people.some((p) => p.id === initialSelectedPersonId)) {
       setArrivalPhase("complete");
       const timer = setTimeout(() => {
-        reactFlow.fitView({ duration: 600, padding: 0.12 });
+        momentumCamera.fitViewSmooth({ duration: 600, padding: 0.12 });
       }, 120);
       return () => clearTimeout(timer);
     }
@@ -339,31 +339,36 @@ function TreeCanvasInner({
     if (isReturning) {
       setArrivalPhase("complete");
       const timer = setTimeout(() => {
-        reactFlow.fitView({ duration: 600, padding: 0.12 });
+        momentumCamera.fitViewSmooth({ duration: 600, padding: 0.12 });
       }, 120);
       return () => clearTimeout(timer);
     }
 
-    if (currentUserPersonId && layoutRef.current.has(currentUserPersonId)) {
-      const pos = layoutRef.current.get(currentUserPersonId)!;
-      reactFlow.setCenter(pos.x + 48, pos.y + 65, { duration: 0, zoom: 0.9 });
-    } else {
-      reactFlow.fitView({ duration: 0, padding: 0.12 });
-    }
+    setArrivalPhase("entering");
+    const setupTimer = setTimeout(() => {
+      if (currentUserPersonId && layoutRef.current.has(currentUserPersonId)) {
+        const pos = layoutRef.current.get(currentUserPersonId)!;
+        reactFlow.setCenter(pos.x + 48, pos.y + 65, { duration: 0, zoom: 0.9 });
+      } else {
+        reactFlow.fitView({ duration: 0, padding: 0.12 });
+      }
 
-    const resolveTimer = setTimeout(() => {
-      setArrivalPhase("resolving");
-      reactFlow.fitView({ duration: 800, padding: 0.12 });
-    }, 200);
+      const resolveTimer = setTimeout(() => {
+        setArrivalPhase("resolving");
+        momentumCamera.fitViewSmooth({ duration: 800, padding: 0.12 });
+      }, 100);
 
-    const completeTimer = setTimeout(() => {
-      setArrivalPhase("complete");
-    }, 1200);
+      const completeTimer = setTimeout(() => {
+        setArrivalPhase("complete");
+      }, 1000);
 
-    return () => {
-      clearTimeout(resolveTimer);
-      clearTimeout(completeTimer);
-    };
+      return () => {
+        clearTimeout(resolveTimer);
+        clearTimeout(completeTimer);
+      };
+    }, 0);
+
+    return () => clearTimeout(setupTimer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [people.length]);
 
@@ -1883,6 +1888,8 @@ function TreeCanvasInner({
         nodeTypes={NODE_TYPES}
         edgeTypes={EDGE_TYPES}
         onWheel={momentumCamera.handleWheel as never}
+        onMoveStart={momentumCamera.handleMoveStart as never}
+        onMoveEnd={momentumCamera.handleMoveEnd as never}
         panOnDrag={!editMode}
         panOnScroll={false}
         zoomOnScroll={false}
