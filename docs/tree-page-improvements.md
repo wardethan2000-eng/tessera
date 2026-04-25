@@ -228,24 +228,37 @@ Impact per effort ranking:
 | G | Arrival sequence | days | ★★★★★ | |
 | A | Replace dot grid | hours | ★★★★☆ | ✅ Done (organic noise SVG filter) |
 | B | Canvas vignette | hours | ★★★★☆ | ✅ Done |
-| K | Momentum camera | days | ★★★★★ | |
+| K | Momentum camera | days | ★★★★★ | ✅ Done (useMomentumCamera) |
 | E | Soften toolbar | hours | ★★★★☆ | ✅ Done (auto-hide + ...) |
 | F | Node halos | hours | ★★★★☆ | ✅ Done |
-| J | Cluster glow | days | ★★★★☆ | |
-| L | Family labels at low zoom | hours | ★★★★☆ | |
-| H | Depth-of-field on dim | hours | ★★★☆☆ | |
+| J | Cluster glow | days | ★★★★☆ | ✅ Done (computeClusterCentroids) |
+| L | Family labels at low zoom | hours | ★★★★☆ | ✅ Done |
+| H | Depth-of-field on dim | hours | ★★★☆☆ | ✅ Done (blur on dimmed) |
 | M | Custom viewport intercepts | days | ★★★★★ | |
 | O | Zoom-through transition | weeks | ★★★★★ | |
 | N | Ambient drift | days | ★★★☆☆ | |
-| I | Breathing edges | days | ★★★☆☆ | |
+| I | Breathing edges | days | ★★★☆☆ | ✅ Done (pulse + shimmer CSS) |
 | D | Standardize durations | hours | ★★★☆☆ | ✅ Done (CSS tokens) |
+| G | Arrival sequence | days | ★★★★★ | ✅ Done (blur → resolve → complete) |
 | R | Dark constellation mode | weeks | ★★★★★ | |
 
-### Implementation Notes
+### Implementation Notes (Tier 2)
 
-**A. Organic noise background** — Replaced React Flow `<Background>` dot grid with an SVG `feTurbulence` filter (`#paper-grain`) applied to the existing decorative dot-pattern overlay. The filter adds subtle paper-like grain using `fractalNoise` with `baseFrequency=0.65`, 4 octaves, and `slope=0.06` for the alpha channel.
+**G. Arrival sequence** — Tree canvas loads with a `backdrop-filter: blur(3px)` + `rgba(246,241,231,0.3)` overlay in the "entering" phase. After 200ms, transitions to "resolving" phase: blur and overlay fade to zero over 800ms while `fitView` animates. After 1200ms, "complete" phase — overlay removed from DOM. For returning visits within the same session (tracked via `didArriveRef`), skips arrival and goes straight to `fitView`. When arriving with `initialSelectedPersonId`, also skips arrival. For the initial frame, if the current user has a position, the camera centers on them at 0.9 zoom before the resolve animation.
 
-**B. Canvas vignette** — Added a `radial-gradient(ellipse 70% 60% at 50% 45%, transparent 50%, rgba(28,25,21,0.08) 100%)` overlay div with `zIndex: 2` and `pointerEvents: none`.
+**H. Depth-of-field on dim** — Dimmed nodes now get `blur(1.5px)` at medium/high zoom, `blur(0.8px)` at low zoom, and no blur at very-low zoom (tiny dots don't benefit). Composed with existing `saturate(0.75)` via a `dimFilter` computed property in `PersonNode.tsx`.
+
+**I. Breathing edges** — Added two CSS keyframes to `globals.css`: `edgePulse` (animates `stroke-dashoffset` over 10s with `2 18` dash pattern) for parent-child edges, and `edgeShimmer` (subtle 3% opacity oscillation over 12s) for spouse edges. CSS classes `.edge-pulse`, `.edge-shimmer`, and `.edge-dimmed` (pauses animation) applied via `className` on `BaseEdge` components. Dimmed edges (opacity < 0.5) get `.edge-dimmed` to pause the animation.
+
+**J. Constellation cluster glow** — Added `computeClusterCentroids()` function to `treeLayout.ts` that groups people by family relationships (using Union-Find on parent-child + spouse relationships), computes bounding boxes and centroids, and returns `FamilyCluster` objects with center/width/height/familyName. In `TreeCanvas.tsx`, clusters are projected to screen coordinates and rendered as elliptical `radial-gradient` divs (`rgba(212,190,159,0.07)`) behind the nodes at `zIndex: 1`. Clusters with < 2 members are filtered out. Dimmed when focus is active and no cluster member is in the focus set.
+
+**K. Momentum camera physics** — Created `useMomentumCamera.ts` hook that provides custom zoom/pan handling:
+- **Custom wheel handler**: Ctrl/meta+scroll zooms to cursor point with 400ms animation. Regular scroll pans with 200ms animation.
+- **Drag pan with inertia**: On pointer up, computes velocity from last move events and applies exponential decay momentum (0.92 per frame) until speed drops below threshold.
+- **Smooth programmatic moves**: `fitViewSmooth()`, `fitBoundsSmooth()`, and `setCenterSmooth()` all stop momentum before animating with 800ms duration.
+- Disabled React Flow's built-in `zoomOnScroll`, `zoomOnDoubleClick`, and `panOnScroll`. Kept `panOnDrag` in non-edit mode. `nodesDraggable` only in edit mode.
+
+**L. Family cluster labels at low zoom** — When zoom < 0.4, not in edit mode, and no person selected, rendered family surnames as large faded labels at cluster centroids. Font: `var(--font-display)`, size scales inversely with zoom (18–32px), opacity 0.14, letter-spacing 0.08em. Labels share the `projectedFamilyClusters` useMemo from item J.
 
 **C. Zoom-level-of-detail** — PersonNode now uses `useViewport()` from `@xyflow/react` (debounced to 1-decimal rounding via `useMemo`) to determine a zoom level tier (`very-low` < 0.3, `low` < 0.6, `medium` < 1.0, `high` ≥ 1.0). Each tier renders a different node:
 - `very-low`: 18px glowing dot + first name only, 48px container

@@ -2577,6 +2577,96 @@ export function getImmediateFamily(
   return ids;
 }
 
+export interface FamilyCluster {
+  id: string;
+  familyName: string | null;
+  memberIds: string[];
+  centerX: number;
+  centerY: number;
+  width: number;
+  height: number;
+  size: number;
+}
+
+export function computeClusterCentroids(
+  people: ApiPerson[],
+  relationships: ApiRelationship[],
+  positions: Map<string, { x: number; y: number }>
+): FamilyCluster[] {
+  if (people.length === 0) return [];
+
+  const parentId = new Map<string, string>();
+  for (const r of relationships) {
+    if (r.type === "parent_child") {
+      parentId.set(r.toPersonId, r.fromPersonId);
+      parentId.set(r.fromPersonId, r.fromPersonId);
+      for (const r2 of relationships) {
+        if (r2.type === "parent_child" && r2.toPersonId === r.toPersonId && r2.fromPersonId !== r.fromPersonId) {
+          parentId.set(r2.fromPersonId, r.fromPersonId);
+        }
+      }
+    }
+    if (r.type === "spouse") {
+      const aRoot = parentId.get(r.fromPersonId);
+      const bRoot = parentId.get(r.toPersonId);
+      if (aRoot && bRoot && aRoot !== bRoot) {
+        for (const [k, v] of parentId) {
+          if (v === bRoot) parentId.set(k, aRoot);
+        }
+      } else if (aRoot) {
+        parentId.set(r.toPersonId, aRoot);
+      } else if (bRoot) {
+        parentId.set(r.fromPersonId, bRoot);
+      }
+    }
+  }
+
+  const clusters = new Map<string, { ids: string[]; name: string | null }>();
+  for (const person of people) {
+    const root = parentId.get(person.id) ?? person.id;
+    if (!clusters.has(root)) {
+      clusters.set(root, { ids: [], name: null });
+    }
+    const cluster = clusters.get(root)!;
+    cluster.ids.push(person.id);
+    if (!cluster.name) {
+      const name = person.lastName?.trim() || person.maidenName?.trim();
+      if (name) cluster.name = name;
+    }
+  }
+
+  const result: FamilyCluster[] = [];
+  let clusterIndex = 0;
+  for (const [rootId, cluster] of clusters) {
+    if (cluster.ids.length < 2) continue;
+
+    const coords = cluster.ids
+      .map((id) => positions.get(id))
+      .filter((p): p is { x: number; y: number } => p != null);
+
+    if (coords.length < 2) continue;
+
+    const minX = Math.min(...coords.map((c) => c.x));
+    const maxX = Math.max(...coords.map((c) => c.x));
+    const minY = Math.min(...coords.map((c) => c.y));
+    const maxY = Math.max(...coords.map((c) => c.y));
+
+    const padding = 80;
+    result.push({
+      id: `cluster-${clusterIndex++}`,
+      familyName: cluster.name,
+      memberIds: cluster.ids,
+      centerX: (minX + maxX) / 2,
+      centerY: (minY + maxY) / 2,
+      width: maxX - minX + padding * 2,
+      height: maxY - minY + padding * 2,
+      size: cluster.ids.length,
+    });
+  }
+
+  return result;
+}
+
 export {
   NODE_WIDTH,
   NODE_HEIGHT,

@@ -121,6 +121,16 @@
   100% { box-shadow: 0 0 0 0 rgba(78, 93, 66, 0); }
 }
 
+@keyframes edgePulse {
+  0% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: -20; }
+}
+
+@keyframes edgeShimmer {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.97; }
+}
+
 /* ─── Base styles ────────────────────────────────────────────────────────── */
 
 html,
@@ -138,6 +148,19 @@ body {
 
 .react-flow__edge path {
   stroke: var(--rule);
+}
+
+.edge-pulse path {
+  stroke-dasharray: 2 18;
+  animation: edgePulse 10s linear infinite;
+}
+
+.edge-shimmer path {
+  animation: edgeShimmer 12s ease-in-out infinite;
+}
+
+.edge-dimmed path {
+  animation: none;
 }
 
 /* ─── Zoom-level-of-detail ───────────────────────────────────────────────── */

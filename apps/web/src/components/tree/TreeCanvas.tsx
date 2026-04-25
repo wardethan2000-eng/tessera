@@ -24,6 +24,7 @@ import { PersonBanner } from "./PersonBanner";
 import { DecadeRail } from "./DecadeRail";
 import { FamilySelector } from "./FamilySelector";
 import { GearIcon, InboxIcon } from "./SurfaceToolbarIcons";
+import { useMomentumCamera } from "./useMomentumCamera";
 import type {
   ApiPerson,
   ConstellationEdgeData,
@@ -44,6 +45,7 @@ import {
   getLineageFocusIds,
   getAvailableDecades,
   inferGenerationDecades,
+  computeClusterCentroids,
   type LineageFocusMode,
 } from "./treeLayout";
 
@@ -130,6 +132,7 @@ function TreeCanvasInner({
   const API = getApiBase();
   const reactFlow = useReactFlow();
   const viewport = useViewport();
+  const momentumCamera = useMomentumCamera(reactFlow);
   const [nodes, setNodes, onNodesChange] = useNodesState<TreeFlowNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<TreeEdge>([]);
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
@@ -175,6 +178,8 @@ function TreeCanvasInner({
   const [creatingFirstPerson, setCreatingFirstPerson] = useState(false);
   const [toolbarVisible, setToolbarVisible] = useState(true);
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
+  const [arrivalPhase, setArrivalPhase] = useState<"entering" | "resolving" | "complete">("entering");
+  const didArriveRef = useRef(false);
   const toolbarTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const layoutRef = useRef<Map<string, { x: number; y: number }>>(new Map());
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -265,6 +270,11 @@ function TreeCanvasInner({
     layoutRef.current = layout;
   }, [layout]);
 
+  const familyClusters = useMemo(
+    () => computeClusterCentroids(people, relationships, layout),
+    [people, relationships, layout]
+  );
+
   useEffect(() => {
     if (didInitializeLineageRef.current) return;
     if (initialSelectedPersonId && people.some((p) => p.id === initialSelectedPersonId)) {
@@ -310,13 +320,50 @@ function TreeCanvasInner({
     setEdges,
   ]);
 
-  // Initial fitView after nodes are set
   useEffect(() => {
-    const timer = setTimeout(() => {
-      reactFlow.fitView({ duration: 600, padding: 0.12 });
-    }, 120);
-    return () => clearTimeout(timer);
-  // Only run on mount / people change
+    if (people.length === 0) {
+      setArrivalPhase("complete");
+      return;
+    }
+    if (initialSelectedPersonId && people.some((p) => p.id === initialSelectedPersonId)) {
+      setArrivalPhase("complete");
+      const timer = setTimeout(() => {
+        reactFlow.fitView({ duration: 600, padding: 0.12 });
+      }, 120);
+      return () => clearTimeout(timer);
+    }
+
+    const isReturning = didArriveRef.current;
+    didArriveRef.current = true;
+
+    if (isReturning) {
+      setArrivalPhase("complete");
+      const timer = setTimeout(() => {
+        reactFlow.fitView({ duration: 600, padding: 0.12 });
+      }, 120);
+      return () => clearTimeout(timer);
+    }
+
+    if (currentUserPersonId && layoutRef.current.has(currentUserPersonId)) {
+      const pos = layoutRef.current.get(currentUserPersonId)!;
+      reactFlow.setCenter(pos.x + 48, pos.y + 65, { duration: 0, zoom: 0.9 });
+    } else {
+      reactFlow.fitView({ duration: 0, padding: 0.12 });
+    }
+
+    const resolveTimer = setTimeout(() => {
+      setArrivalPhase("resolving");
+      reactFlow.fitView({ duration: 800, padding: 0.12 });
+    }, 200);
+
+    const completeTimer = setTimeout(() => {
+      setArrivalPhase("complete");
+    }, 1200);
+
+    return () => {
+      clearTimeout(resolveTimer);
+      clearTimeout(completeTimer);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [people.length]);
 
@@ -346,21 +393,21 @@ function TreeCanvasInner({
     if (relevantIds.size === 0) return;
     const bounds = getFocusBoundsForIds(relevantIds, layoutRef.current);
     if (bounds) {
-      reactFlow.fitBounds(bounds, { duration: 650, padding: 0.22 });
+      momentumCamera.fitBoundsSmooth(bounds, { duration: 800, padding: 0.22 });
     }
   // Only trigger on decade change, not layout changes
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeDecade]);
+  }, [activeDecade, momentumCamera]);
 
   // Zoom to family when active family changes
   useEffect(() => {
     if (!familyFocusIds || familyFocusIds.size === 0) return;
     const bounds = getFocusBoundsForIds(familyFocusIds, layoutRef.current);
     if (bounds) {
-      reactFlow.fitBounds(bounds, { duration: 650, padding: 0.22 });
+      momentumCamera.fitBoundsSmooth(bounds, { duration: 800, padding: 0.22 });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeFamily]);
+  }, [activeFamily, momentumCamera]);
 
   const selectPerson = useCallback(
     (personId: string, focusCamera = true) => {
@@ -378,16 +425,16 @@ function TreeCanvasInner({
             x: bounds.x - PERSON_BANNER_WIDTH / 2,
             width: bounds.width + PERSON_BANNER_WIDTH / 2,
           };
-          reactFlow.fitBounds(shiftedBounds, { duration: 650, padding: 0.22 });
+          momentumCamera.fitBoundsSmooth(shiftedBounds, { duration: 800, padding: 0.22 });
           return;
         }
         const pos = layoutRef.current.get(personId);
         if (pos) {
-          reactFlow.setCenter(pos.x + 48 - PERSON_BANNER_WIDTH / 2, pos.y + 65, { duration: 600, zoom: 1.4 });
+          momentumCamera.setCenterSmooth(pos.x + 48 - PERSON_BANNER_WIDTH / 2, pos.y + 65, { duration: 600, zoom: 1.4 });
         }
       }
     },
-    [lineageMode, reactFlow, relationships]
+    [lineageMode, momentumCamera, relationships]
   );
 
   const resetRelationshipEditorDrafts = useCallback(() => {
@@ -409,9 +456,9 @@ function TreeCanvasInner({
     setLineageMode("full");
     resetEditDrafts();
     setTimeout(() => {
-      reactFlow.fitView({ duration: 600, padding: 0.12 });
+      momentumCamera.fitViewSmooth({ duration: 800, padding: 0.12 });
     }, 50);
-  }, [reactFlow, resetEditDrafts]);
+  }, [momentumCamera, resetEditDrafts]);
 
   const handleNodeClick: NodeMouseHandler<TreeFlowNode> = useCallback(
     (_, node) => {
@@ -494,14 +541,14 @@ function TreeCanvasInner({
       layoutRef.current,
     );
     if (bounds) {
-      reactFlow.fitBounds(bounds, { duration: 650, padding: 0.18 });
+      momentumCamera.fitBoundsSmooth(bounds, { duration: 800, padding: 0.18 });
       return;
     }
     const pos = layoutRef.current.get(currentUserPersonId);
     if (pos) {
-      reactFlow.setCenter(pos.x + 48, pos.y + 65, { duration: 600, zoom: 1.2 });
+      momentumCamera.setCenterSmooth(pos.x + 48, pos.y + 65, { duration: 600, zoom: 1.2 });
     }
-  }, [currentUserPersonId, reactFlow, relationships]);
+  }, [currentUserPersonId, momentumCamera, relationships]);
 
   const handleToggleEditMode = useCallback(() => {
     const next = !editMode;
@@ -520,25 +567,25 @@ function TreeCanvasInner({
         );
         if (bounds) {
           setTimeout(() => {
-            reactFlow.fitBounds(bounds, { duration: 500, padding: 0.2 });
+            momentumCamera.fitBoundsSmooth(bounds, { duration: 600, padding: 0.2 });
           }, 30);
           return;
         }
       }
       setTimeout(() => {
-        reactFlow.fitView({ duration: 420, padding: 0.24 });
+        momentumCamera.fitViewSmooth({ duration: 600, padding: 0.24 });
       }, 30);
       return;
     }
 
     setTimeout(() => {
-      reactFlow.fitView({ duration: 420, padding: 0.12 });
+      momentumCamera.fitViewSmooth({ duration: 600, padding: 0.12 });
     }, 30);
   }, [
     currentUserPersonId,
     editMode,
+    momentumCamera,
     people,
-    reactFlow,
     relationships,
     resetEditDrafts,
     selectedPersonId,
@@ -549,14 +596,14 @@ function TreeCanvasInner({
 
     const timer = setTimeout(() => {
       if (lineageMode === "full") {
-        reactFlow.fitView({ duration: 560, padding: 0.12 });
+        momentumCamera.fitViewSmooth({ duration: 800, padding: 0.12 });
         return;
       }
 
       const bounds = getFocusBoundsForIds(lineageFocusIds, layout);
       if (bounds) {
-        reactFlow.fitBounds(bounds, {
-          duration: 760,
+        momentumCamera.fitBoundsSmooth(bounds, {
+          duration: 800,
           padding: 0.22,
         });
       }
@@ -567,7 +614,7 @@ function TreeCanvasInner({
     layout,
     lineageFocusIds,
     lineageMode,
-    reactFlow,
+    momentumCamera,
     relationships,
     selectedPersonId,
   ]);
@@ -704,6 +751,46 @@ function TreeCanvasInner({
     renderPeople,
     renderRelationships,
   ]);
+
+  const projectedFamilyClusters = useMemo(() => {
+    const rootBounds = rootRef.current?.getBoundingClientRect() ?? null;
+    const flowToScreenPosition = (
+      reactFlow as typeof reactFlow & {
+        flowToScreenPosition?: (point: { x: number; y: number }) => { x: number; y: number };
+      }
+    ).flowToScreenPosition;
+    const projectPoint = (x: number, y: number) => {
+      if (flowToScreenPosition && rootBounds) {
+        const screenPoint = flowToScreenPosition({ x, y });
+        return {
+          x: screenPoint.x - rootBounds.left,
+          y: screenPoint.y - rootBounds.top,
+        };
+      }
+      return {
+        x: x * viewport.zoom + viewport.x,
+        y: y * viewport.zoom + viewport.y + CANVAS_TOP_PADDING,
+      };
+    };
+
+    const isDimmed = activeFocusIds != null;
+    return familyClusters.map((cluster) => {
+      const center = projectPoint(cluster.centerX, cluster.centerY);
+      const halfW = (cluster.width / 2) * viewport.zoom;
+      const halfH = (cluster.height / 2) * viewport.zoom;
+      const anyVisible = isDimmed
+        ? cluster.memberIds.some((id) => activeFocusIds?.has(id))
+        : true;
+      return {
+        ...cluster,
+        screenX: center.x,
+        screenY: center.y,
+        halfW,
+        halfH,
+        clusterDimmed: isDimmed && !anyVisible,
+      };
+    });
+  }, [familyClusters, activeFocusIds, reactFlow, viewport.x, viewport.y, viewport.zoom]);
 
   const projectedParentPlaceholderGroups = useMemo(() => {
     const rootBounds = rootRef.current?.getBoundingClientRect() ?? null;
@@ -1207,6 +1294,22 @@ function TreeCanvasInner({
           zIndex: 2,
         }}
       />
+      {/* Arrival blur overlay */}
+      {arrivalPhase !== "complete" && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            pointerEvents: "none",
+            zIndex: 50,
+            backdropFilter: arrivalPhase === "entering" ? "blur(3px)" : "blur(0px)",
+            background: arrivalPhase === "entering" ? "rgba(246,241,231,0.3)" : "rgba(246,241,231,0)",
+            transition: "backdrop-filter 800ms var(--ease-tessera), background 800ms var(--ease-tessera)",
+          }}
+        />
+      )}
+
       {/* Auto-show toolbar zone — thin strip at top that makes toolbar reappear on hover */}
       <div
         aria-hidden="true"
@@ -1779,13 +1882,82 @@ function TreeCanvasInner({
         onPaneClick={handlePaneClick}
         nodeTypes={NODE_TYPES}
         edgeTypes={EDGE_TYPES}
+        onWheel={momentumCamera.handleWheel as never}
+        panOnDrag={!editMode}
         panOnScroll={false}
-        zoomOnScroll={true}
+        zoomOnScroll={false}
+        zoomOnDoubleClick={false}
+        nodesDraggable={editMode}
         minZoom={0.15}
         maxZoom={2.5}
         style={{ background: "transparent", paddingTop: CANVAS_TOP_PADDING }}
         proOptions={{ hideAttribution: true }}
       />
+
+      {projectedFamilyClusters.length > 0 && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            pointerEvents: "none",
+            zIndex: 1,
+            overflow: "hidden",
+          }}
+        >
+          {projectedFamilyClusters.map((cluster) => (
+            <div
+              key={cluster.id}
+              style={{
+                position: "absolute",
+                left: cluster.screenX - cluster.halfW,
+                top: cluster.screenY - cluster.halfH,
+                width: cluster.halfW * 2,
+                height: cluster.halfH * 2,
+                borderRadius: "50%",
+                background: "radial-gradient(ellipse at center, rgba(212,190,159,0.07) 0%, transparent 70%)",
+                opacity: cluster.clusterDimmed ? 0.15 : 1,
+                transition: "opacity var(--duration-focus) var(--ease-tessera)",
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {!editMode && projectedFamilyClusters.length > 0 && viewport.zoom < 0.4 && !selectedPersonId && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            pointerEvents: "none",
+            zIndex: 3,
+            overflow: "hidden",
+          }}
+        >
+          {projectedFamilyClusters
+            .filter((c) => c.familyName && !c.clusterDimmed)
+            .map((cluster) => (
+              <div
+                key={`label-${cluster.id}`}
+                style={{
+                  position: "absolute",
+                  left: cluster.screenX,
+                  top: cluster.screenY,
+                  transform: "translate(-50%, -50%)",
+                  fontFamily: "var(--font-display)",
+                  fontSize: Math.max(18, Math.min(32, 24 / viewport.zoom)),
+                  color: "var(--ink-faded)",
+                  opacity: 0.14,
+                  letterSpacing: "0.08em",
+                  whiteSpace: "nowrap",
+                  textAlign: "center",
+                  transition: "opacity var(--duration-focus) var(--ease-tessera)",
+                }}
+              >
+                {cluster.familyName}
+              </div>
+            ))}
+        </div>
+      )}
 
       {projectedParentPlaceholderGroups.length > 0 && (
         <div
@@ -2304,6 +2476,7 @@ function ParentChildEdge({
   const sourceY = edgeData?.renderSourceY;
   const targetX = edgeData?.renderTargetX;
   const targetY = edgeData?.renderTargetY;
+  const isDimmed = opacity < 0.5;
 
   if (
     sourceX === undefined ||
@@ -2313,6 +2486,8 @@ function ParentChildEdge({
   ) {
     return null;
   }
+
+  const edgeClass = isDimmed ? "edge-dimmed" : "edge-pulse";
 
   if (
     edgeData?.unionX === undefined ||
@@ -2329,6 +2504,7 @@ function ParentChildEdge({
         id={id}
         path={path}
         interactionWidth={32}
+        className={edgeClass}
         style={{ stroke, opacity, strokeWidth, cursor: "pointer" }}
       />
     );
@@ -2351,6 +2527,7 @@ function ParentChildEdge({
       id={id}
       path={path}
       interactionWidth={32}
+      className={edgeClass}
       style={{ stroke, opacity, strokeWidth, cursor: "pointer" }}
     />
   );
@@ -2368,6 +2545,7 @@ function SpouseEdge({
   const sourceY = edgeData?.renderSourceY;
   const targetX = edgeData?.renderTargetX;
   const targetY = edgeData?.renderTargetY;
+  const isDimmed = opacity < 0.5;
 
   if (
     sourceX === undefined ||
@@ -2377,6 +2555,8 @@ function SpouseEdge({
   ) {
     return null;
   }
+
+  const edgeClass = isDimmed ? "edge-dimmed" : "edge-shimmer";
 
   const controlY = Math.min(sourceY, targetY) - 18;
   const path = [
@@ -2388,6 +2568,7 @@ function SpouseEdge({
       id={id}
       path={path}
       interactionWidth={32}
+      className={edgeClass}
       style={{
         stroke,
         opacity,

@@ -48,6 +48,10 @@ function PersonNodeComponent({ data }: NodeProps<PersonFlowNode>) {
   const decadeScale = decadeRelevance != null ? 0.8 + 0.2 * decadeRelevance : 1;
   const decadeOpacity = decadeRelevance != null ? 0.25 + 0.75 * decadeRelevance : 1;
   const combinedOpacity = isDimmed ? 0.24 : decadeOpacity;
+  const dimBlur = isDimmed
+    ? zoomLevel === "very-low" ? "" : zoomLevel === "low" ? "blur(0.8px)" : "blur(1.5px)"
+    : "";
+  const dimFilter = isDimmed ? `saturate(0.75) ${dimBlur}`.trim() : "none";
 
   const ringStyle: React.CSSProperties = isYou
     ? { border: "2px solid var(--moss)" }
@@ -70,7 +74,7 @@ function PersonNodeComponent({ data }: NodeProps<PersonFlowNode>) {
           width: 48,
           userSelect: "none",
           opacity: combinedOpacity,
-          filter: isDimmed ? "saturate(0.75)" : "none",
+          filter: dimFilter,
           transform: `scale(${decadeScale})`,
           transformOrigin: "center top",
         }}
@@ -129,7 +133,7 @@ function PersonNodeComponent({ data }: NodeProps<PersonFlowNode>) {
           width: 74,
           userSelect: "none",
           opacity: combinedOpacity,
-          filter: isDimmed ? "saturate(0.75)" : "none",
+          filter: dimFilter,
           transform: `scale(${decadeScale})`,
           transformOrigin: "center top",
         }}
@@ -212,7 +216,7 @@ function PersonNodeComponent({ data }: NodeProps<PersonFlowNode>) {
         height: NODE_HEIGHT,
         userSelect: "none",
         opacity: combinedOpacity,
-        filter: isDimmed ? "saturate(0.75)" : "none",
+        filter: dimFilter,
         transform: `scale(${decadeScale})`,
         transformOrigin: "center top",
       }}
