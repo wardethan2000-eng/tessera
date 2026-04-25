@@ -1288,7 +1288,7 @@ function TreeCanvasInner({
           backgroundRepeat: "repeat",
           backgroundSize: "256px 256px",
           mixBlendMode: "multiply",
-          opacity: 0.5,
+          opacity: 0.35,
           zIndex: 0,
         }}
       />
