@@ -518,12 +518,12 @@ function TreeCanvasInner({
         clickTimerRef.current = null;
       }
 
-      // Zoom-through: zoom toward the person, then navigate
+      // Zoom-through: zoom into the person's portrait, then navigate
       setZoomThroughPersonId(personNode.data.personId);
       setZoomThroughFading(false);
       const pos = layoutRef.current.get(personNode.data.personId);
       if (pos) {
-        momentumCamera.setCenterSmooth(pos.x + 48 - PERSON_BANNER_WIDTH / 2, pos.y + 65, {
+        momentumCamera.setCenterSmooth(pos.x + 56, pos.y + 32, {
           duration: 600,
           zoom: 1.6,
         });
