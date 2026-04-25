@@ -179,8 +179,29 @@ function TreeCanvasInner({
   const [toolbarVisible, setToolbarVisible] = useState(true);
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
   const [arrivalPhase, setArrivalPhase] = useState<"entering" | "resolving" | "complete">("entering");
+  const [grainTileDataUrl, setGrainTileDataUrl] = useState<string | null>(null);
   const didArriveRef = useRef(false);
   const toolbarTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const size = 256;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const imageData = ctx.createImageData(size, size);
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const v = Math.random() * 255;
+      data[i] = v;
+      data[i + 1] = v;
+      data[i + 2] = v;
+      data[i + 3] = 28;
+    }
+    ctx.putImageData(imageData, 0, 0);
+    setGrainTileDataUrl(canvas.toDataURL("image/png"));
+  }, []);
   const layoutRef = useRef<Map<string, { x: number; y: number }>>(new Map());
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -413,31 +434,13 @@ function TreeCanvasInner({
   }, [activeFamily, momentumCamera]);
 
   const selectPerson = useCallback(
-    (personId: string, focusCamera = true) => {
+    (personId: string, _focusCamera = true) => {
       setSelectedPersonId(personId);
-      const nextLineageMode = lineageMode === "full" ? "household" : lineageMode;
       if (lineageMode === "full") {
         setLineageMode("household");
       }
-      if (focusCamera) {
-        const focusIds = getLineageFocusIds(personId, relationships, nextLineageMode);
-        const bounds = getFocusBoundsForIds(focusIds, layoutRef.current);
-        if (bounds) {
-          const shiftedBounds = {
-            ...bounds,
-            x: bounds.x - PERSON_BANNER_WIDTH / 2,
-            width: bounds.width + PERSON_BANNER_WIDTH / 2,
-          };
-          momentumCamera.fitBoundsSmooth(shiftedBounds, { duration: 800, padding: 0.22 });
-          return;
-        }
-        const pos = layoutRef.current.get(personId);
-        if (pos) {
-          momentumCamera.setCenterSmooth(pos.x + 48 - PERSON_BANNER_WIDTH / 2, pos.y + 65, { duration: 600, zoom: 1.4 });
-        }
-      }
     },
-    [lineageMode, momentumCamera, relationships]
+    [lineageMode]
   );
 
   const resetRelationshipEditorDrafts = useCallback(() => {
@@ -605,12 +608,22 @@ function TreeCanvasInner({
 
       const bounds = getFocusBoundsForIds(lineageFocusIds, layout);
       if (bounds) {
-        momentumCamera.fitBoundsSmooth(bounds, {
+        const shiftedBounds = {
+          ...bounds,
+          x: bounds.x - PERSON_BANNER_WIDTH / 2,
+          width: bounds.width + PERSON_BANNER_WIDTH / 2,
+        };
+        momentumCamera.fitBoundsSmooth(shiftedBounds, {
           duration: 800,
           padding: 0.22,
         });
+        return;
       }
-    }, 20);
+      const pos = layoutRef.current.get(selectedPersonId);
+      if (pos) {
+        momentumCamera.setCenterSmooth(pos.x + 48 - PERSON_BANNER_WIDTH / 2, pos.y + 65, { duration: 600, zoom: 1.4 });
+      }
+    }, 50);
     return () => clearTimeout(timer);
   }, [
     editMode,
@@ -1264,17 +1277,21 @@ function TreeCanvasInner({
   }, [resetRelationshipEditorDrafts, selectedPersonId]);
 
   return (
-    <div ref={rootRef} style={{ width: "100%", height: "100%", position: "relative", background: CANVAS_BACKGROUND, filter: "url(#paper-grain)" }}>
-      <svg aria-hidden="true" style={{ position: "absolute", width: 0, height: 0 }}>
-        <filter id="paper-grain" x="0" y="0" width="100%" height="100%">
-          <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="4" stitchTiles="stitch" result="noise" />
-          <feColorMatrix type="saturate" values="0" in="noise" result="gray" />
-          <feComponentTransfer in="gray" result="grain">
-            <feFuncA type="linear" slope="0.18" />
-          </feComponentTransfer>
-          <feBlend in="SourceGraphic" in2="grain" mode="multiply" />
-        </filter>
-      </svg>
+    <div ref={rootRef} style={{ width: "100%", height: "100%", position: "relative", background: CANVAS_BACKGROUND }}>
+      <div
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          backgroundImage: grainTileDataUrl ? `url(${grainTileDataUrl})` : undefined,
+          backgroundRepeat: "repeat",
+          backgroundSize: "256px 256px",
+          mixBlendMode: "multiply",
+          opacity: 0.5,
+          zIndex: 0,
+        }}
+      />
       <div
         aria-hidden="true"
         style={{
