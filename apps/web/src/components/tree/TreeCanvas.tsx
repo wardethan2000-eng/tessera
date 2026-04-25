@@ -1936,16 +1936,6 @@ function TreeCanvasInner({
               {hoveredPerson.essenceLine.slice(0, 40)}
             </div>
           )}
-          <div
-            style={{
-              fontFamily: "var(--font-ui)",
-              fontSize: 11,
-              color: "var(--moss)",
-              marginTop: 6,
-            }}
-          >
-            Click to explore ›
-          </div>
         </div>
       )}
 
