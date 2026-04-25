@@ -470,6 +470,16 @@ body {
   cursor: pointer;
 }
 
+.react-flow__node-person:hover .person-portrait {
+  transform: scale(1.08);
+  box-shadow: 0 0 0 5px var(--star-glow), 0 0 20px var(--star-glow) !important;
+}
+
+.person-portrait {
+  transition: transform 200ms cubic-bezier(0.22, 0.61, 0.36, 1),
+              box-shadow 200ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
 .react-flow__edge path {
   stroke: rgba(177, 165, 145, 0.95);
 }
@@ -512,6 +522,10 @@ body {
 }
 
 /* ─── Dark Constellation: ReactFlow overrides ────────────────────────────── */
+
+[data-theme="dark"] .react-flow__node {
+  cursor: pointer;
+}
 
 [data-theme="dark"] .react-flow__edge path {
   stroke: #3a4a5e;

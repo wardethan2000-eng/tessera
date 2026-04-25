@@ -76,6 +76,7 @@ function PersonNodeComponent({ data, id }: NodeProps<PersonFlowNode>) {
   if (zoomLevel === "very-low") {
     return (
       <div
+        className="person-wrapper"
         style={{
           position: "relative",
           transition: "opacity var(--duration-focus) var(--ease-tessera), transform var(--duration-camera) var(--ease-tessera)",
@@ -93,6 +94,7 @@ function PersonNodeComponent({ data, id }: NodeProps<PersonFlowNode>) {
         }}
       >
         <div
+          className="person-portrait"
           style={{
             width: 18,
             height: 18,
@@ -136,6 +138,7 @@ function PersonNodeComponent({ data, id }: NodeProps<PersonFlowNode>) {
   if (zoomLevel === "low") {
     return (
       <div
+        className="person-wrapper"
         style={{
           position: "relative",
           transition: "opacity var(--duration-focus) var(--ease-tessera), transform var(--duration-camera) var(--ease-tessera)",
@@ -153,6 +156,7 @@ function PersonNodeComponent({ data, id }: NodeProps<PersonFlowNode>) {
         }}
       >
         <div
+          className="person-portrait"
           style={{
             width: 36,
             height: 36,
@@ -219,6 +223,7 @@ function PersonNodeComponent({ data, id }: NodeProps<PersonFlowNode>) {
 
   return (
     <div
+      className="person-wrapper"
       style={{
         position: "relative",
         transition: "opacity var(--duration-focus) var(--ease-tessera), transform var(--duration-camera) var(--ease-tessera)",
@@ -237,6 +242,7 @@ function PersonNodeComponent({ data, id }: NodeProps<PersonFlowNode>) {
       }}
     >
       <div
+        className="person-portrait"
         style={{
           width: PORTRAIT_SIZE,
           height: PORTRAIT_SIZE,
