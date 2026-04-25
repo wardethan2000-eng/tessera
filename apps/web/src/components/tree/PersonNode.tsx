@@ -15,7 +15,7 @@ function getZoomLevel(zoom: number): ZoomLevel {
   return "high";
 }
 
-function PersonNodeComponent({ data }: NodeProps<PersonFlowNode>) {
+function PersonNodeComponent({ data, id }: NodeProps<PersonFlowNode>) {
   const {
     name,
     birthYear,
@@ -30,6 +30,15 @@ function PersonNodeComponent({ data }: NodeProps<PersonFlowNode>) {
 
   const viewport = useViewport();
   const zoomLevel = useMemo(() => getZoomLevel(Math.round(viewport.zoom * 10) / 10), [viewport.zoom]);
+
+  const driftDelay = useMemo(() => {
+    let hash = 0;
+    for (let i = 0; i < id.length; i++) {
+      hash = ((hash << 5) - hash) + id.charCodeAt(i);
+      hash |= 0;
+    }
+    return `${Math.abs(hash) % 30}s`;
+  }, [id]);
 
   const initials = name
     .split(" ")
@@ -52,6 +61,9 @@ function PersonNodeComponent({ data }: NodeProps<PersonFlowNode>) {
     ? zoomLevel === "very-low" ? "" : zoomLevel === "low" ? "blur(0.8px)" : "blur(1.5px)"
     : "";
   const dimFilter = isDimmed ? `saturate(0.75) ${dimBlur}`.trim() : "none";
+  const driftAnimation = !isDimmed
+    ? `ambientDrift 40s ease-in-out infinite ${driftDelay}`
+    : "none";
 
   const ringStyle: React.CSSProperties = isYou
     ? { border: "2px solid var(--moss)" }
@@ -77,6 +89,7 @@ function PersonNodeComponent({ data }: NodeProps<PersonFlowNode>) {
           filter: dimFilter,
           transform: `scale(${decadeScale})`,
           transformOrigin: "center top",
+          animation: driftAnimation,
         }}
       >
         <div
@@ -136,6 +149,7 @@ function PersonNodeComponent({ data }: NodeProps<PersonFlowNode>) {
           filter: dimFilter,
           transform: `scale(${decadeScale})`,
           transformOrigin: "center top",
+          animation: driftAnimation,
         }}
       >
         <div
@@ -219,6 +233,7 @@ function PersonNodeComponent({ data }: NodeProps<PersonFlowNode>) {
         filter: dimFilter,
         transform: `scale(${decadeScale})`,
         transformOrigin: "center top",
+        animation: driftAnimation,
       }}
     >
       <div

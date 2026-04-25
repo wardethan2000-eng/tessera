@@ -169,11 +169,11 @@ body {
   stroke: rgba(177, 165, 145, 0.95);
 }
 
-.edge-pulse path {
+.edge-pulse {
   animation: edgePulse 3.5s ease-in-out infinite;
 }
 
-.edge-shimmer path {
+.edge-shimmer {
   animation: edgeShimmer 4s ease-in-out infinite;
 }
 
@@ -186,6 +186,13 @@ body {
   font-style: italic;
   letter-spacing: 0.02em;
   opacity: 0.85;
+}
+
+@keyframes ambientDrift {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(1.5px, -2px); }
+  50% { transform: translate(-1px, 1.5px); }
+  75% { transform: translate(2px, 1px); }
 }
 
 /* ─── Zoom-level-of-detail ───────────────────────────────────────────────── */

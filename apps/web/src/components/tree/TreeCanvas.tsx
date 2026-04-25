@@ -180,6 +180,7 @@ function TreeCanvasInner({
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
   const [arrivalPhase, setArrivalPhase] = useState<"entering" | "resolving" | "complete" | "pre">("pre");
   const [grainTileDataUrl, setGrainTileDataUrl] = useState<string | null>(null);
+  const [zoomThroughPersonId, setZoomThroughPersonId] = useState<string | null>(null);
   const didArriveRef = useRef(false);
   const toolbarTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -512,9 +513,20 @@ function TreeCanvasInner({
         clickTimerRef.current = null;
       }
 
-      onPersonDetailClick(personNode.data.personId);
+      // Zoom-through: zoom toward the person, then navigate
+      setZoomThroughPersonId(personNode.data.personId);
+      const pos = layoutRef.current.get(personNode.data.personId);
+      if (pos) {
+        momentumCamera.setCenterSmooth(pos.x + 48 - PERSON_BANNER_WIDTH / 2, pos.y + 65, {
+          duration: 600,
+          zoom: 1.6,
+        });
+      }
+      setTimeout(() => {
+        onPersonDetailClick(personNode.data.personId);
+      }, 650);
     },
-    [editMode, onPersonDetailClick]
+    [editMode, momentumCamera, onPersonDetailClick],
   );
 
   const handlePaneClick = useCallback(() => {
@@ -2475,6 +2487,22 @@ function TreeCanvasInner({
           onAddRelation={onAddMemoryClick ? (personId, kind) => {
             openRelationFormForPerson(personId, kind);
           } : undefined}
+        />
+      )}
+
+      {/* Zoom-through transition overlay */}
+      {zoomThroughPersonId && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 60,
+            background: "var(--paper)",
+            opacity: 1,
+            transition: "opacity 400ms var(--ease-tessera)",
+            pointerEvents: "none",
+          }}
         />
       )}
     </div>
