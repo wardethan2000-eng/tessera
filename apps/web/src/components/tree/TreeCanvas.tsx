@@ -1899,45 +1899,7 @@ function TreeCanvasInner({
         </div>
       )}
 
-      {/* Hover tooltip */}
-      {hoveredPerson && hoverState && !selectedPersonId && !editMode && (
-        <div
-          style={{
-            position: "fixed",
-            left: hoverState.screenX + 14,
-            top: hoverState.screenY - 16,
-            zIndex: 15,
-            ...floatingPanelStyle,
-            padding: "10px 14px",
-            pointerEvents: "none",
-            minWidth: 140,
-          }}
-        >
-          <div
-            style={{
-              fontFamily: "var(--font-display)",
-              fontSize: 14,
-              color: "var(--ink)",
-              lineHeight: 1.3,
-            }}
-          >
-            {hoveredPerson.name}
-          </div>
-          {hoveredPerson.essenceLine && (
-            <div
-              style={{
-                fontFamily: "var(--font-body)",
-                fontSize: 12,
-                fontStyle: "italic",
-                color: "var(--ink-faded)",
-                marginTop: 3,
-              }}
-            >
-              {hoveredPerson.essenceLine.slice(0, 40)}
-            </div>
-          )}
-        </div>
-      )}
+      {/* Hover tooltip removed */}
 
       {/* ReactFlow canvas */}
       <ReactFlow
