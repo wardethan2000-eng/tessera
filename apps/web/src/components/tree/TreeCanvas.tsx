@@ -185,6 +185,7 @@ function TreeCanvasInner({
   const [arrivalPhase, setArrivalPhase] = useState<"entering" | "resolving" | "complete" | "pre">("pre");
   const [grainTileDataUrl, setGrainTileDataUrl] = useState<string | null>(null);
   const [zoomThroughPersonId, setZoomThroughPersonId] = useState<string | null>(null);
+  const [zoomThroughFading, setZoomThroughFading] = useState(false);
   const didArriveRef = useRef(false);
   const toolbarTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -519,6 +520,7 @@ function TreeCanvasInner({
 
       // Zoom-through: zoom toward the person, then navigate
       setZoomThroughPersonId(personNode.data.personId);
+      setZoomThroughFading(false);
       const pos = layoutRef.current.get(personNode.data.personId);
       if (pos) {
         momentumCamera.setCenterSmooth(pos.x + 48 - PERSON_BANNER_WIDTH / 2, pos.y + 65, {
@@ -526,9 +528,11 @@ function TreeCanvasInner({
           zoom: 1.6,
         });
       }
+      // Start fading overlay after camera zoom starts
+      setTimeout(() => setZoomThroughFading(true), 300);
       setTimeout(() => {
         onPersonDetailClick(personNode.data.personId);
-      }, 650);
+      }, 700);
     },
     [editMode, momentumCamera, onPersonDetailClick],
   );
@@ -2509,7 +2513,7 @@ function TreeCanvasInner({
         />
       )}
 
-      {/* Zoom-through transition overlay */}
+      {/* Zoom-through transition overlay — starts transparent, fades in after zoom starts */}
       {zoomThroughPersonId && (
         <div
           aria-hidden="true"
@@ -2518,7 +2522,7 @@ function TreeCanvasInner({
             inset: 0,
             zIndex: 60,
             background: "var(--paper)",
-            opacity: 1,
+            opacity: zoomThroughFading ? 1 : 0,
             transition: "opacity 400ms var(--ease-tessera)",
             pointerEvents: "none",
           }}
