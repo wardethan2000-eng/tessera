@@ -2503,7 +2503,10 @@ function ParentChildEdge({
   }
 
   const edgeClass = isDimmed ? "edge-dimmed" : "edge-pulse";
-  const stroke = isDimmed ? "rgba(177, 165, 145, 0.45)" : "rgba(177, 165, 145, 0.95)";
+  const stroke = isDimmed ? "rgba(177, 165, 145, 0.45)" : undefined;
+  const edgeStyle: React.CSSProperties = isDimmed
+    ? { stroke, strokeWidth, cursor: "pointer" }
+    : { strokeWidth, cursor: "pointer" };
 
   if (
     edgeData?.unionX === undefined ||
@@ -2521,7 +2524,7 @@ function ParentChildEdge({
         path={path}
         interactionWidth={32}
         className={edgeClass}
-        style={{ stroke, strokeWidth, cursor: "pointer" }}
+        style={edgeStyle}
       />
     );
   }
@@ -2544,7 +2547,7 @@ function ParentChildEdge({
       path={path}
       interactionWidth={32}
       className={edgeClass}
-      style={{ stroke, strokeWidth, cursor: "pointer" }}
+      style={edgeStyle}
     />
   );
 }
@@ -2571,7 +2574,10 @@ function SpouseEdge({
   }
 
   const edgeClass = isDimmed ? "edge-dimmed" : "edge-shimmer";
-  const stroke = isDimmed ? "rgba(177, 165, 145, 0.45)" : "rgba(177, 165, 145, 0.95)";
+  const stroke = isDimmed ? "rgba(177, 165, 145, 0.45)" : undefined;
+  const edgeStyle: React.CSSProperties = isDimmed
+    ? { stroke, strokeWidth, cursor: "pointer" }
+    : { strokeWidth, cursor: "pointer" };
 
   const controlY = Math.min(sourceY, targetY) - 18;
   const path = [
@@ -2585,10 +2591,8 @@ function SpouseEdge({
       interactionWidth={32}
       className={edgeClass}
       style={{
-        stroke,
-        strokeWidth,
+        ...edgeStyle,
         strokeDasharray: edgeData?.strokeDasharray,
-        cursor: "pointer",
       }}
     />
   );
