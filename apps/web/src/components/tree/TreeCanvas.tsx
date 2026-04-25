@@ -1339,7 +1339,7 @@ function TreeCanvasInner({
       
       {/* Star dust particles - only shown in dark mode */}
       {isDark && starDustParticles && (
-        <div aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 1 }}>
+        <div aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden" }}>
           {starDustParticles.map((p, i) => (
             <div
               key={i}
