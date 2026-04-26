@@ -4,35 +4,28 @@ import { useState } from "react";
 import { getProxiedMediaUrl } from "@/lib/media-url";
 import type { TreeHomeCoverage, TreeHomeMemory, TreeHomeStats } from "@/components/home/homeTypes";
 import { EASE, getCoverageRangeLabel, getHeroExcerpt } from "@/components/home/homeUtils";
-import type { MosaicTileWeight } from "./MosaicTile";
 
 interface ArchiveTileProps {
   treeName: string;
-  treeId: string;
   role: string;
   stats: TreeHomeStats;
   coverage: TreeHomeCoverage;
   heroMemory: TreeHomeMemory | null;
   isFoundedByYou: boolean;
   isPrimary: boolean;
-  weight: MosaicTileWeight;
-  colSpan: number;
-  staggerIndex: number;
+  isSparse: boolean;
   href: string;
 }
 
 export function ArchiveTile({
   treeName,
-  treeId,
   role,
   stats,
   coverage,
   heroMemory,
   isFoundedByYou,
   isPrimary,
-  weight,
-  colSpan,
-  staggerIndex,
+  isSparse,
   href,
 }: ArchiveTileProps) {
   const [hovered, setHovered] = useState(false);
@@ -40,67 +33,71 @@ export function ArchiveTile({
   const active = hovered || focused;
   const heroImage = getProxiedMediaUrl(heroMemory?.mediaUrl);
   const heroExcerpt = getHeroExcerpt(heroMemory);
-  const isHero = weight === "hero";
+  const spanLabel = getCoverageRangeLabel(coverage);
 
-  const style: React.CSSProperties = {
-    gridColumn: `span ${colSpan}`,
-    gridRow: isHero ? "span 2" : "span 1",
-    position: "relative",
-    overflow: "hidden",
-    borderRadius: isHero ? 20 : 12,
-    border: active
-      ? "1px solid rgba(78,93,66,0.35)"
-      : "1px solid rgba(128,107,82,0.16)",
-    background: isPrimary
-      ? "linear-gradient(180deg, rgba(247,242,233,0.98) 0%, rgba(238,229,216,0.98) 100%)"
-      : "linear-gradient(180deg, rgba(246,241,231,0.94) 0%, rgba(237,230,218,0.94) 100%)",
-    transform: active ? "translateY(-2px)" : "none",
-    boxShadow: active
-      ? "0 20px 48px rgba(40,30,18,0.14)"
-      : isHero
-        ? "0 12px 30px rgba(40,30,18,0.08)"
-        : "0 6px 16px rgba(40,30,18,0.04)",
-    transition: `transform 280ms ${EASE}, box-shadow 280ms ${EASE}, border-color 280ms ${EASE}`,
-    cursor: "pointer",
-    textDecoration: "none",
-    animation: `bloom 600ms ${EASE} ${staggerIndex * 80}ms both`,
-    minHeight: isHero ? 320 : weight === "large" ? 260 : 200,
-  };
+  const colSpan = isPrimary ? 7 : 5;
+  const rowSpan = isPrimary ? 5 : 4;
 
   return (
     <a
       href={href}
-      style={style}
+      aria-label={`${isPrimary ? "Primary" : ""} archive: ${treeName}. ${stats.peopleCount} people, ${stats.memoryCount} memories${spanLabel !== "Dates are still gathering." ? `, ${spanLabel}` : ""}. Enter archive.`}
+      className="mosaic-tile-link"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onFocusCapture={() => setFocused(true)}
       onBlurCapture={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-          setFocused(false);
-        }
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(false);
+      }}
+      style={{
+        gridColumn: `span ${colSpan}`,
+        gridRow: `span ${rowSpan}`,
+        position: "relative",
+        overflow: "hidden",
+        borderRadius: isPrimary ? 18 : 14,
+        border: active
+          ? "1px solid rgba(78,93,66,0.36)"
+          : "1px solid rgba(128,107,82,0.14)",
+        background: !heroImage
+          ? `linear-gradient(135deg, rgba(249,245,238,1) 0%, rgba(234,226,212,1) 100%)`
+          : undefined,
+        transform: active ? "translateY(-3px)" : "none",
+        boxShadow: active
+          ? "0 22px 52px rgba(40,30,18,0.16)"
+          : isPrimary
+            ? "0 8px 24px rgba(40,30,18,0.08)"
+            : "0 4px 12px rgba(40,30,18,0.04)",
+        transition: `transform 420ms ${EASE}, box-shadow 420ms ${EASE}, border-color 420ms ${EASE}`,
+        animation: `bloom 640ms ${EASE} 0ms both`,
+        textDecoration: "none",
+        cursor: "pointer",
+        minHeight: isPrimary ? 380 : 260,
       }}
     >
       {heroImage && (
         <>
           <img
             src={heroImage}
-            alt={heroMemory?.title ?? treeName}
+            alt=""
             style={{
               position: "absolute",
               inset: 0,
               width: "100%",
               height: "100%",
               objectFit: "cover",
-              opacity: isPrimary ? 0.24 : 0.16,
-              filter: "sepia(18%) saturate(0.85)",
+              opacity: isPrimary ? 0.78 : 0.62,
+              filter: "sepia(8%) saturate(0.88)",
+              transform: active ? "scale(1.03)" : "scale(1)",
+              transition: `transform 900ms ${EASE}, opacity 400ms ${EASE}`,
             }}
           />
           <div
             style={{
               position: "absolute",
               inset: 0,
-              background:
-                "linear-gradient(180deg, rgba(247,242,233,0.68) 0%, rgba(237,228,214,0.94) 72%, rgba(235,225,210,1) 100%)",
+              background: isPrimary
+                ? "linear-gradient(to top, rgba(20,17,14,0.82) 0%, rgba(20,17,14,0.38) 32%, rgba(20,17,14,0.12) 58%, rgba(244,236,223,0.04) 100%)"
+                : "linear-gradient(to top, rgba(20,17,14,0.78) 0%, rgba(20,17,14,0.28) 40%, rgba(244,236,223,0.08) 100%)",
             }}
           />
         </>
@@ -108,107 +105,81 @@ export function ArchiveTile({
 
       {!heroImage && (
         <div
+          aria-hidden="true"
           style={{
             position: "absolute",
             inset: 0,
             background: `
-              radial-gradient(circle at 18% 20%, rgba(201,161,92,0.14), transparent 34%),
-              radial-gradient(circle at 82% 18%, rgba(92,110,84,0.10), transparent 30%),
-              linear-gradient(180deg, rgba(247,242,233,1) 0%, rgba(238,229,216,1) 100%)
+              linear-gradient(90deg, rgba(78,93,66,0.06) 0 1px, transparent 1px 100%),
+              linear-gradient(180deg, rgba(176,139,62,0.07) 0 1px, transparent 1px 100%),
+              linear-gradient(135deg, rgba(249,245,238,1) 0%, rgba(234,226,212,1) 100%)
             `,
+            backgroundSize: "28px 28px, 28px 28px, auto",
           }}
         />
       )}
 
       <div
         style={{
+          position: "absolute",
+          inset: 0,
+          boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.3)",
+          pointerEvents: "none",
+          borderRadius: "inherit",
+        }}
+      />
+
+      <div
+        style={{
           position: "relative",
-          padding: isHero ? "clamp(22px, 4vw, 32px)" : "clamp(16px, 2.5vw, 22px)",
           display: "flex",
           flexDirection: "column",
+          justifyContent: "flex-end",
           height: "100%",
+          padding: isPrimary ? "clamp(20px, 3vw, 32px)" : "clamp(16px, 2.5vw, 24px)",
+          color: heroImage ? "white" : "var(--ink)",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            marginBottom: isHero ? 14 : 10,
-            flexWrap: "wrap",
-          }}
-        >
-          <span
+        {isSparse && !heroImage && (
+          <div
             style={{
-              fontFamily: "var(--font-ui)",
-              fontSize: 10,
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
-              color: isFoundedByYou ? "var(--moss)" : "rgba(63,53,41,0.55)",
+              fontFamily: "var(--font-body)",
+              fontSize: isPrimary ? 15 : 13,
+              lineHeight: 1.55,
+              color: "var(--ink-soft)",
+              marginBottom: 8,
+              fontStyle: "italic",
             }}
           >
-            {isPrimary ? "Primary archive" : "Archive"}
-          </span>
-          <span
-            style={{
-              fontFamily: "var(--font-ui)",
-              fontSize: 10,
-              color: "rgba(63,53,41,0.4)",
-            }}
-          >
-            ·
-          </span>
-          <span
-            style={{
-              fontFamily: "var(--font-ui)",
-              fontSize: 10,
-              textTransform: "capitalize",
-              color: "rgba(63,53,41,0.55)",
-            }}
-          >
-            {role}
-          </span>
-        </div>
+            Just beginning — add a memory to bring it to life.
+          </div>
+        )}
 
         <div
           style={{
             fontFamily: "var(--font-display)",
-            fontSize: isHero ? "clamp(26px, 3vw, 38px)" : "clamp(20px, 2vw, 26px)",
-            lineHeight: 1.1,
-            color: "var(--ink)",
-            maxWidth: isHero ? "18ch" : "14ch",
+            fontSize: isPrimary ? "clamp(26px, 3.2vw, 40px)" : "clamp(20px, 2vw, 28px)",
+            lineHeight: 1.05,
+            color: "inherit",
+            maxWidth: isPrimary ? "16ch" : "12ch",
           }}
         >
           {treeName}
         </div>
 
-        <div
-          style={{
-            marginTop: isHero ? 12 : 8,
-            display: "flex",
-            flexWrap: "wrap",
-            gap: isHero ? 10 : 6,
-          }}
-        >
-          <TileMetric label="people" value={`${stats.peopleCount}`} />
-          <TileMetric label="memories" value={`${stats.memoryCount}`} />
-          {coverage.earliestYear !== null && (
-            <TileMetric label="span" value={getCoverageRangeLabel(coverage)} />
-          )}
-        </div>
-
-        {active && heroExcerpt && (
+        {isPrimary && heroExcerpt && active && (
           <div
             style={{
-              marginTop: isHero ? 14 : 10,
+              marginTop: 10,
               fontFamily: "var(--font-body)",
-              fontSize: 13,
-              lineHeight: 1.6,
-              color: "rgba(53,44,33,0.72)",
+              fontSize: 14,
+              lineHeight: 1.55,
+              color: heroImage ? "rgba(255,250,244,0.82)" : "var(--ink-soft)",
               display: "-webkit-box",
               WebkitLineClamp: 2,
               WebkitBoxOrient: "vertical",
               overflow: "hidden",
+              maxWidth: 480,
             }}
           >
             {heroExcerpt}
@@ -217,41 +188,58 @@ export function ArchiveTile({
 
         <div
           style={{
-            marginTop: "auto",
-            paddingTop: isHero ? 18 : 12,
+            marginTop: isPrimary ? 14 : 8,
+            display: "flex",
+            flexWrap: "wrap",
+            gap: isPrimary ? 12 : 8,
+            alignItems: "baseline",
+            color: heroImage ? "rgba(255,250,244,0.72)" : "var(--ink-faded)",
+          }}
+        >
+          <span style={{ fontFamily: "var(--font-ui)", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+            {isFoundedByYou ? "Your archive" : role}
+          </span>
+          {spanLabel && spanLabel !== "Dates are still gathering." && (
+            <>
+              <span style={{ opacity: 0.4 }}>·</span>
+              <span style={{ fontFamily: "var(--font-ui)", fontSize: 10, letterSpacing: "0.06em" }}>
+                {spanLabel}
+              </span>
+            </>
+          )}
+        </div>
+
+        <div
+          style={{
+            marginTop: isPrimary ? 16 : 10,
             display: "flex",
             alignItems: "center",
-            gap: 10,
+            gap: 8,
           }}
         >
           <span
             style={{
               fontFamily: "var(--font-ui)",
-              fontSize: 12,
-              color: active ? "var(--ink)" : "var(--moss)",
-              transition: `color 200ms ${EASE}`,
+              fontSize: isPrimary ? 13 : 12,
+              color: heroImage ? "rgba(255,250,244,0.92)" : "var(--moss)",
+              transition: `color 300ms ${EASE}`,
             }}
           >
-            Enter Home →
+            Open archive
+          </span>
+          <span
+            aria-hidden="true"
+            style={{
+              fontSize: isPrimary ? 16 : 14,
+              color: heroImage ? "rgba(255,250,244,0.7)" : "var(--moss)",
+              transform: active ? "translateX(3px)" : "none",
+              transition: `transform 280ms ${EASE}`,
+            }}
+          >
+            →
           </span>
         </div>
       </div>
     </a>
-  );
-}
-
-function TileMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <span
-      style={{
-        fontFamily: "var(--font-ui)",
-        fontSize: 10,
-        textTransform: "uppercase",
-        letterSpacing: "0.08em",
-        color: "rgba(63,53,41,0.52)",
-      }}
-    >
-      {value} {label}
-    </span>
   );
 }
