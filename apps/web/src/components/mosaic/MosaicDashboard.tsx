@@ -86,7 +86,7 @@ function MosaicDashboardContent() {
           return;
         }
 
-          const homeResults: (DashboardTreeSummary | null)[] = await Promise.all(
+        const homeResults: (DashboardTreeSummary | null)[] = await Promise.all(
           trees.map(async (tree) => {
             const res = await fetch(`${API}/api/trees/${tree.id}/home`, {
               credentials: "include",
@@ -172,65 +172,43 @@ function MosaicDashboardContent() {
   const primary = summaries[0] ?? null;
   const secondary = summaries.slice(1);
 
-  const mosaicMemories = useMemo(() => selectMosaicMemories(summaries), [summaries]);
+  const mosaicMemories = useMemo(() => selectMosaicMemories(summaries, 6, 2), [summaries]);
   const todayHighlights = useMemo(() => collectTodayHighlights(summaries), [summaries]);
-
-  const unfinishedTotal = useMemo(
-    () =>
-      summaries.reduce(
-        (sum, s) => sum + s.stats.peopleWithoutPortraitCount + s.stats.peopleWithoutDirectMemoriesCount,
-        0,
-      ),
-    [summaries],
-  );
-
-  const primarySpan = formatSpanLabel(primary?.coverage.earliestYear ?? null, primary?.coverage.latestYear ?? null);
 
   if (isPending || loading) {
     return (
-      <div className="mosaic-viewport mosaic-viewport--loading">
-        <p style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-faded)" }}>
-          Opening your archives…
-        </p>
+      <div className="mosaic-page">
+        <p className="mosaic-loading">Opening your archives…</p>
       </div>
     );
   }
 
   if (loadError) {
     return (
-      <div className="mosaic-viewport mosaic-viewport--loading" style={{ padding: 24 }}>
-        <div style={{ maxWidth: 520, border: "1px solid var(--rule)", background: "var(--card-bg)", borderRadius: 18, padding: 24 }}>
-          <h1 style={{ margin: "0 0 10px", fontFamily: "var(--font-display)", fontSize: 28, fontWeight: 400, color: "var(--ink)" }}>
-            Your archives could not be loaded.
-          </h1>
-          <p style={{ margin: 0, fontFamily: "var(--font-body)", fontSize: 16, lineHeight: 1.7, color: "var(--ink-faded)" }}>
-            {loadError}
-          </p>
+      <div className="mosaic-page" style={{ justifyContent: "center", padding: 24 }}>
+        <div className="mosaic-error-card">
+          <h1 className="mosaic-error-card__title">Your archives could not be loaded.</h1>
+          <p className="mosaic-error-card__body">{loadError}</p>
         </div>
       </div>
     );
   }
 
-  const hasMultipleTrees = summaries.length > 1;
-  const primaryIsSparse = primary ? isSparseArchive(primary.stats) : true;
+  const primarySpan = formatSpanLabel(primary?.coverage.earliestYear ?? null, primary?.coverage.latestYear ?? null);
+  const primaryGen = formatGenerationsLabel(primary?.stats.generationCount ?? 0);
+  const primaryUnfinished = primary ? formatUnfinishedNote(primary.stats) : null;
 
   return (
-    <div className="mosaic-viewport">
+    <div className="mosaic-page">
       <header className="mosaic-header">
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span className="mosaic-header-wordmark">Tessera</span>
-          {summaries.length > 0 && (
-            <span className="mosaic-header-detail">
-              {hasMultipleTrees ? `${summaries.length} archives` : "Archive"}
-            </span>
-          )}
+        <div className="mosaic-header__left">
+          <span className="mosaic-header__wordmark">Tessera</span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <a href="/account" className="mosaic-header-link">Account</a>
+        <div className="mosaic-header__right">
+          <a href="/account" className="mosaic-header__link">Account</a>
           <button
             onClick={() => { void signOut().then(() => router.push("/auth/signin")); }}
-            className="mosaic-header-link"
-            style={{ cursor: "pointer" }}
+            className="mosaic-header__link"
           >
             Sign out
           </button>
@@ -238,19 +216,33 @@ function MosaicDashboardContent() {
       </header>
 
       <main className="mosaic-main">
-        {summaries.length === 0 && pendingInvites.length > 0 && (
-          <p style={{ fontFamily: "var(--font-body)", fontSize: 16, lineHeight: 1.7, color: "var(--ink-faded)", marginBottom: 28 }}>
-            You have pending invitations below.
-          </p>
-        )}
-
-          {todayHighlights.length > 0 && (
-            <div className="mosaic-today-strip">
-              {todayHighlights.map((h, i) => (
-                <TodayNote key={i} highlight={h} />
-              ))}
-            </div>
+        <div className="mosaic-intro">
+          {primary && (
+            <p className="mosaic-subtitle">
+              {primaryGen && primarySpan
+                ? `${primary.stats.peopleCount} people across ${primaryGen}, ${primarySpan}`
+                : primaryGen
+                  ? `${primary.stats.peopleCount} people across ${primaryGen}`
+                  : primarySpan
+                    ? `${primary.stats.peopleCount} people, ${primarySpan}`
+                    : ""}
+              {primaryUnfinished && (
+                <span className="mosaic-subtitle__note">{primaryUnfinished}</span>
+              )}
+            </p>
           )}
+          {!primary && pendingInvites.length > 0 && (
+            <p className="mosaic-subtitle">You have pending invitations below.</p>
+          )}
+        </div>
+
+        {todayHighlights.length > 0 && (
+          <div className="mosaic-today">
+            {todayHighlights.map((h, i) => (
+              <TodayLink key={i} highlight={h} />
+            ))}
+          </div>
+        )}
 
         <MosaicSurface>
           {primary && (
@@ -263,40 +255,25 @@ function MosaicDashboardContent() {
               heroMemory={primary.heroCandidates[0] ?? null}
               isFoundedByYou={primary.isFoundedByYou}
               isPrimary
-              isSparse={primaryIsSparse}
+              isSparse={isSparseArchive(primary.stats)}
               href={`/trees/${primary.tree.id}/home`}
+              stagger={0}
             />
           )}
 
-          {mosaicMemories.slice(0, 3).map((tile) => (
+          {mosaicMemories.map((tile, i) => (
             <MemoryTile
               key={`${tile.treeId}:${tile.memory.id}`}
               memory={tile.memory}
               treeName={tile.treeName}
               href={`/trees/${tile.treeId}/memories/${tile.memory.id}`}
               weight={tile.weight}
-              index={mosaicMemories.indexOf(tile)}
+              index={i}
+              stagger={i + 1}
             />
           ))}
 
-          {primary && !primaryIsSparse && (
-            <MosaicStatNote
-              label={(() => {
-                const gen = formatGenerationsLabel(primary.stats.generationCount);
-                const span = primarySpan;
-                if (gen && span) return `${primary.stats.peopleCount} people across ${gen}, ${span}`;
-                if (gen) return `${primary.stats.peopleCount} people across ${gen}`;
-                if (span) return `${primary.stats.peopleCount} people, ${span}`;
-                return `${primary.stats.peopleCount} people`;
-              })()}
-            />
-          )}
-
-          {primary && primaryIsSparse && (
-            <MosaicStatNote label="This archive is just beginning" />
-          )}
-
-          {pendingInvites.map((invite) => (
+          {pendingInvites.map((invite, i) => (
             <InvitationTile
               key={invite.id}
               treeName={invite.treeName}
@@ -305,21 +282,11 @@ function MosaicDashboardContent() {
               linkedPersonName={invite.linkedPersonName}
               treeId={invite.treeId}
               inviteId={invite.id}
+              stagger={mosaicMemories.length + i + 1}
             />
           ))}
 
-          {mosaicMemories.slice(3).map((tile) => (
-            <MemoryTile
-              key={`${tile.treeId}:${tile.memory.id}`}
-              memory={tile.memory}
-              treeName={tile.treeName}
-              href={`/trees/${tile.treeId}/memories/${tile.memory.id}`}
-              weight={tile.weight}
-              index={mosaicMemories.indexOf(tile)}
-            />
-          ))}
-
-          {secondary.map((summary) => (
+          {secondary.map((summary, i) => (
             <ArchiveTile
               key={summary.tree.id}
               treeName={summary.tree.name}
@@ -331,15 +298,9 @@ function MosaicDashboardContent() {
               isPrimary={false}
               isSparse={isSparseArchive(summary.stats)}
               href={`/trees/${summary.tree.id}/home`}
+              stagger={mosaicMemories.length + pendingInvites.length + i + 1}
             />
           ))}
-
-          {unfinishedTotal > 0 && !primaryIsSparse && (
-            <MosaicStatNote
-              label={formatUnfinishedNote(primary?.stats ?? { peopleWithoutPortraitCount: 0, peopleWithoutDirectMemoriesCount: 0 }) ?? `${unfinishedTotal} stories still waiting`}
-              accent="gilt"
-            />
-          )}
 
           <NewArchiveTile
             onClick={() => {
@@ -347,6 +308,7 @@ function MosaicDashboardContent() {
               setCreateError(null);
               setNewLineageName("");
             }}
+            stagger={mosaicMemories.length + pendingInvites.length + secondary.length + 1}
           />
         </MosaicSurface>
 
@@ -369,25 +331,21 @@ function MosaicDashboardContent() {
             onSubmit={handleCreateLineage}
             className="mosaic-dialog"
           >
-            <div style={{ fontFamily: "var(--font-display)", fontSize: 24, color: "var(--ink)" }}>
-              Start a new archive
-            </div>
-            <div style={{ fontFamily: "var(--font-body)", fontSize: 14, lineHeight: 1.6, color: "var(--ink-soft)" }}>
+            <h2 className="mosaic-dialog__title">Start a new archive</h2>
+            <p className="mosaic-dialog__desc">
               An archive can be a family name like <em>Ward Family</em> or <em>Karsen Family</em>, a line like <em>Maternal Line</em>, or a framing like <em>Chosen Family</em>.
-            </div>
+            </p>
             <input
               autoFocus
               value={newLineageName}
               onChange={(e) => setNewLineageName(e.target.value)}
               placeholder="e.g. Karsen Family"
-              className="mosaic-input"
+              className="mosaic-dialog__input"
             />
             {createError && (
-              <div style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "#8a2a1c" }}>
-                {createError}
-              </div>
+              <p className="mosaic-dialog__error">{createError}</p>
             )}
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+            <div className="mosaic-dialog__actions">
               <button
                 type="button"
                 disabled={submittingLineage}
@@ -411,36 +369,19 @@ function MosaicDashboardContent() {
   );
 }
 
-function TodayNote({ highlight }: { highlight: TodayHighlight }) {
+function TodayLink({ highlight }: { highlight: TodayHighlight }) {
   const note = formatTodayNote(highlight);
   if (!note) return null;
   const treeId = highlight.treeId;
   const kind = highlight.kind;
-  const accent = kind === "birthday" ? "var(--moss)" : kind === "deathiversary" ? "var(--ink-faded)" : "var(--gilt)";
   return (
     <a
       href={`/trees/${treeId}/home`}
-      className="mosaic-today-note"
-      style={{ borderColor: accent }}
+      className={`mosaic-today__note mosaic-today__note--${kind}`}
     >
-      <span className="mosaic-today-dot" style={{ background: accent }} />
-      <span>{note}</span>
+      <span className="mosaic-today__dot" />
+      {note}
     </a>
-  );
-}
-
-function MosaicStatNote({ label, accent }: { label: string; accent?: "moss" | "gilt" | "rose" }) {
-  const colorMap = { moss: "var(--moss)", gilt: "var(--gilt)", rose: "var(--rose)" };
-  const borderColor = accent ? colorMap[accent] : "var(--rule)";
-  return (
-    <div
-      className="mosaic-stat-note"
-      style={{ borderColor }}
-    >
-      <span style={{ color: accent ? colorMap[accent] : "var(--ink-soft)" }}>
-        {label}
-      </span>
-    </div>
   );
 }
 
@@ -448,10 +389,8 @@ export default function MosaicDashboardPage() {
   return (
     <Suspense
       fallback={
-        <div className="mosaic-viewport mosaic-viewport--loading">
-          <p style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-faded)" }}>
-            Opening your archives…
-          </p>
+        <div className="mosaic-page">
+          <p className="mosaic-loading">Opening your archives…</p>
         </div>
       }
     >
