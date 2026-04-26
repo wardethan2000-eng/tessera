@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:cast": "node scripts/build-cast-receiver.mjs",
     "start": "next start",
     "lint": "eslint",
     "test": "tsx --test \"src/**/*.test.ts\"",

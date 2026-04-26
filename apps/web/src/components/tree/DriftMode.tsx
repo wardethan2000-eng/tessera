@@ -27,6 +27,8 @@ interface DriftModeProps {
   onPersonDetail: (personId: string) => void;
   apiBase: string;
   initialFilter?: DriftFilter | null;
+  casting?: boolean;
+  castDeviceName?: string | null;
 }
 
 export type DriftFilter = {
@@ -223,6 +225,8 @@ export function DriftMode({
   onPersonDetail,
   apiBase,
   initialFilter,
+  casting,
+  castDeviceName,
 }: DriftModeProps) {
   const [items, setItems] = useState<DriftItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -554,7 +558,7 @@ export function DriftMode({
       />
 
       <button onClick={onClose} className="drift-close">
-        × Exit drift
+        ×{casting ? ` Casting to ${castDeviceName ?? "TV"}` : " Exit drift"}
       </button>
 
       {isRemembrance && remembranceSubject && (

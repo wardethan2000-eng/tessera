@@ -38,6 +38,9 @@ import { DriftMode, type DriftFilter } from "@/components/tree/DriftMode";
 import { DriftChooserSheet } from "@/components/tree/DriftChooserSheet";
 import { SearchOverlay } from "@/components/tree/SearchOverlay";
 import { GearIcon, InboxIcon } from "@/components/tree/SurfaceToolbarIcons";
+import { DriftCastControls } from "@/components/cast/DriftCastControls";
+import { CastButton } from "@/components/cast/CastButton";
+import { useChromecast } from "@/hooks/useChromecast";
 import { fetchWithTimeout } from "@/lib/fetch-timeout";
 import { usePendingTimeout } from "@/lib/usePendingTimeout";
 
@@ -106,13 +109,18 @@ export default function AtriumPage() {
   const [driftOpen, setDriftOpen] = useState(false);
   const [driftChooserOpen, setDriftChooserOpen] = useState(false);
   const [driftFilter, setDriftFilter] = useState<DriftFilter | null>(null);
+  const chromecast = useChromecast();
   const openDrift = useCallback(
     (filter?: DriftFilter | null) => {
       setDriftFilter(filter ?? null);
       setDriftChooserOpen(false);
-      setDriftOpen(true);
+      if (chromecast.state.isConnected) {
+        chromecast.startDrift(treeId, filter ?? null);
+      } else {
+        setDriftOpen(true);
+      }
     },
-    [],
+    [treeId, chromecast],
   );
   const closeDrift = useCallback(() => {
     setDriftOpen(false);
@@ -596,6 +604,7 @@ export default function AtriumPage() {
             <button type="button" onClick={openDriftChooser} style={getHeaderNavButtonStyle(false)} title="Choose how to drift">
               Drift
             </button>
+            <CastButton />
             <Link href={`/trees/${treeId}/prompts/campaigns`} style={getHeaderNavItemStyle(false)} title="Recurring questions you're sending">
               Campaigns
             </Link>
@@ -1057,6 +1066,14 @@ export default function AtriumPage() {
         people={people}
         onClose={closeDriftChooser}
         onChoose={(filter) => openDrift(filter)}
+        onCastDrift={(filter) => {
+          if (chromecast.state.isConnected) {
+            chromecast.startDrift(treeId, filter);
+            setDriftChooserOpen(false);
+          }
+        }}
+        isCastConnected={chromecast.state.isConnected}
+        deviceName={chromecast.state.deviceName}
       />
 
       <AnimatePresence>
@@ -1076,9 +1093,13 @@ export default function AtriumPage() {
             onPersonDetail={handlePersonClick}
             apiBase={API}
             initialFilter={driftFilter}
+            casting={chromecast.state.isConnected}
+            castDeviceName={chromecast.state.deviceName}
           />
         )}
       </AnimatePresence>
+
+      <DriftCastControls />
 
       {wizardOpen && (
         <AddMemoryWizard

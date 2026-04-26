@@ -12,6 +12,9 @@ interface DriftChooserSheetProps {
   people: ApiPerson[];
   onClose: () => void;
   onChoose: (filter: DriftFilter | null) => void;
+  onCastDrift?: (filter: DriftFilter | null) => void;
+  isCastConnected?: boolean;
+  deviceName?: string | null;
 }
 
 const ERAS: { id: string; label: string; yearStart: number; yearEnd: number }[] = [
@@ -29,6 +32,9 @@ export function DriftChooserSheet({
   people,
   onClose,
   onChoose,
+  onCastDrift,
+  isCastConnected,
+  deviceName,
 }: DriftChooserSheetProps) {
   const [mode, setMode] = useState<ChooserMode>("menu");
   const [search, setSearch] = useState("");
@@ -120,6 +126,14 @@ export function DriftChooserSheet({
 
             {mode === "menu" && (
               <div className="drift-chooser-menu">
+                {isCastConnected && onCastDrift && (
+                  <ChoiceRow
+                    title={`Cast to ${deviceName ?? "TV"}`}
+                    subtitle="Play drift on your TV while controlling from here."
+                    onClick={() => onCastDrift(null)}
+                    highlight
+                  />
+                )}
                 <ChoiceRow
                   title="All memories"
                   subtitle="A free-roaming drift across the whole archive."
@@ -176,12 +190,31 @@ export function DriftChooserSheet({
                         className="drift-chooser-person-row"
                       >
                         <span>{person.name}</span>
-                        {person.birthYear || person.deathYear ? (
-                          <span className="drift-chooser-person-years">
-                            {person.birthYear ?? "?"} –{" "}
-                            {person.deathYear ?? (person.deathDateText ? "?" : "")}
-                          </span>
-                        ) : null}
+                        <span className="drift-chooser-person-actions">
+                          {person.birthYear || person.deathYear ? (
+                            <span className="drift-chooser-person-years">
+                              {person.birthYear ?? "?"} –{" "}
+                              {person.deathYear ?? (person.deathDateText ? "?" : "")}
+                            </span>
+                          ) : null}
+                          {isCastConnected && onCastDrift && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onCastDrift(
+                                  mode === "remembrance"
+                                    ? { mode: "remembrance", personId: person.id }
+                                    : { personId: person.id },
+                                );
+                              }}
+                              className="drift-chooser-person-cast"
+                              title={`Cast to ${deviceName ?? "TV"}`}
+                            >
+                              ▶ TV
+                            </button>
+                          )}
+                        </span>
                       </button>
                     ))
                   )}
@@ -218,19 +251,21 @@ function ChoiceRow({
   onClick,
   disabled,
   disabledHint,
+  highlight,
 }: {
   title: string;
   subtitle: string;
   onClick: () => void;
   disabled?: boolean;
   disabledHint?: string;
+  highlight?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`drift-chooser-choice ${disabled ? "drift-chooser-choice--disabled" : ""}`}
+      className={`drift-chooser-choice ${disabled ? "drift-chooser-choice--disabled" : ""} ${highlight ? "drift-chooser-choice--highlight" : ""}`}
     >
       <span className="drift-chooser-choice-title">{title}</span>
       <span className="drift-chooser-choice-subtitle">

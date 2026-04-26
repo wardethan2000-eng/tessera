@@ -1,0 +1,273 @@
+:root {
+  --ink: #0a0a0a;
+  --ink-faded: #555;
+  --moss: #4a7c59;
+  --warm: #e8e4df;
+  --warm-dim: rgba(232, 228, 223, 0.5);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--ink);
+  color: var(--warm);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.drift-root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+.drift-backdrop {
+  position: fixed;
+  inset: -20px;
+  background-size: cover;
+  background-position: center;
+  filter: blur(48px) saturate(1.2) brightness(0.6);
+  transform: scale(1.12);
+  opacity: 0;
+  transition: opacity 1.2s cubic-bezier(0.22, 0.61, 0.36, 1);
+  z-index: 0;
+}
+
+.drift-backdrop--visible {
+  opacity: 1;
+}
+
+.drift-vignette {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.4) 100%);
+}
+
+.drift-content {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 0.7s cubic-bezier(0.22, 0.61, 0.36, 1);
+  padding: 48px;
+}
+
+.drift-content--visible {
+  opacity: 1;
+}
+
+.drift-content--image .drift-image-frame {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.drift-image {
+  max-width: 92%;
+  max-height: 82%;
+  object-fit: contain;
+  animation: ken-burns var(--duration, 6s) linear forwards;
+}
+
+@keyframes ken-burns {
+  from { transform: scale(1); }
+  to { transform: scale(1.06); }
+}
+
+.drift-content--video {
+  position: absolute;
+  inset: 0;
+}
+
+.drift-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.drift-content--audio .drift-audio-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+.drift-audio-orb {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(86, 96, 138, 0.6) 0%, rgba(52, 38, 68, 0.3) 70%, transparent 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: var(--warm-dim);
+  letter-spacing: 0.1em;
+}
+
+.drift-audio-orb--playing {
+  animation: orb-pulse 2s ease-in-out infinite;
+}
+
+@keyframes orb-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.7; }
+  50% { transform: scale(1.12); opacity: 1; }
+}
+
+.drift-transcript {
+  max-width: 60%;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--warm-dim);
+  text-align: center;
+}
+
+.drift-content--text .drift-title {
+  font-size: 32px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+.drift-body {
+  font-size: 20px;
+  line-height: 1.7;
+  max-width: 70%;
+  color: rgba(232, 228, 223, 0.85);
+  text-align: center;
+}
+
+.drift-kind-chip {
+  position: fixed;
+  top: 24px;
+  left: 24px;
+  z-index: 10;
+  font-size: 12px;
+  color: var(--warm-dim);
+  background: rgba(0, 0, 0, 0.5);
+  padding: 4px 10px;
+  border-radius: 20px;
+  letter-spacing: 0.04em;
+}
+
+.drift-bottom {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  padding: 16px 24px 24px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+}
+
+.drift-bottom__attribution {
+  flex: 1;
+  min-width: 0;
+}
+
+.drift-bottom__name {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.drift-bottom__detail {
+  font-size: 14px;
+  opacity: 0.65;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drift-progress-track {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 20;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.drift-progress-fill {
+  height: 100%;
+  background: var(--moss);
+  transition: width 0.05s linear;
+}
+
+.drift-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: rgba(232, 228, 223, 0.5);
+  font-size: 18px;
+  text-align: center;
+  padding: 48px;
+}
+
+.drift-waiting {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: rgba(232, 228, 223, 0.3);
+  font-size: 24px;
+  letter-spacing: 0.05em;
+}
+
+.drift-remembrance-header {
+  position: fixed;
+  top: 60px;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  text-align: center;
+}
+
+.drift-remembrance-label {
+  font-size: 13px;
+  opacity: 0.5;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.drift-remembrance-name {
+  font-size: 20px;
+  opacity: 0.75;
+  margin-top: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drift-image {
+    animation: none !important;
+  }
+  .drift-audio-orb--playing {
+    animation: none !important;
+  }
+  .drift-backdrop {
+    transition: none !important;
+  }
+  .drift-content {
+    transition: none !important;
+  }
+}

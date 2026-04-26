@@ -18,6 +18,7 @@ import { importPlugin } from "./routes/import.js";
 import { curationPlugin } from "./routes/curation.js";
 import { mePlugin } from "./routes/me.js";
 import { driftPlugin } from "./routes/drift.js";
+import { castTokenPlugin } from "./routes/cast-token.js";
 import { branchesPlugin } from "./routes/branches.js";
 
 export function buildApp() {
@@ -127,6 +128,7 @@ export function buildApp() {
   app.register(curationPlugin);
   app.register(mePlugin);
   app.register(driftPlugin);
+  app.register(castTokenPlugin);
   app.register(branchesPlugin);
 
   return app;

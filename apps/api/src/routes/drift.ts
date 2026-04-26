@@ -3,6 +3,7 @@ import { getSession } from "../lib/session.js";
 import { db } from "../lib/db.js";
 import { getTreeMemories } from "../lib/cross-tree-read-service.js";
 import { mediaUrl } from "../lib/storage.js";
+import { validateCastToken } from "./cast-token.js";
 
 async function verifyMembership(treeId: string, userId: string) {
   return db.query.treeMemberships.findFirst({
@@ -49,14 +50,7 @@ function extractYearLocal(text?: string | null): number | null {
 
 export async function driftPlugin(app: FastifyInstance) {
   app.get("/api/trees/:treeId/drift", async (request, reply) => {
-    const session = await getSession(request.headers);
-    if (!session) return reply.status(401).send({ error: "Unauthorized" });
-
-    const { treeId } = request.params as { treeId: string };
-    const membership = await verifyMembership(treeId, session.user.id);
-    if (!membership) {
-      return reply.status(403).send({ error: "Not a member of this tree" });
-    }
+    let userId: string;
 
     const query = request.query as {
       seed?: string;
@@ -65,7 +59,26 @@ export async function driftPlugin(app: FastifyInstance) {
       mode?: string;
       yearStart?: string;
       yearEnd?: string;
+      cast_token?: string;
     };
+
+    if (query.cast_token) {
+      const validatedUserId = await validateCastToken(query.cast_token, (request.params as { treeId: string }).treeId);
+      if (!validatedUserId) {
+        return reply.status(401).send({ error: "Invalid or expired cast token" });
+      }
+      userId = validatedUserId;
+    } else {
+      const session = await getSession(request.headers);
+      if (!session) return reply.status(401).send({ error: "Unauthorized" });
+      userId = session.user.id;
+    }
+
+    const { treeId } = request.params as { treeId: string };
+    const membership = await verifyMembership(treeId, userId);
+    if (!membership) {
+      return reply.status(403).send({ error: "Not a member of this tree" });
+    }
     const seed = query.seed && query.seed.length > 0 ? query.seed : `${treeId}:${Date.now()}`;
     const requestedLimit = query.limit ? Number.parseInt(query.limit, 10) : 400;
     const limit = Number.isFinite(requestedLimit)
@@ -77,7 +90,7 @@ export async function driftPlugin(app: FastifyInstance) {
     const yearEnd = query.yearEnd ? Number.parseInt(query.yearEnd, 10) : null;
 
     const memories = await getTreeMemories(treeId, {
-      viewerUserId: session.user.id,
+      viewerUserId: userId,
     });
 
     const filtered = memories.filter((memory) => {

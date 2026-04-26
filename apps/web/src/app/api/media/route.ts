@@ -13,12 +13,18 @@ export async function GET(request: NextRequest): Promise<Response> {
     return Response.json({ error: "Missing media key" }, { status: 400 });
   }
 
+  const castToken = request.nextUrl.searchParams.get("cast_token");
+
   const forwardHeaders: Record<string, string> = {
     Accept: request.headers.get("accept") ?? "*/*",
   };
 
   const cookie = request.headers.get("cookie");
   if (cookie) forwardHeaders["Cookie"] = cookie;
+
+  if (castToken) {
+    forwardHeaders["X-Cast-Token"] = castToken;
+  }
 
   const range = request.headers.get("range");
   if (range) forwardHeaders["Range"] = range;

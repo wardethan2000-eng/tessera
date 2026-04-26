@@ -606,8 +606,8 @@ After Phase 1 proves the architecture works:
 **Web app (`apps/web/.env`):**
 
 ```env
-# Cast Receiver App ID (from Google Cast Developer Console)
-NEXT_PUBLIC_CAST_APP_ID=xxxxxxxxxx
+# Cast Receiver App ID (registered at Google Cast Developer Console)
+NEXT_PUBLIC_CAST_APP_ID=992F4393
 # Cast Receiver URL (where the receiver HTML page is hosted)
 NEXT_PUBLIC_CAST_RECEIVER_URL=https://tessera.family/cast/receiver.html
 ```

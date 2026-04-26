@@ -7,6 +7,7 @@ import { GetObjectCommand } from "@aws-sdk/client-s3";
 import * as schema from "@tessera/database";
 import { db } from "../lib/db.js";
 import { getSession } from "../lib/session.js";
+import { validateCastToken } from "./cast-token.js";
 import {
   contentDisposition,
   extForMimeType,
@@ -29,9 +30,6 @@ const GetMediaQuery = z.object({
 
 export async function mediaPlugin(app: FastifyInstance): Promise<void> {
   app.get("/api/media", async (request, reply) => {
-    const session = await getSession(request.headers);
-    if (!session) return reply.status(401).send({ error: "Unauthorized" });
-
     const parsed = GetMediaQuery.safeParse(request.query);
     if (!parsed.success) {
       return reply.status(400).send({ error: "Invalid query parameters" });
@@ -42,21 +40,33 @@ export async function mediaPlugin(app: FastifyInstance): Promise<void> {
     });
     if (!mediaRecord) return reply.status(404).send({ error: "Media not found" });
 
+    let userId: string;
+
+    const castTokenValue = (request.headers as Record<string, string | undefined>)["x-cast-token"]
+      ?? (request.query as Record<string, string | undefined>).cast_token;
+
+    if (castTokenValue) {
+      const validatedUserId = await validateCastToken(castTokenValue, mediaRecord.treeId);
+      if (!validatedUserId) {
+        return reply.status(401).send({ error: "Invalid or expired cast token" });
+      }
+      userId = validatedUserId;
+    } else {
+      const session = await getSession(request.headers);
+      if (!session) return reply.status(401).send({ error: "Unauthorized" });
+      userId = session.user.id;
+    }
+
     // ── Access check ────────────────────────────────────────────────────────────
     // Path 1: user is a direct member of the tree that owns the media.
     const directMembership = await db.query.treeMemberships.findFirst({
       where: (m) =>
-        and(eq(m.treeId, mediaRecord.treeId), eq(m.userId, session.user.id)),
+        and(eq(m.treeId, mediaRecord.treeId), eq(m.userId, userId)),
     });
 
     if (!directMembership) {
       // Path 2: cross-tree access.
-      // Requirements:
-      //   (a) user is a member of some OTHER tree
-      //   (b) that other tree has an ACTIVE connection with the media's tree
-      //   (c) the media belongs to a memory whose primaryPerson has a
-      //       crossTreePersonLink within that active connection
-      const allowed = await checkCrossTreeAccess(mediaRecord, session.user.id);
+      const allowed = await checkCrossTreeAccess(mediaRecord, userId);
       if (!allowed) {
         return reply.status(403).send({ error: "Access denied" });
       }

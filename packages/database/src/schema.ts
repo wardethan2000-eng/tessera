@@ -1003,7 +1003,31 @@ export const archiveExports = pgTable(
   ],
 );
 
+// ── Cast Tokens ────────────────────────────────────────────────────────────────
+
+export const castTokens = pgTable(
+  "cast_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    token: text("token").notNull().unique(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    treeId: uuid("tree_id")
+      .notNull()
+      .references(() => trees.id, { onDelete: "cascade" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("cast_tokens_token_idx").on(table.token)],
+);
+
 // ── Relations ──────────────────────────────────────────────────────────────────
+
+export const castTokensRelations = relations(castTokens, ({ one }) => ({
+  user: one(users, { fields: [castTokens.userId], references: [users.id] }),
+  tree: one(trees, { fields: [castTokens.treeId], references: [trees.id] }),
+}));
 
 export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
@@ -1021,6 +1045,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   personMergeAudits: many(personMergeAudit),
   memoryPerspectives: many(memoryPerspectives),
   curatedPersonMemories: many(personMemoryCuration),
+  castTokens: many(castTokens),
 }));
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
@@ -1058,6 +1083,7 @@ export const treesRelations = relations(trees, ({ one, many }) => ({
   transcriptionJobs: many(transcriptionJobs),
   memoryPerspectives: many(memoryPerspectives),
   branches: many(branches),
+  castTokens: many(castTokens),
 }));
 
 export const treeMembershipsRelations = relations(treeMemberships, ({ one }) => ({

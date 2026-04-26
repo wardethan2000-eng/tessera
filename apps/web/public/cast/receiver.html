@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tessera Drift</title>
+  <style>
+:root {
+  --ink: #0a0a0a;
+  --ink-faded: #555;
+  --moss: #4a7c59;
+  --warm: #e8e4df;
+  --warm-dim: rgba(232, 228, 223, 0.5);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--ink);
+  color: var(--warm);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.drift-root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+.drift-backdrop {
+  position: fixed;
+  inset: -20px;
+  background-size: cover;
+  background-position: center;
+  filter: blur(48px) saturate(1.2) brightness(0.6);
+  transform: scale(1.12);
+  opacity: 0;
+  transition: opacity 1.2s cubic-bezier(0.22, 0.61, 0.36, 1);
+  z-index: 0;
+}
+
+.drift-backdrop--visible {
+  opacity: 1;
+}
+
+.drift-vignette {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.4) 100%);
+}
+
+.drift-content {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 0.7s cubic-bezier(0.22, 0.61, 0.36, 1);
+  padding: 48px;
+}
+
+.drift-content--visible {
+  opacity: 1;
+}
+
+.drift-content--image .drift-image-frame {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.drift-image {
+  max-width: 92%;
+  max-height: 82%;
+  object-fit: contain;
+  animation: ken-burns var(--duration, 6s) linear forwards;
+}
+
+@keyframes ken-burns {
+  from { transform: scale(1); }
+  to { transform: scale(1.06); }
+}
+
+.drift-content--video {
+  position: absolute;
+  inset: 0;
+}
+
+.drift-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.drift-content--audio .drift-audio-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+.drift-audio-orb {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(86, 96, 138, 0.6) 0%, rgba(52, 38, 68, 0.3) 70%, transparent 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: var(--warm-dim);
+  letter-spacing: 0.1em;
+}
+
+.drift-audio-orb--playing {
+  animation: orb-pulse 2s ease-in-out infinite;
+}
+
+@keyframes orb-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.7; }
+  50% { transform: scale(1.12); opacity: 1; }
+}
+
+.drift-transcript {
+  max-width: 60%;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--warm-dim);
+  text-align: center;
+}
+
+.drift-content--text .drift-title {
+  font-size: 32px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+.drift-body {
+  font-size: 20px;
+  line-height: 1.7;
+  max-width: 70%;
+  color: rgba(232, 228, 223, 0.85);
+  text-align: center;
+}
+
+.drift-kind-chip {
+  position: fixed;
+  top: 24px;
+  left: 24px;
+  z-index: 10;
+  font-size: 12px;
+  color: var(--warm-dim);
+  background: rgba(0, 0, 0, 0.5);
+  padding: 4px 10px;
+  border-radius: 20px;
+  letter-spacing: 0.04em;
+}
+
+.drift-bottom {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  padding: 16px 24px 24px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+}
+
+.drift-bottom__attribution {
+  flex: 1;
+  min-width: 0;
+}
+
+.drift-bottom__name {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.drift-bottom__detail {
+  font-size: 14px;
+  opacity: 0.65;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drift-progress-track {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 20;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.drift-progress-fill {
+  height: 100%;
+  background: var(--moss);
+  transition: width 0.05s linear;
+}
+
+.drift-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: rgba(232, 228, 223, 0.5);
+  font-size: 18px;
+  text-align: center;
+  padding: 48px;
+}
+
+.drift-waiting {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: rgba(232, 228, 223, 0.3);
+  font-size: 24px;
+  letter-spacing: 0.05em;
+}
+
+.drift-remembrance-header {
+  position: fixed;
+  top: 60px;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  text-align: center;
+}
+
+.drift-remembrance-label {
+  font-size: 13px;
+  opacity: 0.5;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.drift-remembrance-name {
+  font-size: 20px;
+  opacity: 0.75;
+  margin-top: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drift-image {
+    animation: none !important;
+  }
+  .drift-audio-orb--playing {
+    animation: none !important;
+  }
+  .drift-backdrop {
+    transition: none !important;
+  }
+  .drift-content {
+    transition: none !important;
+  }
+}
+  </style>
+  <script src="https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+</head>
+<body>
+  <div id="drift-root" class="drift-root">
+    <div class="drift-waiting">Ready to drift</div>
+  </div>
+  <script>
+const NAMESPACE = "urn:x-cast:com.tessera.drift";
+
+const PHOTO_DURATION_MS = 6000;
+const REMEMBRANCE_PACING_MULTIPLIER = 1.6;
+const STORY_MIN_MS = 8000;
+const STORY_MAX_MS = 45000;
+const WORDS_PER_MINUTE = 200;
+const MEDIA_MAX_MS = 60000;
+const DOCUMENT_CARD_MS = 8000;
+
+type DriftItem = {
+  key;
+  memoryId;
+  kind;
+  title;
+  body | null;
+  transcriptText | null;
+  dateOfEventText | null;
+  personName;
+  personPortraitUrl | null;
+  mediaUrl | null;
+  mimeType | null;
+  linkedMediaPreviewUrl | null;
+  linkedMediaOpenUrl | null;
+  linkedMediaLabel | null;
+  itemIndex;
+  itemCount;
+};
+
+type DetectedKind = "image" | "video" | "audio" | "link" | "text";
+
+let items[] = [];
+let currentIndex = 0;
+let isPlaying = true;
+let castToken = "";
+let apiBase = "";
+let treeId = "";
+let autoAdvanceTimer | null = null;
+let progressInterval | null = null;
+let progressStart = 0;
+let currentDuration = PHOTO_DURATION_MS;
+let videoEl: HTMLVideoElement | null = null;
+let audioEl: HTMLAudioElement | null = null;
+let isMuted = true;
+let isRemembrance = false;
+let filterPersonId | null = null;
+
+const context = cast.framework.CastReceiverContext.getInstance();
+const playerManager = context.getPlayerManager();
+
+function detectKind(item) {
+  const mime = item.mimeType ?? "";
+  if (mime.startsWith("video/")) return "video";
+  if (mime.startsWith("audio/")) return "audio";
+  if (mime.startsWith("image/") || (item.mediaUrl && !mime)) return "image";
+  if (item.linkedMediaPreviewUrl || item.linkedMediaOpenUrl) return "link";
+  return "text";
+}
+
+function readingTimeMs(text | null) {
+  if (!text) return STORY_MIN_MS;
+  const words = text.trim().split(/\s+/).filter(Boolean).length;
+  const ms = Math.round((words / WORDS_PER_MINUTE) * 60000);
+  return Math.min(STORY_MAX_MS, Math.max(STORY_MIN_MS, ms));
+}
+
+function computedDurationMs(item, kind) {
+  let base;
+  switch (kind) {
+    case "image": base = PHOTO_DURATION_MS; break;
+    case "text": base = readingTimeMs(item.body ?? item.transcriptText); break;
+    case "link": base = DOCUMENT_CARD_MS; break;
+    case "video":
+    case "audio": base = MEDIA_MAX_MS; break;
+    default: base = PHOTO_DURATION_MS;
+  }
+  if (isRemembrance && kind !== "video" && kind !== "audio") {
+    base = Math.round(base * REMEMBRANCE_PACING_MULTIPLIER);
+  }
+  return base;
+}
+
+function resolveMediaUrl(url | null) | null {
+  if (!url) return null;
+  if (url.startsWith("/api/media")) {
+    const base = apiBase || (typeof window !== "undefined" ? window.location.origin : "");
+    const sep = url.includes("?") ? "&" : "?";
+    return `${base}${url}${sep}cast_token=${encodeURIComponent(castToken)}`;
+  }
+  if (castToken && url.startsWith("http")) {
+    const sep = url.includes("?") ? "&" : "?";
+    return `${url}${sep}cast_token=${encodeURIComponent(castToken)}`;
+  }
+  return url;
+}
+
+function clearAutoAdvance() {
+  if (autoAdvanceTimer) { clearTimeout(autoAdvanceTimer); autoAdvanceTimer = null; }
+  if (progressInterval) { clearInterval(progressInterval); progressInterval = null; }
+}
+
+function sendState() {
+  const item = items[currentIndex] ?? null;
+  const message = {
+    type: "DRIFT_STATE",
+    currentIndex,
+    totalItems: items.length,
+    isPlaying,
+    currentMemory: item ? {
+      id: item.memoryId,
+      title: item.title,
+      kind: detectKind(item),
+      dateOfEventText: item.dateOfEventText,
+    } ,
+    currentItem: item ? {
+      personName: item.personName,
+      portraitUrl: item.personPortraitUrl,
+    } ,
+  };
+
+  try {
+    context.sendCustomMessage(NAMESPACE, undefined, JSON.stringify(message));
+  } catch {
+    // ignore send errors
+  }
+}
+
+function advance() {
+  clearAutoAdvance();
+  currentIndex = items.length === 0 ? 0 : (currentIndex + 1) % items.length;
+  renderCurrent();
+}
+
+function stepBack() {
+  clearAutoAdvance();
+  currentIndex = items.length === 0 ? 0 : (currentIndex - 1 + items.length) % items.length;
+  renderCurrent();
+}
+
+function play() {
+  isPlaying = true;
+  scheduleAutoAdvance();
+  sendState();
+}
+
+function pause() {
+  isPlaying = false;
+  clearAutoAdvance();
+  sendState();
+}
+
+function renderCurrent() {
+  const root = document.getElementById("drift-root");
+  if (!root) return;
+
+  clearAutoAdvance();
+
+  if (items.length === 0) {
+    root.innerHTML = 'Ready to drift';
+    sendState();
+    return;
+  }
+
+  const item = items[currentIndex];
+  if (!item) return;
+  const kind = detectKind(item);
+  currentDuration = computedDurationMs(item, kind);
+
+  let backdropHtml = "";
+  const photoUrl = kind === "image" ? resolveMediaUrl(item.mediaUrl) ;
+  if (photoUrl) {
+    backdropHtml = ``;
+  }
+
+  let contentHtml = "";
+
+  switch (kind) {
+    case "image": {
+      const imgSrc = resolveMediaUrl(item.mediaUrl) ?? "";
+      const dur = (currentDuration / 1000).toFixed(1);
+      contentHtml = `
+        
+          
+            
+          
+        `;
+      break;
+    }
+    case "video": {
+      const vidSrc = resolveMediaUrl(item.mediaUrl) ?? "";
+      contentHtml = `
+        
+          
+        `;
+      break;
+    }
+    case "audio": {
+      const audSrc = resolveMediaUrl(item.mediaUrl) ?? "";
+      const transcriptHtml = item.transcriptText
+        ? `${escapeHtml(item.transcriptText)}`
+        : "";
+      contentHtml = `
+        
+          
+            Listening
+            ${transcriptHtml}
+          
+        `;
+      break;
+    }
+    case "link": {
+      const previewHtml = item.linkedMediaPreviewUrl
+        ? ``
+        : "";
+      contentHtml = `
+        
+          ${previewHtml}
+          ${item.linkedMediaLabel ? `${escapeHtml(item.linkedMediaLabel)}` : ""}
+        `;
+      break;
+    }
+    case "text":
+    default: {
+      const bodyHtml = item.body || item.transcriptText
+        ? `${escapeHtml(item.body ?? item.transcriptText ?? "")}`
+        : "";
+      contentHtml = `
+        
+          ${escapeHtml(item.title)}
+          ${bodyHtml}
+        `;
+      break;
+    }
+  }
+
+  const remembranceHtml = isRemembrance && filterPersonId
+    ? `In memory of`
+    : "";
+
+  const kindLabel = formatKindLabel(kind, item);
+  const datePart = item.dateOfEventText ? ` · ${item.dateOfEventText}` : "";
+  const indexPart = item.itemCount > 1 ? ` · ${item.itemIndex + 1} / ${item.itemCount}` : "";
+
+  root.innerHTML = `
+    ${backdropHtml}
+    
+    ${remembranceHtml}
+    ${kindLabel}${indexPart}${datePart}
+    ${contentHtml}
+    
+      
+        ${escapeHtml(item.personName)}
+        ${escapeHtml(item.title)}${datePart}
+      
+    
+    
+      
+    
+  `;
+
+  if (kind === "video" || kind === "audio") {
+    const mediaEl = root.querySelector(kind === "video" ? "video" : "audio")  | null;
+    if (mediaEl) {
+      if (kind === "video") videoEl = mediaEl ;
+      if (kind === "audio") audioEl = mediaEl ;
+      mediaEl.muted = kind === "video" ? isMuted : false;
+      mediaEl.onended = () => advance();
+      mediaEl.ontimeupdate = () => {
+        if (mediaEl.duration && Number.isFinite(mediaEl.duration)) {
+          updateProgress((mediaEl.currentTime / mediaEl.duration) * 100);
+          if (mediaEl.currentTime * 1000 >= MEDIA_MAX_MS) advance();
+        }
+      };
+    }
+  }
+
+  progressStart = Date.now();
+
+  if (isPlaying && kind !== "video" && kind !== "audio") {
+    progressInterval = setInterval(() => {
+      const elapsed = Date.now() - progressStart;
+      updateProgress(Math.min(100, (elapsed / currentDuration) * 100));
+    }, 50);
+
+    autoAdvanceTimer = setTimeout(() => advance(), currentDuration);
+  }
+
+  sendState();
+}
+
+function updateProgress(pct) {
+  const el = document.getElementById("drift-progress");
+  if (el) el.style.width = `${pct}%`;
+}
+
+function formatKindLabel(kind, item) {
+  switch (kind) {
+    case "image": return "Photo";
+    case "video": return "Video";
+    case "audio": return "Voice";
+    case "link": return "Linked media";
+    case "text":
+    default: return "Story";
+  }
+}
+
+function escapeHtml(str) {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(//g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+async function fetchDrift(filter | null) {
+  const root = document.getElementById("drift-root");
+  if (root) root.innerHTML = 'Loading drift...';
+
+  const params = new URLSearchParams();
+  params.set("cast_token", castToken);
+  if (filter?.personId) params.set("personId", String(filter.personId));
+  if (filter?.mode) params.set("mode", String(filter.mode));
+  if (filter?.yearStart != null) params.set("yearStart", String(filter.yearStart));
+  if (filter?.yearEnd != null) params.set("yearEnd", String(filter.yearEnd));
+
+  const base = apiBase || window.location.origin;
+  const url = `${base}/api/trees/${treeId}/drift?${params.toString()}`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Drift fetch failed: ${res.status}`);
+    const data = await res.json() as {
+      memories;
+      }>;
+    };
+
+    items = [];
+    for (const memory of data.memories) {
+      const personName = memory.primaryPerson?.name ?? "Unknown";
+      const personPortraitUrl = resolveMediaUrl(memory.primaryPerson?.portraitUrl ?? null);
+      const mediaItems = (memory.mediaItems ?? []).filter(
+        (i) => i.mediaUrl || i.linkedMediaPreviewUrl || i.linkedMediaOpenUrl,
+      );
+
+      if (mediaItems.length === 0) {
+        items.push({
+          key: `${memory.id}:solo`,
+          memoryId: memory.id,
+          kind: memory.kind,
+          title: memory.title,
+          body: memory.body,
+          transcriptText: memory.transcriptText,
+          dateOfEventText: memory.dateOfEventText,
+          personName,
+          personPortraitUrl,
+          mediaUrl: resolveMediaUrl(memory.mediaUrl),
+          mimeType: memory.mimeType,
+          linkedMediaPreviewUrl,
+          linkedMediaOpenUrl,
+          linkedMediaLabel,
+          itemIndex: 0,
+          itemCount: 1,
+        });
+      } else {
+        mediaItems.forEach((mi, idx) => {
+          items.push({
+            key: `${memory.id}:${mi.id}`,
+            memoryId: memory.id,
+            kind: memory.kind,
+            title: memory.title,
+            body: memory.body,
+            transcriptText: memory.transcriptText,
+            dateOfEventText: memory.dateOfEventText,
+            personName,
+            personPortraitUrl,
+            mediaUrl: resolveMediaUrl(mi.mediaUrl),
+            mimeType: mi.mimeType ?? null,
+            linkedMediaPreviewUrl: mi.linkedMediaPreviewUrl ?? null,
+            linkedMediaOpenUrl: mi.linkedMediaOpenUrl ?? null,
+            linkedMediaLabel: mi.linkedMediaLabel ?? null,
+            itemIndex: idx,
+            itemCount: mediaItems.length,
+          });
+        });
+      }
+    }
+
+    currentIndex = 0;
+    isPlaying = true;
+    renderCurrent();
+
+    try {
+      context.sendCustomMessage(NAMESPACE, undefined, JSON.stringify({
+        type: "DRIFT_LOADED",
+        itemCount: items.length,
+      }));
+    } catch { /* ignore */ }
+  } catch (err) {
+    if (root) {
+      root.innerHTML = `Could not load drift.${escapeHtml(String(err))}`;
+    }
+    try {
+      context.sendCustomMessage(NAMESPACE, undefined, JSON.stringify({
+        type: "DRIFT_ERROR",
+        message: String(err),
+      }));
+    } catch { /* ignore */ }
+  }
+}
+
+context.addCustomMessageListener(NAMESPACE, (event: cast.framework.CastReceiverCustomMessage) => {
+  let message;
+  try {
+    message = JSON.parse(event.data as string);
+  } catch {
+    return;
+  }
+
+  switch (message.type) {
+    case "START_DRIFT": {
+      const data = message as { treeId; filter | null; castToken; apiBase };
+      treeId = data.treeId;
+      castToken = data.castToken;
+      apiBase = data.apiBase;
+      isRemembrance = (data.filter as { mode? })?.mode === "remembrance";
+      filterPersonId = (data.filter as { personId? })?.personId ?? null;
+      fetchDrift(data.filter  | null);
+      break;
+    }
+    case "ADVANCE":
+      advance();
+      break;
+    case "STEP_BACK":
+      stepBack();
+      break;
+    case "PLAY":
+      play();
+      break;
+    case "PAUSE":
+      pause();
+      break;
+    case "JUMP_TO": {
+      const idx = Number(message.index);
+      if (Number.isFinite(idx) && idx >= 0 && idx  | null;
+      isRemembrance = (filter as { mode? })?.mode === "remembrance";
+      filterPersonId = (filter as { personId? })?.personId ?? null;
+      fetchDrift(filter);
+      break;
+    }
+    case "STOP_DRIFT":
+      clearAutoAdvance();
+      items = [];
+      currentIndex = 0;
+      const root = document.getElementById("drift-root");
+      if (root) root.innerHTML = 'Drift ended';
+      sendState();
+      try {
+        context.sendCustomMessage(NAMESPACE, undefined, JSON.stringify({ type: "DRIFT_ENDED" }));
+      } catch { /* ignore */ }
+      break;
+  }
+});
+
+context.start({
+  disableIdleTimeout: true,
+  maxInactivity: 3600,
+});
+  </script>
+</body>
+</html>
