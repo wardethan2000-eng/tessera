@@ -8,6 +8,7 @@ import { AnimatePresence } from "framer-motion";
 import { TreeCanvas } from "@/components/tree/TreeCanvas";
 import { DriftMode, type DriftFilter } from "@/components/tree/DriftMode";
 import { DriftChooserSheet } from "@/components/tree/DriftChooserSheet";
+import { CorkboardDrift } from "@/components/corkboard/CorkboardDrift";
 import { AddMemoryWizard } from "@/components/tree/AddMemoryWizard";
 import { PromptComposer } from "@/components/tree/PromptComposer";
 import { SearchOverlay } from "@/components/tree/SearchOverlay";
@@ -358,8 +359,9 @@ export default function TreePage() {
       />
 
       <AnimatePresence>
-        {driftOpen && (
-          <DriftMode
+        {driftOpen && driftFilter?.mode === "corkboard" ? (
+          <CorkboardDrift
+            key="corkboard"
             treeId={treeId}
             people={people}
             onClose={closeDrift}
@@ -367,7 +369,17 @@ export default function TreePage() {
             apiBase={API}
             initialFilter={driftFilter}
           />
-        )}
+        ) : driftOpen ? (
+          <DriftMode
+            key="drift"
+            treeId={treeId}
+            people={people}
+            onClose={closeDrift}
+            onPersonDetail={handlePersonDetail}
+            apiBase={API}
+            initialFilter={driftFilter}
+          />
+        ) : null}
       </AnimatePresence>
 
       {wizardOpen && (

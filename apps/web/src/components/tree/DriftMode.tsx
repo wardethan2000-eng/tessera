@@ -32,7 +32,7 @@ interface DriftModeProps {
 }
 
 export type DriftFilter = {
-  mode?: "remembrance";
+  mode?: "remembrance" | "corkboard";
   personId?: string;
   yearStart?: number;
   yearEnd?: number;

@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import type { ApiPerson } from "./treeTypes";
 import type { DriftFilter } from "./DriftMode";
 
-type ChooserMode = "menu" | "person" | "era" | "remembrance";
+type ChooserMode = "menu" | "person" | "era" | "remembrance" | "corkboard";
 
 interface DriftChooserSheetProps {
   open: boolean;
@@ -97,6 +97,7 @@ export function DriftChooserSheet({
                   {mode === "person" && "About one person"}
                   {mode === "era" && "From an era"}
                   {mode === "remembrance" && "In remembrance"}
+                  {mode === "corkboard" && "Corkboard"}
                 </div>
                 <div className="drift-chooser-subtitle">
                   {mode === "menu" && "Pick a way to wander."}
@@ -104,6 +105,8 @@ export function DriftChooserSheet({
                   {mode === "era" && "Memories whose date falls in that window."}
                   {mode === "remembrance" &&
                     "A quieter pace, in chronological order, in their memory."}
+                  {mode === "corkboard" &&
+                    "Pick a person to center the board on, or explore everything."}
                 </div>
               </div>
               {mode !== "menu" ? (
@@ -155,6 +158,11 @@ export function DriftChooserSheet({
                   onClick={() => setMode("remembrance")}
                   disabled={deceasedPeople.length === 0}
                   disabledHint="Add a death date to a relative to enable this."
+                />
+                <ChoiceRow
+                  title="Corkboard"
+                  subtitle="Memories pinned to a board, connected by threads of time."
+                  onClick={() => setMode("corkboard")}
                 />
               </div>
             )}
@@ -237,6 +245,65 @@ export function DriftChooserSheet({
                   </button>
                 ))}
               </div>
+            )}
+
+            {mode === "corkboard" && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => pick({ mode: "corkboard" })}
+                  className="drift-chooser-choice"
+                >
+                  <span className="drift-chooser-choice-title">All memories</span>
+                  <span className="drift-chooser-choice-subtitle">
+                    Pin the whole archive to the board.
+                  </span>
+                </button>
+                <div style={{ padding: "0 16px", marginTop: 8 }}>
+                  <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", marginBottom: 8 }}>
+                    Or pick a person to center on:
+                  </p>
+                </div>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search names…"
+                  className="drift-chooser-search"
+                />
+                <div className="drift-chooser-people-list">
+                  {livingPeople.filter((p) => {
+                    const q = search.trim().toLowerCase();
+                    if (!q) return true;
+                    return p.name.toLowerCase().includes(q);
+                  }).length === 0 ? (
+                    <div className="drift-chooser-empty">No matches.</div>
+                  ) : (
+                    livingPeople
+                      .filter((p) => {
+                        const q = search.trim().toLowerCase();
+                        if (!q) return true;
+                        return p.name.toLowerCase().includes(q);
+                      })
+                      .map((person) => (
+                        <button
+                          key={person.id}
+                          type="button"
+                          onClick={() => pick({ mode: "corkboard", personId: person.id })}
+                          className="drift-chooser-person-row"
+                        >
+                          <span>{person.name}</span>
+                          {person.birthYear || person.deathYear ? (
+                            <span className="drift-chooser-person-years">
+                              {person.birthYear ?? "?"} –{" "}
+                              {person.deathYear ?? (person.deathDateText ? "?" : "")}
+                            </span>
+                          ) : null}
+                        </button>
+                      ))
+                  )}
+                </div>
+              </>
             )}
           </motion.div>
         </motion.div>
