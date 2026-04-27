@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import type { CorkboardMemory, DetectedKind, PinPosition } from "./corkboardTypes";
 import { getProxiedMediaUrl } from "@/lib/media-url";
@@ -9,6 +9,7 @@ interface CorkboardPinProps {
   pin: PinPosition;
   memory: CorkboardMemory;
   isExpanded: boolean;
+  isCurrent: boolean;
   isVisited: boolean;
   isUnfocused: boolean;
   isAdjacent: boolean;
@@ -18,8 +19,6 @@ interface CorkboardPinProps {
   reduceMotion: boolean;
   delay: number;
   visible: boolean;
-  cameraX: number;
-  cameraY: number;
   onMediaEnded?: () => void;
 }
 
@@ -38,6 +37,7 @@ export const CorkboardPin = memo(function CorkboardPin({
   pin,
   memory,
   isExpanded,
+  isCurrent,
   isVisited,
   isUnfocused,
   isAdjacent,
@@ -47,8 +47,6 @@ export const CorkboardPin = memo(function CorkboardPin({
   reduceMotion,
   delay,
   visible,
-  cameraX,
-  cameraY,
   onMediaEnded,
 }: CorkboardPinProps) {
   const resolvedMediaUrl = getProxiedMediaUrl(memory.primaryMedia?.mediaUrl ?? null);
@@ -58,33 +56,24 @@ export const CorkboardPin = memo(function CorkboardPin({
   const title = memory.memory.title;
 
   const kindClass = `corkboard-pin--${memory.kind}`;
-  const visitedClass = isVisited ? " corkboard-pin--visited" : "";
+  const visitedClass = isVisited && !isCurrent ? " corkboard-pin--visited" : "";
   const unfocusedClass = isUnfocused ? " corkboard-pin--unfocused" : "";
   const adjacentClass = isAdjacent ? " corkboard-pin--adjacent" : "";
   const expandedClass = isExpanded ? " corkboard-pin--expanded" : "";
   const startClass = pin.isStartPin ? " corkboard-pin--start" : "";
-  const currentClass = (!isUnfocused && !isExpanded && isVisited) ? " corkboard-pin--current" : "";
+  const currentClass = isCurrent ? " corkboard-pin--current" : "";
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (isExpanded) {
       onContract();
-    } else {
+    } else if (isCurrent) {
       onExpand(pin.id);
     }
   };
 
-  const targetOpacity = isExpanded ? 1 : isUnfocused ? (isAdjacent ? 0.7 : 0.4) : isVisited ? 0.85 : 1;
+  const targetOpacity = isExpanded ? 1 : isUnfocused ? (isAdjacent ? 0.55 : 0.25) : 1;
   const targetScale = isExpanded ? 1.4 : pin.scale;
-
-  const parallaxBoost = reduceMotion || isExpanded || isUnfocused
-    ? 0
-    : (() => {
-        const dx = pin.x - cameraX;
-        const dy = pin.y - cameraY;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        return Math.max(0, 0.02 * (1 - Math.min(1, dist / 800)));
-      })();
 
   const expandedRef = useRef<HTMLDivElement>(null);
 
@@ -125,13 +114,13 @@ export const CorkboardPin = memo(function CorkboardPin({
         minHeight: isExpanded ? 320 : pin.height,
         height: isExpanded ? "auto" : pin.height,
         transform: isExpanded ? "none" : `rotate(${pin.rotation}deg)`,
-        zIndex: isExpanded ? 50 : undefined,
+        zIndex: isExpanded ? 50 : isCurrent ? 10 : undefined,
         transformOrigin: "center center",
       }}
       initial={reduceMotion ? false : { opacity: 0, scale: 0.5, y: 20 }}
       animate={{
         opacity: visible ? targetOpacity : 0,
-        scale: visible ? targetScale + parallaxBoost : 0.5,
+        scale: visible ? targetScale : 0.5,
         y: visible ? 0 : 20,
       }}
       transition={{
@@ -141,7 +130,7 @@ export const CorkboardPin = memo(function CorkboardPin({
       }}
       onClick={handleClick}
       role="button"
-      tabIndex={0}
+      tabIndex={isCurrent || isExpanded ? 0 : -1}
       aria-label={ariaLabel}
       aria-expanded={isExpanded}
     >
@@ -201,7 +190,7 @@ export const CorkboardPin = memo(function CorkboardPin({
             </div>
 
             {memory.kind === "image" && resolvedMediaUrl && (
-              <div className="corkboard-pin-expanded-photo">
+              <div className="corkboard-pin-expanded-photo corkboard-ken-burns-photo">
                 <img src={resolvedMediaUrl} alt={title} />
               </div>
             )}

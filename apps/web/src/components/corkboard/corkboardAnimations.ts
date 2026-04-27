@@ -1,6 +1,8 @@
 export const EASE_TESSERA: [number, number, number, number] = [0.22, 0.61, 0.36, 1];
 
-export const CAMERA_TRANSITION_DURATION = 1.8;
+export const CAMERA_GLIDE_DURATION = 1.8;
+export const CAMERA_GLIDE_ZOOM_MID = 1.1;
+export const CAMERA_FOCUSED_ZOOM = 1.4;
 export const PIN_EXPAND_DURATION = 0.6;
 export const PIN_CONTRACT_DURATION = 0.4;
 export const THREAD_PULSE_DURATION = 0.5;
@@ -10,9 +12,10 @@ export const CONTENT_REVEAL_DURATION = 0.8;
 export const AMBIENT_DRIFT_SPEED = 0.3;
 export const IDLE_THRESHOLD_MS = 5000;
 
-export const UNFOCUSED_BLUR = "1.5px";
-export const UNFOCUSED_OPACITY = 0.4;
-export const ADJACENT_OPACITY = 0.7;
+export const UNFOCUSED_BLUR = "2.5px";
+export const UNFOCUSED_OPACITY = 0.25;
+export const ADJACENT_BLUR = "1px";
+export const ADJACENT_OPACITY = 0.55;
 
 export const PIN_ROTATION_RANGE = 12;
 export const PIN_MIN_SPACING = 180;

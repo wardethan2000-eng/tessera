@@ -1913,10 +1913,738 @@ body {
   inset: 0;
   z-index: 60;
   overflow: hidden;
-  background: var(--paper);
+  background: var(--ink, #1C1915);
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   color: var(--ink);
+}
+
+.corkboard-root--remembrance {
+  filter: grayscale(0.85);
+}
+
+.corkboard-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+
+.corkboard-board {
+  position: absolute;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.corkboard-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  background:
+    radial-gradient(ellipse at center, transparent 55%, rgba(28, 25, 21, 0.12) 100%),
+    radial-gradient(ellipse at 30% 25%, rgba(237, 230, 214, 0.4) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 75%, rgba(226, 217, 196, 0.3) 0%, transparent 50%),
+    linear-gradient(145deg, #F6F1E7 0%, #EDE6D6 35%, #E2D9C4 65%, #D9D0BC 100%);
+  background-color: var(--paper);
+  box-shadow: inset 0 0 80px rgba(28, 25, 21, 0.08);
+}
+
+.corkboard-backdrop--remembrance {
+  background:
+    radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.15) 100%),
+    linear-gradient(145deg, #1a1612 0%, #0f0d0a 100%) !important;
+  background-color: #1a1612;
+}
+
+.corkboard-close {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 100;
+  background: rgba(28, 25, 21, 0.75);
+  color: var(--parchment, #E8E4DC);
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: background 0.2s;
+}
+.corkboard-close:hover {
+  background: rgba(28, 25, 21, 0.9);
+}
+
+.corkboard-autoplay-toggle {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(28, 25, 21, 0.75);
+  color: var(--parchment, #E8E4DC);
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: background 0.2s;
+}
+.corkboard-autoplay-toggle:hover {
+  background: rgba(28, 25, 21, 0.9);
+}
+
+.corkboard-autoplay-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.corkboard-controls {
+  position: absolute;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: flex;
+  gap: 16px;
+  background: rgba(28, 25, 21, 0.75);
+  border-radius: 8px;
+  padding: 8px 16px;
+  backdrop-filter: blur(8px);
+}
+
+.corkboard-thread-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--parchment, #E8E4DC);
+  cursor: pointer;
+}
+.corkboard-thread-toggle input {
+  accent-color: var(--moss);
+  cursor: pointer;
+}
+
+.corkboard-thread-layer {
+  overflow: visible;
+}
+
+.corkboard-thread-path {
+  transition: opacity 0.5s ease-out, stroke-width 0.3s ease-out;
+}
+.corkboard-thread-path--active {
+  stroke-dasharray: 8 16;
+  animation: corkboard-thread-march 1.8s linear infinite;
+}
+
+@keyframes corkboard-thread-march {
+  to { stroke-dashoffset: -24; }
+}
+
+.corkboard-pin {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+  transform-origin: center center;
+  transition: filter 0.5s ease-out, opacity 0.5s ease-out;
+}
+
+.corkboard-pin--image {
+  background: #fff;
+  padding: 10px 10px 6px;
+  border-radius: 2px;
+  box-shadow: 0 4px 16px rgba(28, 25, 21, 0.15), 0 1px 3px rgba(28, 25, 21, 0.1);
+}
+.corkboard-pin--story,
+.corkboard-pin--text {
+  background: var(--paper-deep, #EDE6D6);
+  padding: 14px 16px;
+  border-radius: 2px;
+  box-shadow: 0 3px 12px rgba(28, 25, 21, 0.12), 0 1px 3px rgba(28, 25, 21, 0.08);
+}
+.corkboard-pin--voice,
+.corkboard-pin--audio {
+  background: var(--paper-deep, #EDE6D6);
+  padding: 14px 16px;
+  border-radius: 2px;
+  box-shadow: 0 3px 12px rgba(28, 25, 21, 0.12);
+}
+.corkboard-pin--video {
+  background: #fff;
+  padding: 10px 10px 6px;
+  border-radius: 2px;
+  box-shadow: 0 4px 16px rgba(28, 25, 21, 0.15), 0 1px 3px rgba(28, 25, 21, 0.1);
+}
+.corkboard-pin--document,
+.corkboard-pin--link {
+  background: var(--paper-deep, #EDE6D6);
+  padding: 14px 16px;
+  border-radius: 2px;
+  box-shadow: 0 3px 12px rgba(28, 25, 21, 0.12);
+}
+
+.corkboard-pushpin {
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--rose, #A85D5D);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  z-index: 2;
+}
+
+.corkboard-pin--start .corkboard-pushpin {
+  background: var(--gilt, #B08B3E);
+  width: 12px;
+  height: 12px;
+  top: -7px;
+}
+
+.corkboard-pin--visited {
+  filter: saturate(0.7);
+}
+.corkboard-pin--unfocused {
+  filter: blur(2.5px) saturate(0.6);
+  opacity: 0.25;
+  pointer-events: none;
+}
+.corkboard-pin--adjacent {
+  filter: blur(1px) saturate(0.8);
+  opacity: 0.55;
+  pointer-events: none;
+}
+.corkboard-pin--expanded {
+  z-index: 50;
+  cursor: default;
+  filter: none !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  background: var(--paper, #F6F1E7) !important;
+  box-shadow: 0 8px 32px rgba(28, 25, 21, 0.2), 0 2px 8px rgba(28, 25, 21, 0.1) !important;
+  border-radius: 4px;
+}
+
+.corkboard-pin-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.corkboard-pushpin::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 4px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.corkboard-pin-photo {
+  width: 100%;
+  overflow: hidden;
+  border-radius: 1px;
+  margin-bottom: 4px;
+}
+.corkboard-pin-photo img {
+  width: 100%;
+  height: auto;
+  display: block;
+  object-fit: cover;
+  max-height: 160px;
+}
+
+.corkboard-pin-video-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 80px;
+  font-size: 32px;
+  color: var(--ink-soft, #403A2E);
+  background: var(--paper-deep, #EDE6D6);
+  border-radius: 2px;
+}
+
+.corkboard-pin-audio-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  font-size: 18px;
+  color: var(--moss, #4E5D42);
+  background: var(--paper, #F6F1E7);
+  border-radius: 50%;
+  margin-bottom: 4px;
+}
+
+.corkboard-pin-title {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink, #1C1915);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.corkboard-pin-snippet {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: var(--ink-soft, #403A2E);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.corkboard-pin-meta {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  color: var(--ink-faded, #847A66);
+  margin-top: 2px;
+}
+
+.corkboard-pin-expanded {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  min-height: 200px;
+  position: relative;
+}
+
+.corkboard-pin-expanded-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--ink-faded, #847A66);
+}
+
+.corkboard-pin-expanded-kind {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 10px;
+}
+
+.corkboard-pin-expanded-date {
+}
+
+.corkboard-pin-expanded-photo {
+  width: 100%;
+  max-height: 500px;
+  overflow: hidden;
+  border-radius: 2px;
+}
+.corkboard-pin-expanded-photo img {
+  width: 100%;
+  height: auto;
+  max-height: 500px;
+  object-fit: contain;
+}
+
+.corkboard-ken-burns-photo img {
+  animation: corkboard-kenburns 16s ease-in-out forwards;
+}
+
+@keyframes corkboard-kenburns {
+  0% { transform: scale(1); }
+  100% { transform: scale(1.06); }
+}
+
+.corkboard-pin-expanded-video {
+  width: 100%;
+  max-height: 500px;
+  border-radius: 2px;
+}
+
+.corkboard-pin-expanded-audio {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 32px 0;
+}
+
+.corkboard-audio-orb {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 40%, rgba(78, 93, 66, 0.25), rgba(78, 93, 66, 0.08));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--moss, #4E5D42);
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+}
+.corkboard-audio-orb--playing {
+  animation: corkboard-orb-pulse 2s ease-in-out infinite;
+}
+
+@keyframes corkboard-orb-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.08); opacity: 1; }
+}
+
+.corkboard-pin-expanded-transcript {
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--ink-soft, #403A2E);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.corkboard-pin-expanded-body {
+  font-family: var(--font-body);
+  font-size: 17px;
+  line-height: 1.7;
+  color: var(--ink, #1C1915);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.corkboard-pin-expanded-link {
+  display: inline-block;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--moss, #4E5D42);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  margin-top: 8px;
+}
+.corkboard-pin-expanded-link:hover {
+  color: var(--ink, #1C1915);
+}
+
+.corkboard-pin-expanded-attribution {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--rule, #D9D0BC);
+}
+.corkboard-pin-expanded-name {
+  font-family: var(--font-display);
+  font-size: 15px;
+  color: var(--ink, #1C1915);
+}
+.corkboard-pin-expanded-title {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--ink-faded, #847A66);
+}
+
+.corkboard-pin-expanded-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: var(--rule, #D9D0BC);
+  color: var(--ink, #1C1915);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+  z-index: 2;
+}
+.corkboard-pin-expanded-close:hover {
+  background: var(--ink-faded, #847A66);
+  color: var(--paper, #F6F1E7);
+}
+
+.corkboard-pin--current {
+  box-shadow: 0 0 0 2px var(--moss, #4E5D42), 0 4px 20px rgba(78, 93, 66, 0.2), 0 2px 6px rgba(28, 25, 21, 0.12) !important;
+  z-index: 10;
+}
+
+.corkboard-progress-track {
+  position: absolute;
+  bottom: 48px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: rgba(132, 122, 102, 0.2);
+  z-index: 95;
+}
+.corkboard-progress-fill {
+  height: 100%;
+  background: var(--moss, #4E5D42);
+  transition: width 0.4s ease-out;
+}
+
+.corkboard-bottom {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  background: linear-gradient(transparent, rgba(28, 25, 21, 0.75) 40%);
+  color: var(--parchment, #E8E4DC);
+}
+
+.corkboard-bottom > * {
+  position: relative;
+  z-index: 1;
+}
+
+.corkboard-bottom__attribution {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.corkboard-bottom__name {
+  font-family: var(--font-display);
+  font-size: 15px;
+}
+
+.corkboard-bottom__detail {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: rgba(232, 228, 220, 0.7);
+}
+
+.corkboard-bottom__cta {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--moss, #4E5D42);
+  background: var(--paper, #F6F1E7);
+  border: none;
+  border-radius: 6px;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.corkboard-bottom__cta:hover {
+  background: var(--paper-deep, #EDE6D6);
+}
+
+.corkboard-remembrance-header {
+  position: absolute;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  text-align: center;
+  color: rgba(232, 228, 220, 0.7);
+  font-family: var(--font-ui);
+}
+
+.corkboard-remembrance-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 4px;
+}
+
+.corkboard-remembrance-name {
+  font-family: var(--font-display);
+  font-size: 20px;
+  color: rgba(232, 228, 220, 0.85);
+}
+
+.corkboard-loader {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--rule, #D9D0BC);
+  border-top-color: var(--moss, #4E5D42);
+  border-radius: 50%;
+  animation: corkboard-spin 0.8s linear infinite;
+}
+
+@keyframes corkboard-spin {
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+.corkboard-empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: var(--ink-soft, #403A2E);
+  z-index: 10;
+}
+
+.corkboard-empty__title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  margin-bottom: 8px;
+}
+
+.corkboard-empty__body {
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--ink-faded, #847A66);
+  line-height: 1.6;
+}
+
+.corkboard-empty__btn {
+  margin-top: 16px;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  color: var(--moss, #4E5D42);
+  background: none;
+  border: 1px solid var(--moss, #4E5D42);
+  border-radius: 8px;
+  padding: 8px 20px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.corkboard-empty__btn:hover {
+  background: var(--paper-deep, #EDE6D6);
+}
+
+[data-theme="dark"] .corkboard-pin--image,
+[data-theme="dark"] .corkboard-pin--video {
+  background: #1a1e2e;
+}
+[data-theme="dark"] .corkboard-pin--story,
+[data-theme="dark"] .corkboard-pin--text,
+[data-theme="dark"] .corkboard-pin--voice,
+[data-theme="dark"] .corkboard-pin--audio,
+[data-theme="dark"] .corkboard-pin--document,
+[data-theme="dark"] .corkboard-pin--link {
+  background: #141828;
+}
+[data-theme="dark"] .corkboard-pin--expanded {
+  background: #1a1e2e !important;
+}
+[data-theme="dark"] .corkboard-close,
+[data-theme="dark"] .corkboard-autoplay-toggle,
+[data-theme="dark"] .corkboard-controls {
+  background: rgba(10, 14, 26, 0.85);
+  color: #e8e4dc;
+}
+[data-theme="dark"] .corkboard-bottom {
+  background: linear-gradient(transparent, rgba(10, 14, 26, 0.85) 40%);
+}
+[data-theme="dark"] .corkboard-bottom__cta {
+  background: #1a1e2e;
+  color: var(--moss);
+}
+
+/* ─── Corkboard responsive ────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .corkboard-pin {
+    transform-origin: center center;
+  }
+  .corkboard-pin--image {
+    padding: 6px 6px 4px;
+  }
+  .corkboard-pin-photo img {
+    max-height: 100px;
+  }
+  .corkboard-pin-title {
+    font-size: 11px;
+  }
+  .corkboard-pin-snippet {
+    font-size: 10px;
+    -webkit-line-clamp: 1;
+  }
+  .corkboard-pin-meta {
+    font-size: 9px;
+  }
+  .corkboard-pin--expanded {
+    width: 90vw !important;
+    max-width: 360px;
+    min-height: 240px;
+  }
+  .corkboard-controls {
+    bottom: 52px;
+    padding: 6px 10px;
+    gap: 10px;
+  }
+  .corkboard-thread-toggle__label {
+    font-size: 11px;
+  }
+  .corkboard-close {
+    top: 12px;
+    left: 12px;
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+  .corkboard-autoplay-toggle {
+    top: 12px;
+    right: 12px;
+    padding: 6px 12px;
+    font-size: 11px;
+  }
+  .corkboard-bottom {
+    padding: 10px 16px;
+  }
+  .corkboard-bottom__name {
+    font-size: 13px;
+  }
+  .corkboard-bottom__detail {
+    font-size: 11px;
+  }
+  .corkboard-bottom__cta {
+    font-size: 11px;
+    padding: 5px 10px;
+  }
+  .corkboard-progress-track {
+    bottom: 44px;
+  }
+  .corkboard-pin--unfocused {
+    filter: blur(3px) saturate(0.5);
+    opacity: 0.15;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mosaic-piece,
+  .mosaic-header__link,
+  .drift-image,
+  .drift-audio-orb,
+  .corkboard-audio-orb,
+  .corkboard-thread-path--active,
+  .corkboard-ken-burns-photo img,
+  a[href],
+  button {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 .corkboard-root--remembrance {

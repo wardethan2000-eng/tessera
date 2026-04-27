@@ -7,6 +7,10 @@ import {
   computeBoardSize,
   computePinCenter,
   getThreadPath,
+  getThreadControlPoints,
+  sampleCubicBezier,
+  sampleCameraPath,
+  findThreadBetween,
 } from "./CorkboardLayout.js";
 
 const MEMORIES_FIXTURE = [
@@ -26,6 +30,13 @@ const NO_DATE_MEMORIES = [
   { id: "nd-1", primaryPersonId: "p-a", dateOfEventText: null, kind: "story" },
   { id: "nd-2", primaryPersonId: "p-b", dateOfEventText: null, kind: "document" },
   { id: "nd-3", primaryPersonId: "p-a", dateOfEventText: null, kind: "voice" },
+];
+
+const BRANCH_MEMORIES = [
+  { id: "b-1", primaryPersonId: "p-a", dateOfEventText: "1970", kind: "image", branchId: "branch-1" },
+  { id: "b-2", primaryPersonId: "p-a", dateOfEventText: "1980", kind: "story", branchId: "branch-1" },
+  { id: "b-3", primaryPersonId: "p-b", dateOfEventText: "1990", kind: "voice", branchId: "branch-2" },
+  { id: "b-4", primaryPersonId: "p-b", dateOfEventText: "2000", kind: "document", branchId: "branch-2" },
 ];
 
 describe("computePositions", () => {
@@ -125,6 +136,32 @@ describe("computePositions", () => {
       assert.ok(pin.y <= board.height - 200, `y ${pin.y} <= ${board.height - 200}`);
     }
   });
+
+  it("clusters same-person memories near each other on the board", () => {
+    const positions = computePositions(MEMORIES_FIXTURE, "cluster-test");
+    const byPerson = new Map<string, { x: number; y: number }[]>();
+    for (const pin of positions) {
+      const mem = MEMORIES_FIXTURE.find((m) => m.id === pin.memoryId);
+      if (!mem) continue;
+      const group = byPerson.get(mem.primaryPersonId) ?? [];
+      group.push({ x: pin.x, y: pin.y });
+      byPerson.set(mem.primaryPersonId, group);
+    }
+
+    for (const [, group] of byPerson) {
+      if (group.length < 2) continue;
+      let totalDist = 0;
+      for (let i = 0; i < group.length; i++) {
+        for (let j = i + 1; j < group.length; j++) {
+          const dx = group[j]!.x - group[i]!.x;
+          const dy = group[j]!.y - group[i]!.y;
+          totalDist += Math.sqrt(dx * dx + dy * dy);
+        }
+      }
+      const avgDist = totalDist / ((group.length * (group.length - 1)) / 2);
+      assert.ok(avgDist < 800, `person group pins avg dist ${avgDist} should be < 800`);
+    }
+  });
 });
 
 describe("computeConnections", () => {
@@ -164,6 +201,20 @@ describe("computeConnections", () => {
     if (temporal && person) {
       assert.ok(temporal.strength > person.strength);
     }
+  });
+
+  it("creates branch threads when branchId is present", () => {
+    const positions = computePositions(BRANCH_MEMORIES, "branch-test");
+    const connections = computeConnections(BRANCH_MEMORIES, positions);
+    const branchConns = connections.filter((c) => c.type === "branch");
+    assert.ok(branchConns.length >= 2, "should have branch connections within each branch");
+  });
+
+  it("does not create branch threads when no branchId is present", () => {
+    const positions = computePositions(MEMORIES_FIXTURE, "no-branch-test");
+    const connections = computeConnections(MEMORIES_FIXTURE, positions);
+    const branchConns = connections.filter((c) => c.type === "branch");
+    assert.equal(branchConns.length, 0, "should have no branch connections without branchId");
   });
 });
 
@@ -277,5 +328,105 @@ describe("getThreadPath", () => {
     const a = getThreadPath(from, to, "temporal");
     const b = getThreadPath(from, to, "temporal");
     assert.equal(a, b);
+  });
+});
+
+describe("getThreadControlPoints", () => {
+  it("returns control points as numbers", () => {
+    const positions = computePositions(MEMORIES_FIXTURE, "cp-test");
+    const from = positions[0]!;
+    const to = positions[1]!;
+    const cp = getThreadControlPoints(from, to, "temporal");
+    assert.ok(typeof cp.cx1 === "number");
+    assert.ok(typeof cp.cy1 === "number");
+    assert.ok(typeof cp.cx2 === "number");
+    assert.ok(typeof cp.cy2 === "number");
+  });
+
+  it("is deterministic for same inputs", () => {
+    const positions = computePositions(MEMORIES_FIXTURE, "cp-test");
+    const from = positions[0]!;
+    const to = positions[1]!;
+    const a = getThreadControlPoints(from, to, "temporal");
+    const b = getThreadControlPoints(from, to, "temporal");
+    assert.deepEqual(a, b);
+  });
+});
+
+describe("sampleCubicBezier", () => {
+  it("returns start point at t=0", () => {
+    const p = sampleCubicBezier(100, 200, 150, 250, 200, 300, 300, 400, 0);
+    assert.ok(Math.abs(p.x - 100) < 0.01);
+    assert.ok(Math.abs(p.y - 200) < 0.01);
+  });
+
+  it("returns end point at t=1", () => {
+    const p = sampleCubicBezier(100, 200, 150, 250, 200, 300, 300, 400, 1);
+    assert.ok(Math.abs(p.x - 300) < 0.01);
+    assert.ok(Math.abs(p.y - 400) < 0.01);
+  });
+
+  it("returns a point between start and end at t=0.5", () => {
+    const p = sampleCubicBezier(0, 0, 100, 0, 200, 0, 300, 0, 0.5);
+    assert.ok(p.x > 0 && p.x < 300);
+    assert.ok(Math.abs(p.y) < 0.01);
+  });
+});
+
+describe("sampleCameraPath", () => {
+  it("returns the from-pin position at t=0", () => {
+    const positions = computePositions(MEMORIES_FIXTURE, "cam-test");
+    const from = positions[0]!;
+    const to = positions[1]!;
+    const p = sampleCameraPath(from, to, "temporal", 0);
+    assert.ok(Math.abs(p.x - from.x) < 0.01);
+    assert.ok(Math.abs(p.y - from.y) < 0.01);
+  });
+
+  it("returns the to-pin position at t=1", () => {
+    const positions = computePositions(MEMORIES_FIXTURE, "cam-test");
+    const from = positions[0]!;
+    const to = positions[1]!;
+    const p = sampleCameraPath(from, to, "temporal", 1);
+    assert.ok(Math.abs(p.x - to.x) < 0.01);
+    assert.ok(Math.abs(p.y - to.y) < 0.01);
+  });
+
+  it("interpolates along the curve for mid-t values", () => {
+    const positions = computePositions(MEMORIES_FIXTURE, "cam-test");
+    const from = positions[0]!;
+    const to = positions[3]!;
+    const p = sampleCameraPath(from, to, "person", 0.5);
+    assert.ok(p.x >= Math.min(from.x, to.x) - 200);
+    assert.ok(p.x <= Math.max(from.x, to.x) + 200);
+  });
+});
+
+describe("findThreadBetween", () => {
+  it("finds a thread connecting two memories", () => {
+    const positions = computePositions(MEMORIES_FIXTURE, "find-thread");
+    const connections = computeConnections(MEMORIES_FIXTURE, positions);
+    const result = findThreadBetween(connections, "mem-1", "mem-2");
+    assert.ok(result !== null, "should find thread between mem-1 and mem-2");
+  });
+
+  it("finds thread regardless of direction", () => {
+    const positions = computePositions(MEMORIES_FIXTURE, "find-thread");
+    const connections = computeConnections(MEMORIES_FIXTURE, positions);
+    const a = findThreadBetween(connections, "mem-1", "mem-2");
+    const b = findThreadBetween(connections, "mem-2", "mem-1");
+    assert.equal(a?.id, b?.id, "should find same thread from either direction");
+  });
+
+  it("returns null for unconnected memories", () => {
+    const positions = computePositions(MEMORIES_FIXTURE, "find-thread");
+    const connections = computeConnections(MEMORIES_FIXTURE, positions);
+    const result = findThreadBetween(connections, "mem-1", "mem-5");
+    const isDirectlyConnected = connections.some(
+      (c) => (c.from === "mem-1" && c.to === "mem-5") || (c.from === "mem-5" && c.to === "mem-1"),
+    );
+    if (!isDirectlyConnected) {
+      assert.equal(result, null);
+    }
   });
 });

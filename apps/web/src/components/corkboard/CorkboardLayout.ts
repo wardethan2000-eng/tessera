@@ -1,4 +1,4 @@
-import type { PinPosition, ThreadConnection, ThreadType } from "./corkboardTypes";
+import type { PinPosition, ThreadConnection, ThreadType, BezierControlPoints } from "./corkboardTypes";
 import {
   PIN_ROTATION_RANGE,
   PIN_MIN_SPACING,
@@ -12,6 +12,7 @@ interface MemoryLike {
   primaryPersonId: string;
   dateOfEventText?: string | null;
   kind: string;
+  branchId?: string | null;
 }
 
 function mulberry32(seedInput: number) {
@@ -70,40 +71,73 @@ export function computePositions(
   };
 
   const center = { x: boardWidth / 2, y: boardHeight / 2 };
+
+  const personIds = [...new Set(memories.map((m) => m.primaryPersonId))];
+  const sectorAngle = (2 * Math.PI) / Math.max(personIds.length, 1);
+  const personSectorStart: Map<string, number> = new Map();
+  for (let pi = 0; pi < personIds.length; pi++) {
+    personSectorStart.set(personIds[pi]!, pi * sectorAngle);
+  }
+
+  const byPerson = new Map<string, MemoryLike[]>();
+  for (const m of memories) {
+    const group = byPerson.get(m.primaryPersonId) ?? [];
+    group.push(m);
+    byPerson.set(m.primaryPersonId, group);
+  }
+
   const positions: PinPosition[] = [];
 
-  const sorted = [...memories].sort((a, b) => {
+  for (const [personId, group] of byPerson) {
+    const sorted = [...group].sort((a, b) => {
+      const ya = extractYearLocal(a.dateOfEventText) ?? 9999;
+      const yb = extractYearLocal(b.dateOfEventText) ?? 9999;
+      return ya - yb;
+    });
+
+    const baseAngle = personSectorStart.get(personId) ?? 0;
+
+    for (let i = 0; i < sorted.length; i++) {
+      const memory = sorted[i]!;
+      const dims = kindDimensions[memory.kind] ?? kindDimensions["text"]!;
+
+      const spiralAngle = baseAngle + i * 0.35;
+      const spiralRadius = 180 + i * (PIN_MIN_SPACING * 0.85);
+
+      const baseX = center.x + spiralRadius * Math.cos(spiralAngle);
+      const baseY = center.y + spiralRadius * Math.sin(spiralAngle);
+
+      const jitterX = (rng() - 0.5) * 80;
+      const jitterY = (rng() - 0.5) * 80;
+
+      const rotation = gaussianish(rng) * (PIN_ROTATION_RANGE / 3);
+
+      positions.push({
+        id: memory.id + ":pin",
+        memoryId: memory.id,
+        x: Math.max(BOARD_PADDING, Math.min(boardWidth - BOARD_PADDING, baseX + jitterX)),
+        y: Math.max(BOARD_PADDING, Math.min(boardHeight - BOARD_PADDING, baseY + jitterY)),
+        rotation: Math.max(-PIN_ROTATION_RANGE, Math.min(PIN_ROTATION_RANGE, rotation)),
+        scale: dims.scale,
+        width: dims.width,
+        height: dims.height,
+        isStartPin: false,
+      });
+    }
+  }
+
+  const chronologicallyFirst = [...memories].sort((a, b) => {
     const ya = extractYearLocal(a.dateOfEventText) ?? 9999;
     const yb = extractYearLocal(b.dateOfEventText) ?? 9999;
     return ya - yb;
-  });
+  })[0];
 
-  for (let i = 0; i < sorted.length; i++) {
-    const memory = sorted[i]!;
-    const dims = kindDimensions[memory.kind] ?? kindDimensions["text"]!;
-
-    const angle = i * 137.508 * (Math.PI / 180);
-    const radius = Math.sqrt(i + 1) * (PIN_MIN_SPACING * 0.9);
-
-    const baseX = center.x + radius * Math.cos(angle);
-    const baseY = center.y + radius * Math.sin(angle);
-
-    const jitterX = (rng() - 0.5) * 80;
-    const jitterY = (rng() - 0.5) * 80;
-
-    const rotation = gaussianish(rng) * (PIN_ROTATION_RANGE / 3);
-
-    positions.push({
-      id: memory.id + ":pin",
-      memoryId: memory.id,
-      x: Math.max(BOARD_PADDING, Math.min(boardWidth - BOARD_PADDING, baseX + jitterX)),
-      y: Math.max(BOARD_PADDING, Math.min(boardHeight - BOARD_PADDING, baseY + jitterY)),
-      rotation: Math.max(-PIN_ROTATION_RANGE, Math.min(PIN_ROTATION_RANGE, rotation)),
-      scale: dims.scale,
-      width: dims.width,
-      height: dims.height,
-      isStartPin: i === 0,
-    });
+  if (chronologicallyFirst) {
+    const startPin = positions.find((p) => p.memoryId === chronologicallyFirst.id);
+    if (startPin) {
+      const idx = positions.indexOf(startPin);
+      positions[idx] = { ...startPin, isStartPin: true };
+    }
   }
 
   for (let pass = 0; pass < 20; pass++) {
@@ -144,6 +178,21 @@ export function computeConnections(
 ): ThreadConnection[] {
   const conns: ThreadConnection[] = [];
   const posById = new Map(positions.map((p) => [p.memoryId, p]));
+  const edgeSet = new Set<string>();
+
+  function addEdge(from: string, to: string, type: ThreadType, strength: number) {
+    const key = [from, to].sort().join("|") + ":" + type;
+    if (edgeSet.has(key)) return;
+    if (!posById.has(from) || !posById.has(to)) return;
+    edgeSet.add(key);
+    conns.push({
+      id: `${type}:${from}-${to}`,
+      from,
+      to,
+      type,
+      strength,
+    });
+  }
 
   const temporal = [...memories].sort((a, b) => {
     const ya = extractYearLocal(a.dateOfEventText) ?? 9999;
@@ -152,17 +201,7 @@ export function computeConnections(
   });
 
   for (let i = 0; i < temporal.length - 1; i++) {
-    const from = temporal[i]!;
-    const to = temporal[i + 1]!;
-    if (posById.has(from.id) && posById.has(to.id)) {
-      conns.push({
-        id: `temporal:${from.id}-${to.id}`,
-        from: from.id,
-        to: to.id,
-        type: "temporal",
-        strength: 0.8,
-      });
-    }
+    addEdge(temporal[i]!.id, temporal[i + 1]!.id, "temporal", 0.8);
   }
 
   const byPerson = new Map<string, MemoryLike[]>();
@@ -179,19 +218,26 @@ export function computeConnections(
       return ya - yb;
     });
     for (let i = 0; i < sorted.length - 1; i++) {
-      const from = sorted[i]!;
-      const to = sorted[i + 1]!;
-      const alreadyExists = conns.some(
-        (c) => (c.from === from.id && c.to === to.id) || (c.from === to.id && c.to === from.id),
-      );
-      if (!alreadyExists && posById.has(from.id) && posById.has(to.id)) {
-        conns.push({
-          id: `person:${from.id}-${to.id}`,
-          from: from.id,
-          to: to.id,
-          type: "person",
-          strength: 0.5,
-        });
+      addEdge(sorted[i]!.id, sorted[i + 1]!.id, "person", 0.5);
+    }
+  }
+
+  if (memories.some((m) => m.branchId)) {
+    const byBranch = new Map<string, MemoryLike[]>();
+    for (const m of memories) {
+      if (!m.branchId) continue;
+      const group = byBranch.get(m.branchId) ?? [];
+      group.push(m);
+      byBranch.set(m.branchId, group);
+    }
+    for (const [, group] of byBranch) {
+      const sorted = [...group].sort((a, b) => {
+        const ya = extractYearLocal(a.dateOfEventText) ?? 9999;
+        const yb = extractYearLocal(b.dateOfEventText) ?? 9999;
+        return ya - yb;
+      });
+      for (let i = 0; i < sorted.length - 1; i++) {
+        addEdge(sorted[i]!.id, sorted[i + 1]!.id, "branch", 0.4);
       }
     }
   }
@@ -211,21 +257,6 @@ export function computeSmartWeave(
     const yb = extractYearLocal(b.dateOfEventText) ?? 9999;
     return ya - yb;
   });
-
-  const adjacencyByPerson = new Map<string, Map<string, string[]>>();
-  for (const conn of connections) {
-    if (conn.type !== "person") continue;
-    let fromMap = adjacencyByPerson.get(conn.from);
-    if (!fromMap) {
-      fromMap = new Map();
-      adjacencyByPerson.set(conn.from, fromMap);
-    }
-    let toMap = adjacencyByPerson.get(conn.to);
-    if (!toMap) {
-      toMap = new Map();
-      adjacencyByPerson.set(conn.to, toMap);
-    }
-  }
 
   const order: string[] = [];
   const visited = new Set<string>();
@@ -249,7 +280,7 @@ export function computeSmartWeave(
       .filter((c) => c.type === "person" && (c.from === memory.id || c.to === memory.id))
       .map((c) => (c.from === memory.id ? c.to : c.from));
 
-    if (personMemories.length > 0 && personStreak < maxPersonStreak && rng() < 0.4) {
+    if (personMemories.length > 0 && personStreak < maxPersonStreak && rng() < 0.6) {
       for (const relatedId of personMemories) {
         const related = memories.find((m) => m.id === relatedId);
         if (related && !visited.has(relatedId)) {
@@ -296,11 +327,11 @@ export function computePinCenter(positions: PinPosition[]): { x: number; y: numb
   return { x: avg.x / positions.length, y: avg.y / positions.length };
 }
 
-export function getThreadPath(
+export function getThreadControlPoints(
   from: PinPosition,
   to: PinPosition,
   type: ThreadType,
-): string {
+): BezierControlPoints {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   const perpX = -dy;
@@ -312,10 +343,67 @@ export function getThreadPath(
   const rng = mulberry32(seed);
   const jitter = (rng() - 0.5) * 0.5 + 0.75;
 
-  const cx1 = from.x + dx * 0.3 + perpX / len * dx * curvature * jitter;
-  const cy1 = from.y + dy * 0.3 + perpY / len * dy * curvature * jitter;
-  const cx2 = from.x + dx * 0.7 - perpX / len * dx * curvature * jitter;
-  const cy2 = from.y + dy * 0.7 - perpY / len * dy * curvature * jitter;
+  return {
+    cx1: from.x + dx * 0.3 + (perpX / len) * dx * curvature * jitter,
+    cy1: from.y + dy * 0.3 + (perpY / len) * dy * curvature * jitter,
+    cx2: from.x + dx * 0.7 - (perpX / len) * dx * curvature * jitter,
+    cy2: from.y + dy * 0.7 - (perpY / len) * dy * curvature * jitter,
+  };
+}
 
-  return `M ${from.x} ${from.y} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${to.x} ${to.y}`;
+export function getThreadPath(
+  from: PinPosition,
+  to: PinPosition,
+  type: ThreadType,
+): string {
+  const cp = getThreadControlPoints(from, to, type);
+  return `M ${from.x} ${from.y} C ${cp.cx1} ${cp.cy1}, ${cp.cx2} ${cp.cy2}, ${to.x} ${to.y}`;
+}
+
+export function sampleCubicBezier(
+  x0: number, y0: number,
+  cx1: number, cy1: number,
+  cx2: number, cy2: number,
+  x1: number, y1: number,
+  t: number,
+): { x: number; y: number } {
+  const u = 1 - t;
+  const tt = t * t;
+  const uu = u * u;
+  const uuu = uu * u;
+  const ttt = tt * t;
+  return {
+    x: uuu * x0 + 3 * uu * t * cx1 + 3 * u * tt * cx2 + ttt * x1,
+    y: uuu * y0 + 3 * uu * t * cy1 + 3 * u * tt * cy2 + ttt * y1,
+  };
+}
+
+export function sampleCameraPath(
+  from: PinPosition,
+  to: PinPosition,
+  type: ThreadType,
+  t: number,
+): { x: number; y: number } {
+  const cp = getThreadControlPoints(from, to, type);
+  return sampleCubicBezier(
+    from.x, from.y,
+    cp.cx1, cp.cy1,
+    cp.cx2, cp.cy2,
+    to.x, to.y,
+    t,
+  );
+}
+
+export function findThreadBetween(
+  threads: ThreadConnection[],
+  fromMemId: string,
+  toMemId: string,
+): ThreadConnection | null {
+  return (
+    threads.find(
+      (t) =>
+        (t.from === fromMemId && t.to === toMemId) ||
+        (t.from === toMemId && t.to === fromMemId),
+    ) ?? null
+  );
 }

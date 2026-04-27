@@ -34,6 +34,13 @@ export interface ThreadConnection {
   strength: number;
 }
 
+export interface BezierControlPoints {
+  cx1: number;
+  cy1: number;
+  cx2: number;
+  cy2: number;
+}
+
 export interface CameraState {
   x: number;
   y: number;

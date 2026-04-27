@@ -10,6 +10,8 @@ interface CorkboardThreadProps {
   strength: number;
   isActive: boolean;
   visible: boolean;
+  onThreadClick?: (thread: ThreadConnection) => void;
+  thread: ThreadConnection;
 }
 
 const THREAD_COLORS: Record<ThreadType, string> = {
@@ -37,6 +39,8 @@ export function CorkboardThread({
   strength,
   isActive,
   visible,
+  onThreadClick,
+  thread,
 }: CorkboardThreadProps) {
   if (!visible) return null;
 
@@ -47,8 +51,22 @@ export function CorkboardThread({
   const width = isActive ? baseWidth + 1 : baseWidth;
   const opacity = isActive ? Math.min(1, baseOpacity + 0.4) : baseOpacity;
 
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onThreadClick?.(thread);
+  };
+
   return (
     <g>
+      <path
+        d={pathD}
+        fill="none"
+        stroke="transparent"
+        strokeWidth={20}
+        strokeLinecap="round"
+        style={{ cursor: "pointer", pointerEvents: "stroke" }}
+        onClick={handleClick}
+      />
       <path
         d={pathD}
         fill="none"
@@ -57,9 +75,10 @@ export function CorkboardThread({
         strokeLinecap="round"
         opacity={opacity}
         className={isActive ? "corkboard-thread-path--active" : "corkboard-thread-path"}
+        style={{ pointerEvents: "none" }}
       />
-      <circle cx={from.x} cy={from.y} r={3} fill={color} opacity={opacity * 0.8} />
-      <circle cx={to.x} cy={to.y} r={3} fill={color} opacity={opacity * 0.8} />
+      <circle cx={from.x} cy={from.y} r={3} fill={color} opacity={opacity * 0.8} style={{ pointerEvents: "none" }} />
+      <circle cx={to.x} cy={to.y} r={3} fill={color} opacity={opacity * 0.8} style={{ pointerEvents: "none" }} />
     </g>
   );
 }
@@ -71,6 +90,8 @@ interface CorkboardThreadLayerProps {
   visibility: { temporal: boolean; person: boolean; branch: boolean };
   width: number;
   height: number;
+  onThreadClick?: (thread: ThreadConnection) => void;
+  currentMemId: string | null;
 }
 
 export function CorkboardThreadLayer({
@@ -80,6 +101,8 @@ export function CorkboardThreadLayer({
   visibility,
   width,
   height,
+  onThreadClick,
+  currentMemId,
 }: CorkboardThreadLayerProps) {
   const pinById = new Map(pins.map((p) => [p.memoryId, p]));
 
@@ -96,6 +119,11 @@ export function CorkboardThreadLayer({
         const toPin = pinById.get(thread.to);
         if (!fromPin || !toPin) return null;
         if (!visibility[thread.type]) return null;
+
+        const isConnectedToCurrent =
+          currentMemId !== null &&
+          (thread.from === currentMemId || thread.to === currentMemId);
+
         return (
           <CorkboardThread
             key={thread.id}
@@ -104,7 +132,9 @@ export function CorkboardThreadLayer({
             type={thread.type}
             strength={thread.strength}
             isActive={thread.id === activeThreadId}
-            visible={true}
+            visible={isConnectedToCurrent || thread.id === activeThreadId}
+            onThreadClick={onThreadClick}
+            thread={thread}
           />
         );
       })}

@@ -12,14 +12,12 @@ import type { ApiMemory, ApiMemoryMediaItem, ApiPerson } from "../tree/treeTypes
 import type { DriftFilter } from "../tree/DriftMode";
 import type {
   CorkboardMemory,
-  PinPosition,
-  ThreadConnection,
   CameraState,
   ThreadVisibility,
   DetectedKind,
+  ThreadConnection,
 } from "./corkboardTypes";
 import {
-  CAMERA_TRANSITION_DURATION,
   DURATION_PHOTO,
   DURATION_STORY_MIN,
   DURATION_STORY_MAX,
@@ -29,19 +27,18 @@ import {
   REMEMBRANCE_PACING,
   SEEN_STORAGE_KEY_PREFIX,
   MAX_SEEN_ENTRIES,
-  IDLE_THRESHOLD_MS,
-  AMBIENT_DRIFT_SPEED,
   BOARD_ENTRY_DURATION,
-  PIN_EXPAND_DURATION,
-  PIN_CONTRACT_DURATION,
+  CAMERA_FOCUSED_ZOOM,
+  CAMERA_GLIDE_DURATION,
 } from "./corkboardAnimations";
 import {
   computePositions,
   computeConnections,
   computeSmartWeave,
   computeBoardSize,
-  computePinCenter,
+  findThreadBetween,
 } from "./CorkboardLayout";
+import { useCorkboardCamera } from "./useCorkboardCamera";
 import { CorkboardBackdrop } from "./CorkboardBackdrop";
 import { CorkboardPin } from "./CorkboardPin";
 import { CorkboardThreadLayer } from "./CorkboardThread";
@@ -159,8 +156,11 @@ export function CorkboardDrift({
   const [isPlaying, setIsPlaying] = useState(true);
   const [expandedPinId, setExpandedPinId] = useState<string | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [traverseLength, setTraverseLength] = useState(0);
+  const [currentMemId, setCurrentMemId] = useState<string | null>(null);
+  const [nextMemId, setNextMemId] = useState<string | null>(null);
   const [visitedIds, setVisitedIds] = useState<Set<string>>(new Set());
-  const [camera, setCamera] = useState<CameraState>({ x: 0, y: 0, zoom: 0.65 });
+  const [camera, setCameraState] = useState<CameraState>({ x: 0, y: 0, zoom: CAMERA_FOCUSED_ZOOM });
   const [isDragging, setIsDragging] = useState(false);
   const [threadVisibility, setThreadVisibility] = useState<ThreadVisibility>({
     temporal: true,
@@ -168,18 +168,15 @@ export function CorkboardDrift({
     branch: false,
   });
   const [pinsVisible, setPinsVisible] = useState(false);
+  const [containerSize, setContainerSize] = useState({ w: 1200, h: 800 });
 
   const traverseOrder = useRef<string[]>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const startedAtRef = useRef(0);
   const dragStartRef = useRef<{ x: number; y: number; cx: number; cy: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
-  const animCameraRef = useRef<CameraState>({ x: 0, y: 0, zoom: 0.65 });
-  const rafRef = useRef<number | null>(null);
-  const idleRafRef = useRef<number | null>(null);
-  const ambientAngleRef = useRef(Math.random() * Math.PI * 2);
-  const lastInteractionRef = useRef(Date.now());
+  const prevMemIdRef = useRef<string | null>(null);
+  const isGlideTransitionRef = useRef(false);
 
   const reduceMotion = useMemo(() => {
     if (typeof window === "undefined" || !window.matchMedia) return false;
@@ -187,6 +184,12 @@ export function CorkboardDrift({
   }, []);
 
   const isRemembrance = initialFilter?.mode === "remembrance";
+  const remembrancePersonId = isRemembrance ? initialFilter?.personId ?? null : null;
+
+  const remembrancePerson = useMemo(() => {
+    if (!remembrancePersonId) return null;
+    return people.find((p) => p.id === remembrancePersonId) ?? null;
+  }, [remembrancePersonId, people]);
 
   const pins = useMemo(() => {
     if (items.length === 0) return [];
@@ -214,20 +217,51 @@ export function CorkboardDrift({
     );
   }, [items, pins]);
 
+  const cameraControls = useCorkboardCamera(pins, threads, {
+    reduceMotion,
+    isPlaying,
+    isExpanded: expandedPinId !== null,
+    isDragging,
+  });
+
+  useEffect(() => {
+    cameraControls.setSetCamera(setCameraState);
+  }, [cameraControls.setSetCamera]);
+
   const boardSize = useMemo(() => computeBoardSize(pins.length), [pins.length]);
 
   const itemsById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
 
   const currentMemory = useMemo(() => {
-    const memId = traverseOrder.current[currentIndex];
-    if (!memId) return items[0] ?? null;
-    return itemsById.get(memId) ?? items[0] ?? null;
-  }, [currentIndex, items, itemsById]);
+    if (!currentMemId) return items[0] ?? null;
+    return itemsById.get(currentMemId) ?? items[0] ?? null;
+  }, [currentMemId, items, itemsById]);
 
-  const currentPin = useMemo(() => {
-    if (!currentMemory) return null;
-    return pins.find((p) => p.memoryId === currentMemory.id) ?? null;
-  }, [currentMemory, pins]);
+  const activeThreadId = useMemo(() => {
+    if (!currentMemId || !nextMemId) return null;
+    const conn = threads.find(
+      (t) => (t.from === currentMemId && t.to === nextMemId) || (t.from === nextMemId && t.to === currentMemId),
+    );
+    return conn?.id ?? null;
+  }, [currentMemId, nextMemId, threads]);
+
+  const markVisited = useCallback((memId: string) => {
+    setVisitedIds((prev) => {
+      if (prev.has(memId)) return prev;
+      return new Set([...prev, memId]);
+    });
+    const map = loadSeenMap(treeId);
+    map[memId] = Date.now();
+    persistSeenMap(treeId, map);
+  }, [treeId]);
+
+  const updateIndex = useCallback((newIndex: number) => {
+    setCurrentIndex(newIndex);
+    const memId = traverseOrder.current[newIndex];
+    if (memId) setCurrentMemId(memId);
+    const nextId = traverseOrder.current[newIndex + 1] ?? null;
+    setNextMemId(nextId);
+  }, []);
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -338,18 +372,20 @@ export function CorkboardDrift({
         seen,
       );
       traverseOrder.current = smartWeave;
-      setCurrentIndex(0);
+      setTraverseLength(smartWeave.length);
+      updateIndex(0);
+
+      if (smartWeave.length > 0) {
+        const firstMemId = smartWeave[0]!;
+        cameraControls.initCamera(firstMemId);
+        prevMemIdRef.current = firstMemId;
+        markVisited(firstMemId);
+      }
+
       setIsLoading(false);
     };
     fetchAll();
-  }, [treeId, people, apiBase, initialFilter]);
-
-  useEffect(() => {
-    if (pins.length === 0) return;
-    const center = computePinCenter(pins);
-    animCameraRef.current = { x: center.x, y: center.y, zoom: 0.65 };
-    setCamera({ x: center.x, y: center.y, zoom: 0.65 });
-  }, [pins]);
+  }, [treeId, people, apiBase, initialFilter, cameraControls, updateIndex, markVisited]);
 
   useEffect(() => {
     if (!isLoading && pins.length > 0) {
@@ -357,14 +393,6 @@ export function CorkboardDrift({
       return () => clearTimeout(t);
     }
   }, [isLoading, pins.length]);
-
-  useEffect(() => {
-    if (!currentMemory) return;
-    const map = loadSeenMap(treeId);
-    map[currentMemory.memory.id] = Date.now();
-    persistSeenMap(treeId, map);
-    setVisitedIds((prev) => new Set([...prev, currentMemory.memory.id]));
-  }, [currentMemory, treeId]);
 
   const computedDurationMs = useMemo(() => {
     if (!currentMemory) return DURATION_PHOTO;
@@ -383,79 +411,91 @@ export function CorkboardDrift({
   }, [currentMemory, isRemembrance]);
 
   const advance = useCallback(() => {
+    if (isGlideTransitionRef.current) return;
+    const len = traverseOrder.current.length;
     setCurrentIndex((i) => {
       const next = i + 1;
-      return next < traverseOrder.current.length ? next : 0;
+      const result = next >= len ? 0 : next;
+      const memId = traverseOrder.current[result];
+      if (memId) setCurrentMemId(memId);
+      setNextMemId(traverseOrder.current[result + 1] ?? null);
+      return result;
     });
   }, []);
 
   const stepBack = useCallback(() => {
+    if (isGlideTransitionRef.current) return;
+    const len = traverseOrder.current.length;
     setCurrentIndex((i) => {
       const prev = i - 1;
-      return prev >= 0 ? prev : traverseOrder.current.length - 1;
+      const result = prev < 0 ? len - 1 : prev;
+      const memId = traverseOrder.current[result];
+      if (memId) setCurrentMemId(memId);
+      setNextMemId(traverseOrder.current[result + 1] ?? null);
+      return result;
     });
   }, []);
+
+  const jumpNext = useCallback(() => {
+    if (isGlideTransitionRef.current) return;
+    const len = traverseOrder.current.length;
+    setCurrentIndex((i) => {
+      const next = i + 2;
+      const result = next >= len ? 0 : next;
+      const memId = traverseOrder.current[result];
+      if (memId) setCurrentMemId(memId);
+      setNextMemId(traverseOrder.current[result + 1] ?? null);
+      return result;
+    });
+  }, []);
+
+  const jumpPrev = useCallback(() => {
+    if (isGlideTransitionRef.current) return;
+    const len = traverseOrder.current.length;
+    setCurrentIndex((i) => {
+      const prev = i - 2;
+      const result = prev < 0 ? len - 1 : prev;
+      const memId = traverseOrder.current[result];
+      if (memId) setCurrentMemId(memId);
+      setNextMemId(traverseOrder.current[result + 1] ?? null);
+      return result;
+    });
+  }, []);
+
+  useEffect(() => {
+    const order = traverseOrder.current;
+    const curMemId = order[currentIndex];
+    const prevMemId = prevMemIdRef.current;
+
+    if (!curMemId || !prevMemId || curMemId === prevMemId) return;
+
+    const glideDuration = expandedPinId
+      ? CAMERA_GLIDE_DURATION * 1000 * 0.5
+      : CAMERA_GLIDE_DURATION * 1000;
+
+    isGlideTransitionRef.current = true;
+    cameraControls.glideToPin(prevMemId, curMemId, glideDuration);
+
+    const glideTimeout = setTimeout(() => {
+      isGlideTransitionRef.current = false;
+    }, glideDuration + 50);
+
+    prevMemIdRef.current = curMemId;
+    markVisited(curMemId);
+
+    return () => clearTimeout(glideTimeout);
+  }, [currentIndex, expandedPinId, cameraControls, markVisited]);
 
   useEffect(() => {
     if (!isPlaying || items.length === 0 || !currentMemory) return;
     if (expandedPinId && currentMemory.kind !== "video" && currentMemory.kind !== "audio") return;
 
-    startedAtRef.current = Date.now();
-    timerRef.current = setTimeout(advance, computedDurationMs);
+    const delay = computedDurationMs + CAMERA_GLIDE_DURATION * 1000;
+    timerRef.current = setTimeout(advance, delay);
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, [isPlaying, currentIndex, computedDurationMs, advance, items.length, expandedPinId, currentMemory]);
-
-  const animateCameraTo = useCallback((target: CameraState, durationMs?: number) => {
-    if (reduceMotion) {
-      animCameraRef.current = target;
-      setCamera(target);
-      return;
-    }
-    const start = { ...animCameraRef.current };
-    const duration = durationMs ?? CAMERA_TRANSITION_DURATION * 1000;
-    const startTime = performance.now();
-
-    if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
-
-    function tick(now: number) {
-      const elapsed = now - startTime;
-      const rawT = Math.min(1, elapsed / duration);
-      const t = 1 - Math.pow(1 - rawT, 3);
-
-      const next: CameraState = {
-        x: start.x + (target.x - start.x) * t,
-        y: start.y + (target.y - start.y) * t,
-        zoom: start.zoom + (target.zoom - start.zoom) * t,
-      };
-      animCameraRef.current = next;
-      setCamera(next);
-
-      if (rawT < 1) {
-        rafRef.current = requestAnimationFrame(tick);
-      } else {
-        rafRef.current = null;
-      }
-    }
-    rafRef.current = requestAnimationFrame(tick);
-  }, [reduceMotion]);
-
-  useEffect(() => {
-    if (!currentPin) return;
-    const target: CameraState = {
-      x: currentPin.x,
-      y: currentPin.y,
-      zoom: expandedPinId ? 1.0 : animCameraRef.current.zoom,
-    };
-    animateCameraTo(target, expandedPinId ? 600 : undefined);
-  }, [currentPin, expandedPinId, animateCameraTo]);
-
-  useEffect(() => {
-    return () => {
-      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
-    };
-  }, []);
 
   const handleExpand = useCallback((pinId: string) => {
     setExpandedPinId(pinId);
@@ -476,32 +516,28 @@ export function CorkboardDrift({
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     if (expandedPinId) return;
-    lastInteractionRef.current = Date.now();
-    if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+    cameraControls.cancelGlide();
+    cameraControls.touchInteraction();
     setIsDragging(true);
     dragStartRef.current = {
       x: e.clientX,
       y: e.clientY,
-      cx: animCameraRef.current.x,
-      cy: animCameraRef.current.y,
+      cx: cameraControls.cameraRef.current.x,
+      cy: cameraControls.cameraRef.current.y,
     };
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
-  }, [expandedPinId]);
+  }, [expandedPinId, cameraControls]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     if (!isDragging) return;
     const start = dragStartRef.current;
     if (!start) return;
-    const dx = (e.clientX - start.x) / animCameraRef.current.zoom;
-    const dy = (e.clientY - start.y) / animCameraRef.current.zoom;
-    const next: CameraState = {
-      ...animCameraRef.current,
-      x: start.cx - dx,
-      y: start.cy - dy,
-    };
-    animCameraRef.current = next;
-    setCamera(next);
-  }, [isDragging]);
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    cameraControls.panBy(dx, dy);
+    dragStartRef.current = { ...start, x: e.clientX, y: e.clientY };
+    cameraControls.touchInteraction();
+  }, [isDragging, cameraControls]);
 
   const handlePointerUp = useCallback(() => {
     setIsDragging(false);
@@ -513,63 +549,22 @@ export function CorkboardDrift({
     if (!el) return;
     const handler = (e: WheelEvent) => {
       e.preventDefault();
-      lastInteractionRef.current = Date.now();
+      cameraControls.touchInteraction();
 
-      const cur = animCameraRef.current;
       if (e.ctrlKey || e.metaKey) {
         const delta = -e.deltaY * 0.001;
         const factor = Math.pow(1.25, delta);
-        const nextZoom = Math.min(2.5, Math.max(0.3, cur.zoom * factor));
         const rect = el.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
         const mouseY = e.clientY - rect.top;
-        const zoomRatio = nextZoom / cur.zoom;
-        const nextX = cur.x + (mouseX / cur.zoom - mouseX / (cur.zoom * zoomRatio));
-        const nextY = cur.y + (mouseY / cur.zoom - mouseY / (cur.zoom * zoomRatio));
-        const next: CameraState = { x: nextX, y: nextY, zoom: nextZoom };
-        animCameraRef.current = next;
-        setCamera(next);
+        cameraControls.zoomBy(factor, mouseX, mouseY);
       } else {
-        const next: CameraState = {
-          ...cur,
-          x: cur.x + e.deltaX * 0.8 / cur.zoom,
-          y: cur.y + e.deltaY * 0.8 / cur.zoom,
-        };
-        animCameraRef.current = next;
-        setCamera(next);
+        cameraControls.panBy(e.deltaX * 0.8, e.deltaY * 0.8);
       }
     };
     el.addEventListener("wheel", handler, { passive: false });
     return () => el.removeEventListener("wheel", handler);
-  }, []);
-
-  useEffect(() => {
-    if (reduceMotion || isPlaying || expandedPinId || isDragging) return;
-    let running = true;
-    let lastTime = performance.now();
-    function drift(now: number) {
-      if (!running) return;
-      const dt = (now - lastTime) / 1000;
-      lastTime = now;
-      if (Date.now() - lastInteractionRef.current > IDLE_THRESHOLD_MS) {
-        const angle = ambientAngleRef.current;
-        const speed = AMBIENT_DRIFT_SPEED;
-        const next: CameraState = {
-          ...animCameraRef.current,
-          x: animCameraRef.current.x + Math.cos(angle) * speed * dt,
-          y: animCameraRef.current.y + Math.sin(angle) * speed * dt,
-        };
-        animCameraRef.current = next;
-        setCamera(next);
-      }
-      idleRafRef.current = requestAnimationFrame(drift);
-    }
-    idleRafRef.current = requestAnimationFrame(drift);
-    return () => {
-      running = false;
-      if (idleRafRef.current != null) cancelAnimationFrame(idleRafRef.current);
-    };
-  }, [reduceMotion, isPlaying, expandedPinId, isDragging]);
+  }, [cameraControls]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -583,12 +578,20 @@ export function CorkboardDrift({
       if (e.key === "ArrowRight") {
         e.preventDefault();
         if (expandedPinId) handleContract();
-        advance();
+        if (e.shiftKey) {
+          jumpNext();
+        } else {
+          advance();
+        }
       }
       if (e.key === "ArrowLeft") {
         e.preventDefault();
         if (expandedPinId) handleContract();
-        stepBack();
+        if (e.shiftKey) {
+          jumpPrev();
+        } else {
+          stepBack();
+        }
       }
       if (e.key === " ") {
         e.preventDefault();
@@ -597,40 +600,51 @@ export function CorkboardDrift({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onClose, advance, stepBack, expandedPinId, handleContract]);
+  }, [onClose, advance, stepBack, jumpNext, jumpPrev, expandedPinId, handleContract]);
 
-  const activeThreadId = useMemo(() => {
-    if (currentIndex < traverseOrder.current.length - 1 && traverseOrder.current.length > 1) {
-      const currentMemId = traverseOrder.current[currentIndex];
-      const nextMemId = traverseOrder.current[currentIndex + 1];
-      if (currentMemId && nextMemId) {
-        const conn = threads.find(
-          (t) => (t.from === currentMemId && t.to === nextMemId) || (t.from === nextMemId && t.to === currentMemId),
-        );
-        return conn?.id ?? null;
-      }
+  const handleThreadClick = useCallback((thread: ThreadConnection) => {
+    if (!currentMemId) return;
+    let targetMemId: string;
+    if (thread.from === currentMemId) {
+      targetMemId = thread.to;
+    } else if (thread.to === currentMemId) {
+      targetMemId = thread.from;
+    } else {
+      return;
     }
-    return null;
-  }, [currentIndex, threads]);
+    const idx = traverseOrder.current.indexOf(targetMemId);
+    if (idx >= 0) {
+      updateIndex(idx);
+    }
+  }, [currentMemId, updateIndex]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => setContainerSize({ w: el.clientWidth, h: el.clientHeight });
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const viewportTransform = useMemo(() => {
-    const el = containerRef.current;
-    const vpWidth = el ? el.clientWidth : (typeof window !== "undefined" ? window.innerWidth : 1200);
-    const vpHeight = el ? el.clientHeight : (typeof window !== "undefined" ? window.innerHeight : 800);
+    const vpWidth = containerSize.w;
+    const vpHeight = containerSize.h;
     return {
       transform: `translate3d(${vpWidth / 2 - camera.x * camera.zoom}px, ${vpHeight / 2 - camera.y * camera.zoom}px, 0) scale(${camera.zoom})`,
     };
-  }, [camera]);
+  }, [camera, containerSize]);
 
   const adjacentMemoryIds = useMemo(() => {
-    if (!currentMemory) return new Set<string>();
+    if (!currentMemId) return new Set<string>();
     const ids = new Set<string>();
     for (const t of threads) {
-      if (t.from === currentMemory.id) ids.add(t.to);
-      if (t.to === currentMemory.id) ids.add(t.from);
+      if (t.from === currentMemId) ids.add(t.to);
+      if (t.to === currentMemId) ids.add(t.from);
     }
     return ids;
-  }, [currentMemory, threads]);
+  }, [currentMemId, threads]);
 
   return (
     <motion.div
@@ -681,10 +695,10 @@ export function CorkboardDrift({
         </label>
       </div>
 
-      {isRemembrance && currentMemory && (
+      {isRemembrance && (remembrancePerson || currentMemory) && (
         <div className="corkboard-remembrance-header">
           <div className="corkboard-remembrance-label">In memory of</div>
-          <div className="corkboard-remembrance-name">{currentMemory.person.name}</div>
+          <div className="corkboard-remembrance-name">{remembrancePerson?.name ?? currentMemory?.person.name ?? ""}</div>
         </div>
       )}
 
@@ -706,15 +720,18 @@ export function CorkboardDrift({
             visibility={threadVisibility}
             width={boardSize.width}
             height={boardSize.height}
+            onThreadClick={handleThreadClick}
+            currentMemId={currentMemId}
           />
 
           {pins.map((pin, i) => {
             const mem = itemsById.get(pin.memoryId);
             if (!mem) return null;
+            const isCurrentPin = currentMemId === mem.id;
             const isExpanded = expandedPinId === pin.id;
             const isVisited = visitedIds.has(mem.id);
-            const isUnfocused = expandedPinId !== null && !isExpanded;
-            const isAdjacent = expandedPinId !== null && !isExpanded && adjacentMemoryIds.has(mem.id);
+            const isUnfocused = !isCurrentPin && !isExpanded;
+            const isAdjacent = isUnfocused && adjacentMemoryIds.has(mem.id);
 
             return (
               <CorkboardPin
@@ -722,6 +739,7 @@ export function CorkboardDrift({
                 pin={pin}
                 memory={mem}
                 isExpanded={isExpanded}
+                isCurrent={isCurrentPin}
                 isVisited={isVisited}
                 isUnfocused={isUnfocused}
                 isAdjacent={isAdjacent}
@@ -731,8 +749,6 @@ export function CorkboardDrift({
                 reduceMotion={reduceMotion}
                 delay={pinsVisible ? i * 60 : 0}
                 visible={pinsVisible}
-                cameraX={camera.x}
-                cameraY={camera.y}
                 onMediaEnded={isExpanded ? handleMediaEnded : undefined}
               />
             );
@@ -761,7 +777,7 @@ export function CorkboardDrift({
       <div className="corkboard-progress-track">
         <div
           className="corkboard-progress-fill"
-          style={{ width: `${(currentIndex / Math.max(1, traverseOrder.current.length - 1)) * 100}%` }}
+          style={{ width: `${(currentIndex / Math.max(1, traverseLength - 1)) * 100}%` }}
         />
       </div>
 
