@@ -10,7 +10,7 @@ const CAST_NAMESPACE = "urn:x-cast:com.tessera.drift";
 const CAST_APP_ID = process.env.NEXT_PUBLIC_CAST_APP_ID ?? "992F4393";
 
 export type DriftFilter = {
-  mode?: "remembrance";
+  mode?: "remembrance" | "corkboard";
   personId?: string;
   yearStart?: number;
   yearEnd?: number;
