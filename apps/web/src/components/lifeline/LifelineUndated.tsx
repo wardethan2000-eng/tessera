@@ -19,7 +19,7 @@ export function LifelineUndated({ memories, treeId, personId }: LifelineUndatedP
       <p className={styles.undatedSub}>
         Some memories arrive without a date. They belong here.
       </p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div className={styles.undatedList}>
         {memories.map((m) => (
           <LifelineMemoryCard
             key={m.id}

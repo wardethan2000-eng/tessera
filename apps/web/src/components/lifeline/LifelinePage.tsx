@@ -276,6 +276,7 @@ export function LifelinePageContent({
   }
 
   const hasContent = grouped.years.length > 0 || grouped.undated.length > 0;
+  const hasDatedTimeline = grouped.years.length > 0;
 
   return (
     <main className={styles.page}>
@@ -305,50 +306,56 @@ export function LifelinePageContent({
             </button>
           </div>
         ) : (
-          <div className={styles.twoColumnLayout}>
-            <LifelineEraRail
-              eraCounts={eraCounts}
-              activeEra={activeEra}
-              onEraClick={handleEraClick}
-            />
-            <div className={styles.timelineWrap}>
-              <div className={styles.spine} aria-hidden="true" />
-
-              {birthYear && (
-                <LifelineAnchorRow
-                  year={birthYear}
-                  label="Born"
-                  accent="var(--gilt)"
-                  detail={person.birthDateText ?? String(birthYear)}
+          <>
+            {hasDatedTimeline && (
+              <div className={styles.twoColumnLayout}>
+                <LifelineEraRail
+                  eraCounts={eraCounts}
+                  activeEra={activeEra}
+                  onEraClick={handleEraClick}
                 />
-              )}
+                <div className={styles.timelineWrap}>
+                  <div className={styles.spine} aria-hidden="true" />
 
-              {grouped.years.map((group) => (
-                <LifelineYearGroup
-                  key={group.year}
-                  group={group}
-                  treeId={treeId}
-                  personId={personId}
-                  birthYear={birthYear}
-                />
-              ))}
+                  {birthYear && (
+                    <LifelineAnchorRow
+                      year={birthYear}
+                      label="Born"
+                      accent="var(--gilt)"
+                      detail={person.birthDateText ?? String(birthYear)}
+                    />
+                  )}
 
-              {deathYear && (
-                <LifelineAnchorRow
-                  year={deathYear}
-                  label="Passed"
-                  accent="var(--lifeline-passed)"
-                  detail={person.deathDateText ?? String(deathYear)}
-                />
-              )}
+                  {grouped.years.map((group) => (
+                    <LifelineYearGroup
+                      key={group.year}
+                      group={group}
+                      treeId={treeId}
+                      personId={personId}
+                      birthYear={birthYear}
+                    />
+                  ))}
 
+                  {deathYear && (
+                    <LifelineAnchorRow
+                      year={deathYear}
+                      label="Passed"
+                      accent="var(--lifeline-passed)"
+                      detail={person.deathDateText ?? String(deathYear)}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className={hasDatedTimeline ? styles.undatedAfterTimeline : styles.undatedOnly}>
               <LifelineUndated
                 memories={grouped.undated}
                 treeId={treeId}
                 personId={personId}
               />
             </div>
-          </div>
+          </>
         )}
       </div>
 

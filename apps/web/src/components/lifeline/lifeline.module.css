@@ -779,9 +779,19 @@
 /* ─── Undated section ───────────────────────────────────────────────────── */
 
 .undatedSection {
-  margin-top: 40px;
+  margin-top: 0;
   padding-top: 24px;
   border-top: 1px solid var(--rule);
+}
+
+.undatedAfterTimeline {
+  max-width: 720px;
+  margin: 10px 0 0 184px;
+}
+
+.undatedOnly {
+  max-width: 720px;
+  margin: 44px 0 0;
 }
 
 .undatedHeading {
@@ -798,6 +808,20 @@
   font-style: italic;
   color: var(--ink-faded);
   margin: 0 0 16px;
+}
+
+.undatedList {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+@media (max-width: 767px) {
+  .undatedAfterTimeline,
+  .undatedOnly {
+    max-width: none;
+    margin-left: 0;
+  }
 }
 
 /* ─── Loading state ─────────────────────────────────────────────────────── */
