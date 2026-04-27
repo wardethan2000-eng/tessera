@@ -23,6 +23,7 @@ export function LifelineYearGroup({ group, treeId, personId, birthYear }: Lifeli
       id={`lifeline-year-${group.year}`}
       data-year={group.year}
       data-birth-year={birthYear ?? ""}
+      data-era={group.era?.label ?? ""}
       className={`${styles.yearGroup} ${visible ? styles.yearGroupVisible : ""}`}
     >
       <div className={styles.yearCol}>

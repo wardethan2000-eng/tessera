@@ -8,16 +8,34 @@ export function useScrollReveal(threshold = 0.16) {
     const el = ref.current;
     if (!el) return;
 
+    let cancelled = false;
+    const reveal = () => {
+      queueMicrotask(() => {
+        if (!cancelled) setVisible(true);
+      });
+    };
+
     const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (prefersReducedMotion) {
-      setVisible(true);
-      return;
+      reveal();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const rect = el.getBoundingClientRect();
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+    if (rect.top < viewportHeight && rect.bottom > 0) {
+      reveal();
+      return () => {
+        cancelled = true;
+      };
     }
 
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0]?.isIntersecting) {
-          setVisible(true);
+          reveal();
           observer.unobserve(el);
         }
       },
@@ -25,7 +43,10 @@ export function useScrollReveal(threshold = 0.16) {
     );
 
     observer.observe(el);
-    return () => observer.disconnect();
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+    };
   }, [threshold]);
 
   return { ref, visible };

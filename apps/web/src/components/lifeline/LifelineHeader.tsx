@@ -32,12 +32,12 @@ export function LifelineHeader({
             style={{ backgroundImage: `url(${person.portraitUrl})` }}
           />
           <div className={styles.portraitGradient} />
-          <div className={styles.portraitContent} style={{ width: "100%" }}>
+          <div className={styles.portraitContent}>
             <Link
-              href={`/trees/${treeId}/people/${personId}?section=lifeline`}
+              href={`/trees/${treeId}/people/${personId}?section=overview`}
               className={`${styles.backLink} ${styles.actionBtnOnPortrait}`}
             >
-              ← {person.displayName}
+              ← Back to {person.displayName}
             </Link>
             <h1 className={styles.nameOnPortrait}>{person.displayName}</h1>
             <p className={styles.datesOnPortrait}>
@@ -74,7 +74,7 @@ export function LifelineHeader({
   return (
     <header className={styles.header}>
       <Link
-        href={`/trees/${treeId}/people/${personId}?section=lifeline`}
+        href={`/trees/${treeId}/people/${personId}?section=overview`}
         className={styles.backLink}
       >
         ← Back to {person.displayName}

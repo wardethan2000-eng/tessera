@@ -50,25 +50,29 @@ export function LifelineMemoryCard({ memory, treeId, personId }: LifelineMemoryC
 
   if (memory.kind === "voice" && mediaUrl) {
     return (
-      <Link href={href} className={`${styles.voiceCard} ${isContextual ? styles.memoryCardContextual : ""}`}>
-        <div className={styles.voiceHeader}>
-          <div className={styles.voiceIcon}>
-            <span aria-hidden="true">{KIND_ICONS.voice}</span>
+      <article className={`${styles.voiceCard} ${isContextual ? styles.memoryCardContextual : ""}`}>
+        <Link href={href} className={styles.mediaCardLink}>
+          <div className={styles.voiceHeader}>
+            <div className={styles.voiceIcon}>
+              <span aria-hidden="true">{KIND_ICONS.voice}</span>
+            </div>
+            <span className={styles.voiceTitle}>{memory.title}</span>
           </div>
-          <span className={styles.voiceTitle}>{memory.title}</span>
-        </div>
-        <audio src={mediaUrl} controls className={styles.audioPlayer} preload="metadata" />
-        {memory.body && <p className={styles.voiceExcerpt}>{memory.body}</p>}
-        <div className={styles.cardMeta}>
-          <span className={styles.cardKind}>{KIND_LABELS.voice}</span>
-          {memory.dateOfEventText && (
-            <span className={styles.cardDate}>{memory.dateOfEventText}</span>
+        </Link>
+        <audio src={mediaUrl} controls className={styles.audioPlayer} preload="none" />
+        <Link href={href} className={styles.mediaCardLink}>
+          {memory.body && <p className={styles.voiceExcerpt}>{memory.body}</p>}
+          <div className={styles.cardMeta}>
+            <span className={styles.cardKind}>{KIND_LABELS.voice}</span>
+            {memory.dateOfEventText && (
+              <span className={styles.cardDate}>{memory.dateOfEventText}</span>
+            )}
+          </div>
+          {isContextual && memory.memoryReasonLabel && (
+            <span className={styles.contextBadge}>{memory.memoryReasonLabel}</span>
           )}
-        </div>
-        {isContextual && memory.memoryReasonLabel && (
-          <span className={styles.contextBadge}>{memory.memoryReasonLabel}</span>
-        )}
-      </Link>
+        </Link>
+      </article>
     );
   }
 
@@ -117,9 +121,9 @@ export function LifelineMemoryCard({ memory, treeId, personId }: LifelineMemoryC
 
   if (mediaUrl && isVideo) {
     return (
-      <Link href={href} className={`${styles.memoryCard} ${isContextual ? styles.memoryCardContextual : ""}`}>
-        <video src={mediaUrl} className={styles.videoPlayer} controls preload="metadata" />
-        <div style={{ padding: "10px 14px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
+      <article className={`${styles.memoryCard} ${isContextual ? styles.memoryCardContextual : ""}`}>
+        <video src={mediaUrl} className={styles.videoPlayer} controls preload="none" />
+        <Link href={href} className={styles.mediaCardLink} style={{ padding: "10px 14px 12px", gap: 4 }}>
           <div className={styles.cardMeta}>
             <span aria-hidden="true">{KIND_ICONS[memory.kind]}</span>
             <span className={styles.cardKind}>{KIND_LABELS[memory.kind]}</span>
@@ -133,8 +137,8 @@ export function LifelineMemoryCard({ memory, treeId, personId }: LifelineMemoryC
           {isContextual && memory.memoryReasonLabel && (
             <span className={styles.contextBadge}>{memory.memoryReasonLabel}</span>
           )}
-        </div>
-      </Link>
+        </Link>
+      </article>
     );
   }
 

@@ -41,6 +41,7 @@ export function LifelinePageContent({
 }) {
   const router = useRouter();
   const { data: session, isPending: sessionPending } = useSession();
+  const userId = session?.user?.id;
 
   const [person, setPerson] = useState<PersonApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -52,7 +53,37 @@ export function LifelinePageContent({
   const [driftOpen, setDriftOpen] = useState(false);
   const [driftFilter, setDriftFilter] = useState<DriftFilter | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
-  const [activeEra, setActiveEra] = useState<string | null>(null);
+
+  const loadPerson = useCallback(
+    async ({
+      signal,
+      showLoading = true,
+    }: {
+      signal?: AbortSignal;
+      showLoading?: boolean;
+    } = {}) => {
+      await Promise.resolve();
+      if (signal?.aborted) return;
+      if (showLoading) setLoading(true);
+      try {
+        const res = await fetch(`${API}/api/trees/${treeId}/people/${personId}`, {
+          credentials: "include",
+          signal,
+        });
+        if (!res.ok) throw new Error(`Could not load person (${res.status})`);
+        const data = (await res.json()) as PersonApiResponse;
+        if (signal?.aborted) return;
+        setPerson(data);
+        setLoadError(null);
+      } catch (err) {
+        if (signal?.aborted) return;
+        setLoadError(err instanceof Error ? err.message : "Could not load person");
+      } finally {
+        if (!signal?.aborted && showLoading) setLoading(false);
+      }
+    },
+    [treeId, personId]
+  );
 
   useEffect(() => {
     if (!sessionPending && !session) router.replace("/auth/signin");
@@ -60,7 +91,8 @@ export function LifelinePageContent({
 
   useEffect(() => {
     let cancelled = false;
-    if (sessionPending || !session) return;
+    const controller = new AbortController();
+    if (sessionPending || !userId) return;
     if (!isCanonicalTreeId(treeId)) {
       void (async () => {
         const resolved = await resolveCanonicalTreeId(API, treeId);
@@ -93,24 +125,16 @@ export function LifelinePageContent({
       })();
       return () => { cancelled = true; };
     }
-    setLoading(true);
-    fetch(`${API}/api/trees/${treeId}/people/${personId}`, { credentials: "include" })
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`Could not load person (${res.status})`);
-        return res.json();
-      })
-      .then((data: PersonApiResponse) => {
-        if (cancelled) return;
-        setPerson(data);
-        setLoading(false);
-      })
-      .catch((err: Error) => {
-        if (cancelled) return;
-        setLoadError(err.message);
-        setLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [treeId, personId, session, sessionPending, router]);
+    queueMicrotask(() => {
+      if (!controller.signal.aborted) {
+        void loadPerson({ signal: controller.signal });
+      }
+    });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [treeId, personId, userId, sessionPending, router, loadPerson]);
 
   const birthYear = useMemo(() => extractYear(person?.birthDateText), [person]);
   const deathYear = useMemo(() => extractYear(person?.deathDateText), [person]);
@@ -186,18 +210,13 @@ export function LifelinePageContent({
     [grouped.years]
   );
 
-  const detectedActiveEra = useActiveEra(yearElementIds);
-  useEffect(() => {
-    if (detectedActiveEra) setActiveEra(detectedActiveEra);
-  }, [detectedActiveEra]);
+  const activeEra = useActiveEra(yearElementIds);
 
   const handleEraClick = useCallback((eraLabel: string) => {
-    const target = document.querySelector(`[data-era="${eraLabel}"]`)
-      || document.getElementById(`lifeline-year-0`);
-    if (target) {
-      const yearEl = target.closest("[data-year]") || target;
-      (yearEl as HTMLElement).scrollIntoView?.({ behavior: "smooth", block: "start" });
-    }
+    const target = document.querySelector<HTMLElement>(
+      `[data-year][data-era="${CSS.escape(eraLabel)}"]`
+    );
+    target?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
   const openDrift = useCallback((filter?: DriftFilter | null) => {
@@ -256,7 +275,7 @@ export function LifelinePageContent({
     );
   }
 
-  const hasContent = grouped.years.length > 0 || grouped.undated.length > 0 || birthYear;
+  const hasContent = grouped.years.length > 0 || grouped.undated.length > 0;
 
   return (
     <main className={styles.page}>
@@ -301,7 +320,6 @@ export function LifelinePageContent({
                   label="Born"
                   accent="var(--gilt)"
                   detail={person.birthDateText ?? String(birthYear)}
-                  place={person.relationships?.[0]?.fromPerson?.displayName ?? null}
                 />
               )}
 
@@ -354,12 +372,7 @@ export function LifelinePageContent({
           onClose={() => setWizardOpen(false)}
           onSuccess={() => {
             setWizardOpen(false);
-            setLoading(true);
-            fetch(`${API}/api/trees/${treeId}/people/${personId}`, { credentials: "include" })
-              .then((res) => res.json())
-              .then((data: PersonApiResponse) => setPerson(data))
-              .catch(() => {})
-              .finally(() => setLoading(false));
+            void loadPerson();
           }}
           defaultPersonId={personId}
           subjectName={person.displayName}

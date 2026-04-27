@@ -7,38 +7,45 @@ export function useActiveEra(yearElementIds: string[]) {
   useEffect(() => {
     if (typeof IntersectionObserver === "undefined") return;
 
-    const observers: IntersectionObserver[] = [];
+    const intersecting = new Set<HTMLElement>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            intersecting.add(entry.target as HTMLElement);
+          } else {
+            intersecting.delete(entry.target as HTMLElement);
+          }
+        }
+
+        const top = [...intersecting].sort(
+          (a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top
+        )[0];
+
+        if (!top) {
+          setActiveEra(null);
+          return;
+        }
+
+        const year = Number(top.dataset.year);
+        const birthYear = Number(top.dataset.birthYear);
+        if (!Number.isFinite(year) || !Number.isFinite(birthYear)) return;
+
+        const age = year - birthYear;
+        const era = LIFELINE_ERAS.find(
+          (e) => age >= e.ageStart && age <= e.ageEnd
+        );
+        setActiveEra(era?.label ?? null);
+      },
+      { rootMargin: "-30% 0px -60% 0px" }
+    );
 
     for (const id of yearElementIds) {
       const el = document.getElementById(id);
-      if (!el) continue;
-
-      const observer = new IntersectionObserver(
-        (entries) => {
-          if (entries[0]?.isIntersecting) {
-            const yearAttr = el.dataset.year;
-            if (yearAttr) {
-              const year = Number(yearAttr);
-              const era = LIFELINE_ERAS.find((e) => {
-                const birthYearAttr = el.dataset.birthYear;
-                if (!birthYearAttr) return false;
-                const age = year - Number(birthYearAttr);
-                return age >= e.ageStart && age <= e.ageEnd;
-              });
-              if (era) setActiveEra(era.label);
-            }
-          }
-        },
-        { rootMargin: "-30% 0px -60% 0px" }
-      );
-
-      observer.observe(el);
-      observers.push(observer);
+      if (el) observer.observe(el);
     }
 
-    return () => {
-      for (const obs of observers) obs.disconnect();
-    };
+    return () => observer.disconnect();
   }, [yearElementIds]);
 
   return activeEra;
