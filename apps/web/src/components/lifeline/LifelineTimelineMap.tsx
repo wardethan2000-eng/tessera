@@ -47,19 +47,21 @@ export function LifelineTimelineMap({
 }: TimelineMapProps) {
   const timelineData = useMemo(() => {
     if (yearGroups.length === 0 && birthYear == null) return null;
-    const effectiveBirth = birthYear ?? Math.min(...yearGroups.map((g) => g.year));
-    const effectiveDeath = deathYear
-      ?? (isLiving ? new Date().getFullYear() : null);
-    const lastYear = effectiveDeath
-      ?? Math.max(...yearGroups.map((g) => g.year));
-    const totalYears = lastYear - effectiveBirth;
+
+    const hasBirthYear = birthYear != null;
+    const firstYear = hasBirthYear ? birthYear! : Math.min(...yearGroups.map((g) => g.year));
+    const endYear = deathYear ?? (isLiving ? new Date().getFullYear() : null);
+    const lastYear = endYear ?? Math.max(...yearGroups.map((g) => g.year));
+    const totalYears = lastYear - firstYear;
     if (totalYears <= 0) return null;
 
+    const safeTotal = totalYears > 0 ? totalYears : 1;
+
     const decades: DecadeMarker[] = [];
-    const start = Math.ceil(effectiveBirth / 10) * 10;
+    const start = Math.ceil(firstYear / 10) * 10;
     for (let y = start; y <= lastYear; y += 10) {
-      const age = y - effectiveBirth;
-      const era = eraForAge(age);
+      const age = hasBirthYear ? y - birthYear! : null;
+      const era = age !== null ? eraForAge(age) : null;
       const yearsInDecade = yearGroups.filter(
         (g) => g.year >= y && g.year < y + 10
       );
@@ -69,10 +71,10 @@ export function LifelineTimelineMap({
       );
       decades.push({
         year: y,
-        age,
-        pct: (age / totalYears) * 100,
-        hue: era.hue,
-        eraLabel: era.label,
+        age: age ?? 0,
+        pct: ((y - firstYear) / safeTotal) * 100,
+        hue: era?.hue ?? "var(--rule)",
+        eraLabel: era?.label ?? "",
         hasMemories: memoryCount > 0,
         memoryCount,
       });
@@ -82,162 +84,165 @@ export function LifelineTimelineMap({
       .filter((g) => g.memories.length > 0)
       .map((g) => ({
         year: g.year,
-        pct: ((g.year - effectiveBirth) / totalYears) * 100,
+        pct: ((g.year - firstYear) / safeTotal) * 100,
         hue: g.era?.hue ?? "var(--rule)",
       }));
 
     const eraSegments: EraSegment[] = [];
-    for (const era of LIFELINE_ERAS) {
-      if (era.ageStart > totalYears) break;
-      const startAge = era.ageStart;
-      const endAge = Math.min(era.ageEnd, totalYears);
-      eraSegments.push({
-        label: era.label,
-        hue: era.hue,
-        topPct: (startAge / totalYears) * 100,
-        heightPct: ((endAge - startAge) / totalYears) * 100,
-      });
+    if (hasBirthYear) {
+      for (const era of LIFELINE_ERAS) {
+        if (era.ageStart > safeTotal) break;
+        const startAge = era.ageStart;
+        const endAge = Math.min(era.ageEnd, safeTotal);
+        eraSegments.push({
+          label: era.label,
+          hue: era.hue,
+          topPct: (startAge / safeTotal) * 100,
+          heightPct: ((endAge - startAge) / safeTotal) * 100,
+        });
+      }
     }
 
-    return { decades, yearMarkers, eraSegments, totalYears, effectiveBirth, lastYear };
+    return { decades, yearMarkers, eraSegments, totalYears: safeTotal, firstYear, lastYear };
   }, [birthYear, deathYear, isLiving, yearGroups]);
 
   if (!timelineData) return null;
-  const { decades, yearMarkers, eraSegments, totalYears, effectiveBirth, lastYear } = timelineData;
-  const hasKnownBirth = birthYear != null;
-  const endYear = deathYear ?? new Date().getFullYear();
+  const { decades, yearMarkers, eraSegments, totalYears, firstYear, lastYear } = timelineData;
+  const hasBirthYear = birthYear != null;
+  const endYear = deathYear ?? (isLiving ? new Date().getFullYear() : lastYear);
 
   const minHeight = Math.max(400, (decades.length + 2) * 44);
 
   return (
-    <nav className={styles.timelineMap} aria-label="Lifeline timeline">
-      <div
-        className={styles.timelineMapTrack}
-        style={{ minHeight: `${minHeight}px` }}
-      >
-        {eraSegments.map((seg) => (
-          <div
-            key={seg.label}
-            className={styles.timelineEraBand}
-            style={{
-              top: `${seg.topPct}%`,
-              height: `${seg.heightPct}%`,
-              borderColor: seg.hue,
-            }}
-          />
-        ))}
-
-        <div className={styles.timelineMapLine} />
-
-        {hasKnownBirth && (
-          <button
-            className={`${styles.timelineMapMarker} ${styles.timelineMapMarkerAnchor}`}
-            style={{ top: "0%" }}
-            onClick={() => onDecadeClick(effectiveBirth)}
-            aria-label={`Born ${effectiveBirth}`}
-          >
-            <span
-              className={styles.timelineMapDot}
+    <>
+      <nav className={styles.timelineMap} aria-label="Lifeline timeline">
+        <div
+          className={styles.timelineMapTrack}
+          style={{ minHeight: `${minHeight}px` }}
+        >
+          {eraSegments.map((seg) => (
+            <div
+              key={seg.label}
+              className={styles.timelineEraBand}
               style={{
-                background: "var(--gilt)",
-                borderColor: "var(--gilt)",
+                top: `${seg.topPct}%`,
+                height: `${seg.heightPct}%`,
+                borderColor: seg.hue,
               }}
             />
-            <span className={styles.timelineMapYearLabel}>{effectiveBirth}</span>
-            <span className={styles.timelineMapEraTag}>Born</span>
-          </button>
-        )}
+          ))}
 
-        {decades.map((d) => {
-          const isActive =
-            activeYear !== null &&
-            activeYear >= d.year &&
-            activeYear < d.year + 10;
-          return (
+          <div className={styles.timelineMapLine} />
+
+          {hasBirthYear && (
             <button
-              key={d.year}
-              className={`${styles.timelineMapMarker} ${
-                isActive ? styles.timelineMapMarkerActive : ""
-              } ${
-                d.hasMemories ? styles.timelineMapMarkerHasContent : ""
-              }`}
-              style={{ top: `${d.pct}%` }}
-              onClick={() => onDecadeClick(d.year)}
-              aria-label={`${d.year}s \u2014 ${d.eraLabel}`}
+              className={`${styles.timelineMapMarker} ${styles.timelineMapMarkerAnchor}`}
+              style={{ top: "0%" }}
+              onClick={() => onDecadeClick(birthYear!)}
+              aria-label={`Born ${birthYear}`}
             >
               <span
                 className={styles.timelineMapDot}
                 style={{
-                  background: d.hasMemories ? d.hue : "var(--paper)",
-                  borderColor: d.hue,
+                  background: "var(--gilt)",
+                  borderColor: "var(--gilt)",
                 }}
               />
-              <span className={styles.timelineMapYearLabel}>{d.year}</span>
-              {isActive && (
-                <span
-                  className={styles.timelineMapEraTag}
-                  style={{ color: d.hue }}
-                >
-                  {d.eraLabel}
-                </span>
-              )}
+              <span className={styles.timelineMapYearLabel}>{birthYear}</span>
+              <span className={styles.timelineMapEraTag}>Born</span>
             </button>
-          );
-        })}
+          )}
 
-        {yearMarkers.map((m) => (
-          <div
-            key={`yr-${m.year}`}
-            className={styles.timelineMapYearDot}
-            style={{
-              top: `${m.pct}%`,
-              background: m.hue,
-            }}
-            title={String(m.year)}
-          />
-        ))}
+          {decades.map((d) => {
+            const isActive =
+              activeYear !== null &&
+              activeYear >= d.year &&
+              activeYear < d.year + 10;
+            return (
+              <button
+                key={d.year}
+                className={`${styles.timelineMapMarker} ${
+                  isActive ? styles.timelineMapMarkerActive : ""
+                } ${
+                  d.hasMemories ? styles.timelineMapMarkerHasContent : ""
+                }`}
+                style={{ top: `${d.pct}%` }}
+                onClick={() => onDecadeClick(d.year)}
+                aria-label={d.eraLabel ? `${d.year}s \u2014 ${d.eraLabel}` : `${d.year}s`}
+              >
+                <span
+                  className={styles.timelineMapDot}
+                  style={{
+                    background: d.hasMemories ? d.hue : "var(--paper)",
+                    borderColor: d.hue,
+                  }}
+                />
+                <span className={styles.timelineMapYearLabel}>{d.year}</span>
+                {isActive && d.eraLabel && (
+                  <span
+                    className={styles.timelineMapEraTag}
+                    style={{ color: d.hue }}
+                  >
+                    {d.eraLabel}
+                  </span>
+                )}
+              </button>
+            );
+          })}
 
-        <button
-          className={`${styles.timelineMapMarker} ${styles.timelineMapMarkerAnchor}`}
-          style={{ top: "100%" }}
-          onClick={() => onDecadeClick(endYear)}
-          aria-label={isLiving ? `Present \u2014 ${endYear}` : `Passed ${endYear}`}
-        >
-          <span
-            className={styles.timelineMapDot}
-            style={{
-              background: isLiving
-                ? "var(--moss)"
-                : "var(--lifeline-passed)",
-              borderColor: isLiving
-                ? "var(--moss)"
-                : "var(--lifeline-passed)",
-            }}
-          />
-          <span className={styles.timelineMapYearLabel}>{endYear}</span>
-          <span className={styles.timelineMapEraTag}>
-            {isLiving ? "Present" : "Passed"}
-          </span>
-        </button>
+          {yearMarkers.map((m) => (
+            <div
+              key={`yr-${m.year}`}
+              className={styles.timelineMapYearDot}
+              style={{
+                top: `${m.pct}%`,
+                background: m.hue,
+              }}
+              title={String(m.year)}
+            />
+          ))}
 
-{activeYear !== null &&
-            totalYears > 0 && (
-              <div
-                className={styles.timelineMapActiveIndicator}
-                style={{
-                  top: `${((activeYear - effectiveBirth) / totalYears) * 100}%`,
-                }}
-              />
-            )}
-      </div>
+          <button
+            className={`${styles.timelineMapMarker} ${styles.timelineMapMarkerAnchor}`}
+            style={{ top: "100%" }}
+            onClick={() => onDecadeClick(endYear)}
+            aria-label={isLiving ? `Present \u2014 ${endYear}` : `Passed ${endYear}`}
+          >
+            <span
+              className={styles.timelineMapDot}
+              style={{
+                background: isLiving
+                  ? "var(--moss)"
+                  : "var(--lifeline-passed)",
+                borderColor: isLiving
+                  ? "var(--moss)"
+                  : "var(--lifeline-passed)",
+              }}
+            />
+            <span className={styles.timelineMapYearLabel}>{endYear}</span>
+            <span className={styles.timelineMapEraTag}>
+              {isLiving ? "Present" : "Passed"}
+            </span>
+          </button>
+
+          {activeYear !== null && totalYears > 0 && (
+            <div
+              className={styles.timelineMapActiveIndicator}
+              style={{
+                top: `${((activeYear - firstYear) / totalYears) * 100}%`,
+              }}
+            />
+          )}
+        </div>
+      </nav>
 
       <div className={styles.timelineMapMobile}>
-        {hasKnownBirth && (
+        {hasBirthYear && (
           <button
             className={`${styles.timelineMapChip} ${styles.timelineMapChipAnchor}`}
-            onClick={() => onDecadeClick(effectiveBirth)}
+            onClick={() => onDecadeClick(birthYear!)}
           >
-            {effectiveBirth}
+            {birthYear}
           </button>
         )}
         {decades.map((d) => {
@@ -265,6 +270,6 @@ export function LifelineTimelineMap({
           {endYear}
         </button>
       </div>
-    </nav>
+    </>
   );
 }

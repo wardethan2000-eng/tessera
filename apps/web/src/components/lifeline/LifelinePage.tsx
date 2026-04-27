@@ -361,13 +361,23 @@ export function LifelinePageContent({
               </div>
             )}
 
-            <div className={hasDatedTimeline ? styles.undatedAfterTimeline : styles.undatedOnly}>
+            {!hasDatedTimeline && grouped.undated.length > 0 && (
               <LifelineUndated
                 memories={grouped.undated}
                 treeId={treeId}
                 personId={personId}
               />
-            </div>
+            )}
+
+            {hasDatedTimeline && grouped.undated.length > 0 && (
+              <div className={styles.undatedAfterTimeline}>
+                <LifelineUndated
+                  memories={grouped.undated}
+                  treeId={treeId}
+                  personId={personId}
+                />
+              </div>
+            )}
           </>
         )}
       </div>

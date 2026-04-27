@@ -59,7 +59,7 @@ export function LifelineMemoryCard({ memory, treeId, personId }: LifelineMemoryC
             <span className={styles.voiceTitle}>{memory.title}</span>
           </div>
         </Link>
-        <audio src={mediaUrl} controls className={styles.audioPlayer} preload="none" />
+        <audio src={mediaUrl} controls className={styles.audioPlayer} preload="none" onClick={(e) => e.stopPropagation()} />
         <Link href={href} className={styles.mediaCardLink}>
           {memory.body && <p className={styles.voiceExcerpt}>{memory.body}</p>}
           <div className={styles.cardMeta}>
@@ -122,7 +122,7 @@ export function LifelineMemoryCard({ memory, treeId, personId }: LifelineMemoryC
   if (mediaUrl && isVideo) {
     return (
       <article className={`${styles.memoryCard} ${isContextual ? styles.memoryCardContextual : ""}`}>
-        <video src={mediaUrl} className={styles.videoPlayer} controls preload="none" />
+        <video src={mediaUrl} className={styles.videoPlayer} controls preload="none" onClick={(e) => e.stopPropagation()} />
         <Link href={href} className={styles.mediaCardLink} style={{ padding: "10px 14px 12px", gap: 4 }}>
           <div className={styles.cardMeta}>
             <span aria-hidden="true">{KIND_ICONS[memory.kind]}</span>

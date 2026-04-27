@@ -1,8 +1,36 @@
 export function extractYear(text: string | null | undefined): number | null {
   if (!text) return null;
-  const matches = text.match(/\b(\d{4})\b/g);
-  if (!matches || matches.length === 0) return null;
-  return Number(matches[matches.length - 1]);
+  const trimmed = text.trim();
+  let m: RegExpMatchArray | null;
+
+  m = trimmed.match(/^(\d{4})-\d{2}-\d{2}/);
+  if (m) return Number(m[1]);
+
+  m = trimmed.match(/^\d{2}\/\d{2}\/(\d{4})$/);
+  if (m) return Number(m[1]);
+
+  m = trimmed.match(/^\d{1,2}\s+\w+\s+(\d{4})$/);
+  if (m) return Number(m[1]);
+
+  m = trimmed.match(/^\w+\s+\d{1,2},?\s+(\d{4})$/);
+  if (m) return Number(m[1]);
+
+  m = trimmed.match(/^(\d{4})$/);
+  if (m) return Number(m[1]);
+
+  const allFour = trimmed.match(/\b(\d{4})\b/g);
+  if (allFour && allFour.length > 0) return Number(allFour[0]);
+
+  const twoDigit = trimmed.match(/(?:^|\D)(\d{2})(?:\D|$)/g);
+  if (twoDigit) {
+    for (const frag of twoDigit) {
+      const num = parseInt(frag.replace(/\D/g, ""), 10);
+      const expanded = num > 50 ? 1900 + num : 2000 + num;
+      if (expanded >= 1800 && expanded <= new Date().getFullYear() + 1) return expanded;
+    }
+  }
+
+  return null;
 }
 
 export const LIFELINE_ERAS = [
