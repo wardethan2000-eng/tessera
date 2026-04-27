@@ -1,0 +1,872 @@
+/* ─── Page layout ───────────────────────────────────────────────────────── */
+
+.page {
+  min-height: 100vh;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.pageInner {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 0 24px 80px;
+}
+
+/* ─── Two-column layout (era rail + timeline) ─────────────────────────── */
+
+.twoColumnLayout {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 767px) {
+  .twoColumnLayout {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}
+
+/* ─── Header ───────────────────────────────────────────────────────────── */
+
+.header {
+  margin-bottom: 40px;
+}
+
+.portraitHeader {
+  position: relative;
+  min-height: 200px;
+  display: flex;
+  align-items: flex-end;
+  padding: 32px 24px;
+  margin: 0 -24px 24px;
+  overflow: hidden;
+}
+
+.portraitBg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  filter: brightness(0.6) sepia(0.15);
+  z-index: 0;
+}
+
+.portraitGradient {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(0deg, rgba(28,25,21,0.7) 0%, rgba(28,25,21,0.2) 60%, rgba(28,25,21,0.05) 100%);
+  z-index: 1;
+}
+
+.portraitContent {
+  position: relative;
+  z-index: 2;
+}
+
+.compactHeader {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 8px;
+}
+
+.compactPortrait {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--rule);
+  flex-shrink: 0;
+}
+
+.compactHeaderInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.backLink {
+  display: inline-block;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--ink-faded);
+  text-decoration: none;
+  margin-bottom: 12px;
+  transition: color var(--duration-micro) var(--ease-tessera);
+}
+
+.backLink:hover {
+  color: var(--ink);
+}
+
+.name {
+  font-family: var(--font-display);
+  font-size: 34px;
+  font-weight: 400;
+  line-height: 1.15;
+  margin: 0;
+}
+
+.nameOnPortrait {
+  color: #F6F1E7;
+  font-family: var(--font-display);
+  font-size: 34px;
+  font-weight: 400;
+  line-height: 1.15;
+  margin: 0;
+}
+
+.dates {
+  margin: 4px 0 0;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+
+.datesOnPortrait {
+  margin: 4px 0 0;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  color: rgba(246, 241, 231, 0.7);
+}
+
+.essence {
+  margin: 6px 0 0;
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-style: italic;
+  color: var(--ink-soft);
+}
+
+.essenceOnPortrait {
+  margin: 6px 0 0;
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-style: italic;
+  color: rgba(246, 241, 231, 0.65);
+}
+
+/* ─── Action buttons ────────────────────────────────────────────────────── */
+
+.actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.actionBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--rule);
+  background: var(--paper-deep);
+  color: var(--ink);
+  cursor: pointer;
+  text-decoration: none;
+  transition:
+    background var(--duration-micro) var(--ease-tessera),
+    border-color var(--duration-micro) var(--ease-tessera);
+}
+
+.actionBtn:hover {
+  background: var(--paper);
+  border-color: var(--ink-faded);
+}
+
+.actionBtn:focus-visible {
+  outline: 2px solid var(--moss);
+  outline-offset: 2px;
+}
+
+.actionBtnPrimary {
+  background: var(--moss);
+  color: #fff;
+  border-color: var(--moss);
+}
+
+.actionBtnPrimary:hover {
+  opacity: 0.88;
+  background: var(--moss);
+  border-color: var(--moss);
+}
+
+.actionBtnOnPortrait {
+  background: rgba(246, 241, 231, 0.15);
+  color: rgba(246, 241, 231, 0.85);
+  border-color: rgba(246, 241, 231, 0.25);
+  backdrop-filter: blur(4px);
+}
+
+.actionBtnOnPortrait:hover {
+  background: rgba(246, 241, 231, 0.25);
+  border-color: rgba(246, 241, 231, 0.35);
+}
+
+/* ─── Era rail (desktop sidebar) ────────────────────────────────────────── */
+
+.eraRail {
+  position: sticky;
+  top: 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 16px 0;
+}
+
+.eraRailItem {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--ink-faded);
+  padding: 6px 10px;
+  border-left: 2px solid transparent;
+  cursor: pointer;
+  background: none;
+  border-top: none;
+  border-right: none;
+  border-bottom: none;
+  text-align: left;
+  transition:
+    color var(--duration-micro) var(--ease-tessera),
+    border-color var(--duration-micro) var(--ease-tessera);
+}
+
+.eraRailItem:hover {
+  color: var(--ink-soft);
+}
+
+.eraRailItemActive {
+  color: var(--ink);
+  border-left-color: var(--moss);
+  font-weight: 600;
+}
+
+.eraRailCount {
+  font-size: 10px;
+  color: var(--ink-faded);
+  margin-left: 4px;
+}
+
+/* ─── Era ribbon (mobile horizontal) ───────────────────────────────────── */
+
+.eraRibbonMobile {
+  display: none;
+  overflow-x: auto;
+  gap: 6px;
+  padding: 12px 0;
+  margin-bottom: 16px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.eraRibbonMobile::-webkit-scrollbar {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .eraRibbonMobile {
+    display: flex;
+  }
+  .eraRail {
+    display: none;
+  }
+}
+
+.eraChip {
+  flex-shrink: 0;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+  background: var(--paper-deep);
+  color: var(--ink-faded);
+  cursor: pointer;
+  transition:
+    background var(--duration-micro) var(--ease-tessera),
+    color var(--duration-micro) var(--ease-tessera),
+    border-color var(--duration-micro) var(--ease-tessera);
+}
+
+.eraChip:hover {
+  color: var(--ink-soft);
+  border-color: var(--ink-faded);
+}
+
+.eraChipActive {
+  background: var(--moss);
+  color: #fff;
+  border-color: var(--moss);
+}
+
+/* ─── Timeline wrapper and spine ───────────────────────────────────────── */
+
+.timelineWrap {
+  position: relative;
+}
+
+.spine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 86px;
+  width: 2px;
+  background: linear-gradient(
+    to bottom,
+    var(--gilt),
+    var(--rule) 8%,
+    var(--rule) 92%,
+    var(--lifeline-passed)
+  );
+  border-radius: 1px;
+}
+
+/* ─── Year group ─────────────────────────────────────────────────────────── */
+
+.yearGroup {
+  position: relative;
+  display: grid;
+  grid-template-columns: 72px 24px 1fr;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 36px;
+  opacity: 0;
+  transform: translateY(12px);
+  transition:
+    opacity var(--duration-focus) var(--ease-tessera),
+    transform var(--duration-focus) var(--ease-tessera);
+}
+
+.yearGroupVisible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .yearGroup {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+.yearCol {
+  text-align: right;
+  padding-top: 6px;
+}
+
+.yearText {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--ink);
+  line-height: 1.1;
+}
+
+.ageLine {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--ink-faded);
+  line-height: 1.4;
+}
+
+.eraLabelInline {
+  color: var(--lifeline-mid-life);
+}
+
+.node {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--rule);
+  margin-top: 14px;
+  margin-left: 6px;
+  z-index: 1;
+  flex-shrink: 0;
+}
+
+.yearContent {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 4px;
+}
+
+/* ─── Anchor row (birth/death) ──────────────────────────────────────────── */
+
+.anchorRow {
+  position: relative;
+  display: grid;
+  grid-template-columns: 72px 24px 1fr;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 36px;
+  opacity: 0;
+  transform: translateY(12px);
+  transition:
+    opacity var(--duration-focus) var(--ease-tessera),
+    transform var(--duration-focus) var(--ease-tessera);
+}
+
+.anchorRowVisible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.anchorLabel {
+  display: block;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.anchorYear {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.1;
+}
+
+.anchorDetail {
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-style: italic;
+  color: var(--ink-soft);
+  padding-top: 8px;
+}
+
+.anchorPlace {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--ink-faded);
+}
+
+/* ─── Memory card ───────────────────────────────────────────────────────── */
+
+.memoryCard {
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper-deep);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  color: var(--ink);
+  text-decoration: none;
+  transition:
+    box-shadow var(--duration-micro) var(--ease-tessera),
+    border-color var(--duration-micro) var(--ease-tessera);
+}
+
+.memoryCard:hover {
+  border-color: var(--ink-faded);
+  box-shadow: 0 2px 12px var(--shadow);
+}
+
+.memoryCard:focus-visible {
+  outline: 2px solid var(--moss);
+  outline-offset: 2px;
+}
+
+.memoryCardContextual {
+  background: var(--paper);
+  border-left: 2px solid var(--rule);
+}
+
+/* ─── Photo card ────────────────────────────────────────────────────────── */
+
+.photoCard {
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper-deep);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  color: var(--ink);
+  text-decoration: none;
+  transition:
+    box-shadow var(--duration-micro) var(--ease-tessera),
+    border-color var(--duration-micro) var(--ease-tessera);
+}
+
+.photoCard:hover {
+  border-color: var(--ink-faded);
+  box-shadow: 0 2px 12px var(--shadow);
+}
+
+.photoCard:focus-visible {
+  outline: 2px solid var(--moss);
+  outline-offset: 2px;
+}
+
+.photoMatte {
+  padding: 16px 16px 0;
+  background: var(--paper);
+}
+
+.photoMatteImg {
+  width: 100%;
+  display: block;
+  box-shadow: inset 0 1px 3px var(--shadow);
+}
+
+.photoCardBody {
+  padding: 12px 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ─── Voice card ────────────────────────────────────────────────────────── */
+
+.voiceCard {
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper-deep);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  color: var(--ink);
+  text-decoration: none;
+  padding: 14px 16px;
+  gap: 8px;
+  transition:
+    box-shadow var(--duration-micro) var(--ease-tessera),
+    border-color var(--duration-micro) var(--ease-tessera);
+}
+
+.voiceCard:hover {
+  border-color: var(--ink-faded);
+  box-shadow: 0 2px 12px var(--shadow);
+}
+
+.voiceCard:focus-visible {
+  outline: 2px solid var(--moss);
+  outline-offset: 2px;
+}
+
+.voiceHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.voiceIcon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--moss);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #fff;
+  font-size: 14px;
+}
+
+.voiceTitle {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink);
+  line-height: 1.3;
+}
+
+.voiceExcerpt {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ─── Story card ────────────────────────────────────────────────────────── */
+
+.storyCard {
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper-deep);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  color: var(--ink);
+  text-decoration: none;
+  padding: 20px 24px;
+  gap: 10px;
+  transition:
+    box-shadow var(--duration-micro) var(--ease-tessera),
+    border-color var(--duration-micro) var(--ease-tessera);
+}
+
+.storyCard:hover {
+  border-color: var(--ink-faded);
+  box-shadow: 0 2px 12px var(--shadow);
+}
+
+.storyCard:focus-visible {
+  outline: 2px solid var(--moss);
+  outline-offset: 2px;
+}
+
+.storyTitle {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--ink);
+  line-height: 1.3;
+  margin: 0;
+}
+
+.storyBody {
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--ink-soft);
+  line-height: 1.65;
+  max-width: 460px;
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 0;
+}
+
+.storyContinue {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--ink-faded);
+  text-decoration: none;
+  transition: color var(--duration-micro) var(--ease-tessera);
+}
+
+.storyContinue:hover {
+  color: var(--ink);
+}
+
+/* ─── Document card ─────────────────────────────────────────────────────── */
+
+.documentCard {
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper-deep);
+  overflow: hidden;
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  color: var(--ink);
+  text-decoration: none;
+  padding: 14px;
+  transition:
+    box-shadow var(--duration-micro) var(--ease-tessera),
+    border-color var(--duration-micro) var(--ease-tessera);
+}
+
+.documentCard:hover {
+  border-color: var(--ink-faded);
+  box-shadow: 0 2px 12px var(--shadow);
+}
+
+.documentCard:focus-visible {
+  outline: 2px solid var(--moss);
+  outline-offset: 2px;
+}
+
+.documentThumb {
+  width: 64px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+  background: var(--paper);
+}
+
+.documentBody {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding-top: 2px;
+}
+
+/* ─── Shared card sub-elements ──────────────────────────────────────────── */
+
+.cardMeta {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--ink-faded);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cardKind {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.cardDate {
+  margin-left: auto;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.cardPlace {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--ink-faded);
+}
+
+.contextBadge {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  color: var(--ink-faded);
+  font-style: italic;
+}
+
+/* ─── Relationship event marker ─────────────────────────────────────────── */
+
+.relationshipMarker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.relationshipSymbol {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.relationshipPartnerLink {
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color var(--duration-micro) var(--ease-tessera);
+}
+
+.relationshipPartnerLink:hover {
+  color: var(--moss);
+}
+
+.relationshipDate {
+  color: var(--ink-faded);
+  font-size: 11px;
+}
+
+/* ─── Undated section ───────────────────────────────────────────────────── */
+
+.undatedSection {
+  margin-top: 40px;
+  padding-top: 24px;
+  border-top: 1px solid var(--rule);
+}
+
+.undatedHeading {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 400;
+  color: var(--ink-soft);
+  margin: 0 0 4px;
+}
+
+.undatedSub {
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-style: italic;
+  color: var(--ink-faded);
+  margin: 0 0 16px;
+}
+
+/* ─── Loading state ─────────────────────────────────────────────────────── */
+
+.loadingStack {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 32px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.loadingRow {
+  display: grid;
+  grid-template-columns: 72px 24px 1fr;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+/* ─── Error state ───────────────────────────────────────────────────────── */
+
+.error {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 32px 24px;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  color: var(--ink-faded);
+}
+
+/* ─── Empty state ───────────────────────────────────────────────────────── */
+
+.empty {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 80px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.emptyText {
+  font-family: var(--font-body);
+  font-size: 16px;
+  color: var(--ink-soft);
+  margin: 0;
+}
+
+.emptySubtext {
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-style: italic;
+  color: var(--ink-faded);
+  margin: 0;
+}
+
+/* ─── Video player ──────────────────────────────────────────────────────── */
+
+.videoPlayer {
+  width: 100%;
+  display: block;
+  background: var(--paper);
+}
+
+/* ─── Audio player in voice card ────────────────────────────────────────── */
+
+.audioPlayer {
+  width: 100%;
+  height: 32px;
+}

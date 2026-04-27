@@ -43,6 +43,15 @@
   --node-bg:     var(--paper-deep);
   --node-border: var(--rule);
 
+  /* Lifeline era hues */
+  --lifeline-childhood:    #C9A26A;
+  --lifeline-teen:         #A88B57;
+  --lifeline-young-adult:  #7A7A4F;
+  --lifeline-mid-life:     #4E5D42;
+  --lifeline-later:        #5C4F3A;
+  --lifeline-elder:        #3F3424;
+  --lifeline-passed:       #5C4F3A;
+
   /* Dark mode ambient */
   --star-glow:   rgba(180, 200, 255, 0.12);
 }
@@ -73,6 +82,15 @@
   --btn-shadow:  0 12px 26px rgba(0, 0, 0, 0.25);
   --node-bg:     #111527;
   --node-border: #2a3040;
+
+  /* Lifeline era hues (dark) */
+  --lifeline-childhood:    #d4b67e;
+  --lifeline-teen:         #c0a06a;
+  --lifeline-young-adult:  #a0a06a;
+  --lifeline-mid-life:     #8aaa6a;
+  --lifeline-later:        #8a7a60;
+  --lifeline-elder:        #6a5a44;
+  --lifeline-passed:       #8a7a60;
 }
 
 @theme inline {
