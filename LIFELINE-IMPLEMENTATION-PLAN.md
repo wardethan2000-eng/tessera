@@ -1,7 +1,7 @@
 # Lifeline (Personal Timeline) — Full Implementation Plan
 
 > **Drafted:** 2026-04-26
-> **Status:** Planning
+> **Status:** Phase 1 superseded — see `LIFELINE-PAGE-FIXES.md` for current fix list. Phases 2–7 are active planning.
 > **Scope:** Complete buildout of the personal timeline/lifeline feature, from fixing broken V1 to immersive, chapter-driven experience
 
 ---
@@ -114,6 +114,8 @@ Person Page
 ---
 
 ## 3. Phase 1 — Fix What's Broken
+
+> **Superseded.** This section described bugs in the original lifeline component. The V1 immersive redesign shipped in commit `274ad6c` and replaced that component entirely. Current bugs and fixes are tracked in `LIFELINE-PAGE-FIXES.md`, which is the authoritative fix list for the V1 build. Do not work from this section — use `LIFELINE-PAGE-FIXES.md` instead.
 
 **Goal:** Make the current lifeline page functional and consistent with the rest of the app. No new features — just fixing what's broken.
 

@@ -668,7 +668,7 @@ Allowed polish after the structural rewrite:
 - [x] hover/focus states (ongoing refinement)
 - [x] skeletons
 - [x] responsive tuning
-- [x] AtriumFamilyPresence wired into home page (was built but not rendered)
+- [ ] AtriumFamilyPresence wired into home page (built but not yet rendered — tracked in ATRIUM-AND-DISCOVERY-IMPROVEMENT-PLAN.md §1F as a "Ship Now" item)
 - [x] Today banner redesigned as "anteroom notice" with upcoming-day window
 - [x] Memory trail redesigned with depth-based sections (opening/branch/widening)
 - [x] Section thresholds (gilt-rule dividers) between major atrium sections
@@ -813,3 +813,9 @@ If an implementation still looks like:
 then the plan has **not** been followed, even if the styling is better.
 
 The objective is a different page shape, not a prettier version of the current one.
+
+---
+
+## Continuation
+
+Remaining work after Phase 7 — including AtriumFamilyPresence wiring, anniversary/birthday expansion, guided drift modes, life chapters, and visual immersion improvements — is tracked in `ATRIUM-AND-DISCOVERY-IMPROVEMENT-PLAN.md`. Use that document for all follow-on atrium work.
