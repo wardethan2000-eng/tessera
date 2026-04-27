@@ -152,10 +152,10 @@ To confirm the working directories:
 ssh -i ~/.ssh/proxmox_key ubuntu@192.168.68.110 'pwdx <pid>'
 ```
 
-Current verified live pids after corkboard drift camera-glide refactor on 2026-04-26:
+Current verified live pids after corkboard Revision 1 deploy on 2026-04-27:
 
-- API listener pid: `163412`
-- Web listener pid: `163413`
+- API listener pid: `171289`
+- Web listener pid: `171290`
 
 ## Historical Startup Shape On The App VM
 
@@ -258,8 +258,8 @@ This helper intentionally avoids `pkill -f "next start"` style matches, kills li
 - Previous live checkout: `/home/ubuntu/tessera-onboarding-live`
 - Previous live checkout: `/home/ubuntu/heirloom-media-fix-live`
 - Previous live checkout: `/home/ubuntu/heirloom-immersive-scroll-live`
-- Current live checkout: `/home/ubuntu/heirloom-corkboard-live`
-- Previous live checkout: `/home/ubuntu/heirloom-tree-aesthetic-live`
+- Current live checkout: `/home/ubuntu/heirloom-corkboard-rev1-live`
+- Previous live checkout: `/home/ubuntu/heirloom-corkboard-live`
 - Previous live checkout: `/home/ubuntu/heirloom-decade-rail-live`
 - Historical launcher script: `/home/ubuntu/start-heirloom.sh`
 - Backup directory on data VM: `~/familytree-backups`
