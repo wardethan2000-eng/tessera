@@ -49,7 +49,10 @@ export const CorkboardPin = memo(function CorkboardPin({
   visible,
   onMediaEnded,
 }: CorkboardPinProps) {
-  const resolvedMediaUrl = getProxiedMediaUrl(memory.primaryMedia?.mediaUrl ?? null);
+  const rawMediaUrl = memory.primaryMedia?.mediaUrl ?? memory.memory.mediaUrl ?? null;
+  const rawPreviewUrl = memory.primaryMedia?.linkedMediaPreviewUrl ?? rawMediaUrl;
+  const resolvedMediaUrl = getProxiedMediaUrl(rawMediaUrl);
+  const resolvedPreviewUrl = getProxiedMediaUrl(rawPreviewUrl);
   const kindLabel = formatKindLabel(memory.kind, memory.memory);
   const personName = memory.person.name;
   const dateText = memory.memory.dateOfEventText;
@@ -76,7 +79,7 @@ export const CorkboardPin = memo(function CorkboardPin({
   };
 
   const targetOpacity = isExpanded ? 1 : isUnfocused ? 0.35 : 1;
-  const targetScale = isExpanded ? 1.4 : pin.scale;
+  const targetScale = isExpanded ? 1 : pin.scale;
 
   const expandedRef = useRef<HTMLDivElement>(null);
 
@@ -142,14 +145,24 @@ export const CorkboardPin = memo(function CorkboardPin({
       <div className="corkboard-pin-content">
         {!isExpanded && (
           <>
-            {memory.kind === "image" && resolvedMediaUrl && (
+            {memory.kind === "image" && resolvedPreviewUrl && (
               <div className="corkboard-pin-photo">
-                <img src={resolvedMediaUrl} alt={title} loading="lazy" decoding="async" />
+                <img src={resolvedPreviewUrl} alt={title} loading="lazy" decoding="async" />
               </div>
             )}
-            {memory.kind === "video" && resolvedMediaUrl && (
-              <div className="corkboard-pin-video-icon" aria-hidden="true">
-                <span>&#9654;</span>
+            {memory.kind === "video" && (resolvedMediaUrl || resolvedPreviewUrl) && (
+              <div className="corkboard-pin-video-preview" aria-hidden="true">
+                {resolvedMediaUrl ? (
+                  <video src={resolvedMediaUrl} muted playsInline preload="metadata" />
+                ) : (
+                  resolvedPreviewUrl && <img src={resolvedPreviewUrl} alt="" loading="lazy" decoding="async" />
+                )}
+                <span className="corkboard-pin-video-play">&#9654;</span>
+              </div>
+            )}
+            {memory.kind === "link" && resolvedPreviewUrl && (
+              <div className="corkboard-pin-photo corkboard-pin-link-preview">
+                <img src={resolvedPreviewUrl} alt={title} loading="lazy" decoding="async" />
               </div>
             )}
             {memory.kind === "audio" && (
@@ -193,9 +206,9 @@ export const CorkboardPin = memo(function CorkboardPin({
               {dateText && <span className="corkboard-pin-expanded-date">{dateText}</span>}
             </div>
 
-            {memory.kind === "image" && resolvedMediaUrl && (
+            {memory.kind === "image" && resolvedPreviewUrl && (
               <div className="corkboard-pin-expanded-photo corkboard-ken-burns-photo">
-                <img src={resolvedMediaUrl} alt={title} />
+                <img src={resolvedPreviewUrl} alt={title} />
               </div>
             )}
 
@@ -208,8 +221,16 @@ export const CorkboardPin = memo(function CorkboardPin({
                 muted
                 controls
                 onEnded={onMediaEnded}
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
                 className="corkboard-pin-expanded-video"
               />
+            )}
+
+            {memory.kind === "video" && !resolvedMediaUrl && resolvedPreviewUrl && (
+              <div className="corkboard-pin-expanded-photo">
+                <img src={resolvedPreviewUrl} alt={title} />
+              </div>
             )}
 
             {memory.kind === "audio" && resolvedMediaUrl && (
@@ -232,6 +253,12 @@ export const CorkboardPin = memo(function CorkboardPin({
 
             {(memory.kind === "text" || memory.kind === "link") && memory.memory.body && (
               <p className="corkboard-pin-expanded-body">{memory.memory.body}</p>
+            )}
+
+            {memory.kind === "link" && resolvedPreviewUrl && (
+              <div className="corkboard-pin-expanded-photo">
+                <img src={resolvedPreviewUrl} alt={title} />
+              </div>
             )}
 
             {memory.kind === "link" && memory.primaryMedia?.linkedMediaOpenUrl && (

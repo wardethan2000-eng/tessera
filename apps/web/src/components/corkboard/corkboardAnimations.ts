@@ -1,10 +1,10 @@
 export const EASE_TESSERA: [number, number, number, number] = [0.22, 0.61, 0.36, 1];
 
 export const CAMERA_GLIDE_DURATION = 1.8;
-export const CAMERA_GLIDE_ZOOM_MID = 0.8;
-export const CAMERA_FOCUSED_ZOOM = 2.6;
+export const CAMERA_GLIDE_ZOOM_MID = 0.7;
+export const CAMERA_FOCUSED_ZOOM = 1.35;
 export const CAMERA_ZOOM_MIN = 0.3;
-export const CAMERA_ZOOM_MAX = 3.5;
+export const CAMERA_ZOOM_MAX = 2.4;
 export const PIN_EXPAND_DURATION = 0.6;
 export const PIN_CONTRACT_DURATION = 0.4;
 export const THREAD_PULSE_DURATION = 0.5;

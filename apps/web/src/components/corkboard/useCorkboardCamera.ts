@@ -125,14 +125,14 @@ export function useCorkboardCamera(
   );
 
   const jumpToPin = useCallback(
-    (memId: string) => {
+    (memId: string, zoom = CAMERA_FOCUSED_ZOOM) => {
       cancelGlide();
       const pin = pins.find((p) => p.memoryId === memId);
       if (!pin) return;
       const target: CameraState = {
         x: pin.x,
         y: pin.y,
-        zoom: CAMERA_FOCUSED_ZOOM,
+        zoom,
       };
 
       if (reduceMotion) {

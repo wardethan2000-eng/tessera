@@ -77,6 +77,7 @@ export function computePositions(
   };
 
   const center = { x: boardWidth / 2, y: boardHeight / 2 };
+  const personClusterRadius = Math.min(boardWidth, boardHeight) * 0.28;
 
   const personIds = [...new Set(memories.map((m) => m.primaryPersonId))];
   const sectorAngle = (2 * Math.PI) / Math.max(personIds.length, 1);
@@ -102,16 +103,23 @@ export function computePositions(
     });
 
     const baseAngle = personSectorStart.get(personId) ?? 0;
+    const clusterCenter = {
+      x: center.x + personClusterRadius * Math.cos(baseAngle),
+      y: center.y + personClusterRadius * Math.sin(baseAngle),
+    };
+    const localSlots = Math.min(Math.max(sorted.length, 1), 8);
 
     for (let i = 0; i < sorted.length; i++) {
       const memory = sorted[i]!;
       const dims = kindDimensions[memory.kind] ?? kindDimensions["text"]!;
 
-      const spiralAngle = baseAngle + i * 0.35;
-      const spiralRadius = 180 + i * (PIN_MIN_SPACING * 1.4);
+      const ring = Math.floor(i / localSlots);
+      const localIndex = i % localSlots;
+      const localAngle = baseAngle + (localIndex / localSlots) * Math.PI * 2;
+      const localRadius = sorted.length === 1 ? 0 : 360 + ring * PIN_MIN_SPACING;
 
-      const baseX = center.x + spiralRadius * Math.cos(spiralAngle);
-      const baseY = center.y + spiralRadius * Math.sin(spiralAngle);
+      const baseX = clusterCenter.x + localRadius * Math.cos(localAngle);
+      const baseY = clusterCenter.y + localRadius * Math.sin(localAngle);
 
       const jitterX = (rng() - 0.5) * 2 * PIN_JITTER_RANGE;
       const jitterY = (rng() - 0.5) * 2 * PIN_JITTER_RANGE;

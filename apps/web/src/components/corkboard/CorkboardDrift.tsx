@@ -135,6 +135,13 @@ function readingTimeMs(text: string | null | undefined): number {
   return Math.min(DURATION_STORY_MAX, Math.max(DURATION_STORY_MIN, ms));
 }
 
+function expandedCardZoom(containerSize: { w: number; h: number }): number {
+  const horizontalFit = (containerSize.w - 96) / 560;
+  const verticalFit = (containerSize.h - 180) / 640;
+  const fit = Math.min(horizontalFit, verticalFit, 1.15);
+  return Math.max(0.65, fit);
+}
+
 export function CorkboardDrift({
   treeId,
   people,
@@ -237,10 +244,11 @@ export function CorkboardDrift({
     isExpanded: expandedPinId !== null,
     isDragging,
   });
+  const setCameraCallback = cameraControls.setSetCamera;
 
   useEffect(() => {
-    cameraControls.setSetCamera(setCameraState);
-  }, [cameraControls.setSetCamera]);
+    setCameraCallback(setCameraState);
+  }, [setCameraCallback]);
 
   const boardSize = useMemo(() => computeBoardSize(pins.length), [pins.length]);
 
@@ -402,10 +410,6 @@ export function CorkboardDrift({
       setIsLoading(false);
     };
     fetchAll();
-    // We deliberately exclude `cameraControls`: it's a fresh object each
-    // render, and listing it would re-fire fetch on every state change.
-    // Camera centering is handled by a dedicated effect below.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [treeId, people, apiBase, initialFilter, updateIndex, markVisited]);
 
   // Center the camera on the start pin once pins are computed and ready.
@@ -533,15 +537,22 @@ export function CorkboardDrift({
   const handleExpand = useCallback((pinId: string) => {
     setExpandedPinId(pinId);
     if (timerRef.current) clearTimeout(timerRef.current);
-  }, []);
+    const pin = pins.find((p) => p.id === pinId);
+    if (pin) {
+      cameraControls.jumpToPin(pin.memoryId, expandedCardZoom(containerSize));
+    }
+  }, [cameraControls, containerSize, pins]);
 
   const handleContract = useCallback(() => {
     setExpandedPinId(null);
+    if (currentMemId) {
+      cameraControls.jumpToPin(currentMemId);
+    }
     requestAnimationFrame(() => {
       const el = document.querySelector<HTMLElement>(".corkboard-pin--current");
       if (el) el.focus();
     });
-  }, []);
+  }, [cameraControls, currentMemId]);
 
   const handlePinSelect = useCallback((memId: string) => {
     if (isGlideTransitionRef.current) return;
