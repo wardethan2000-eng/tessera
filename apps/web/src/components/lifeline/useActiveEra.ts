@@ -1,8 +1,14 @@
 import { useEffect, useState } from "react";
 import { LIFELINE_ERAS } from "@/lib/date-utils";
 
-export function useActiveEra(yearElementIds: string[]) {
-  const [activeEra, setActiveEra] = useState<string | null>(null);
+export function useActiveEra(yearElementIds: string[]): {
+  era: string | null;
+  year: number | null;
+} {
+  const [active, setActive] = useState<{ era: string | null; year: number | null }>({
+    era: null,
+    year: null,
+  });
 
   useEffect(() => {
     if (typeof IntersectionObserver === "undefined") return;
@@ -23,7 +29,7 @@ export function useActiveEra(yearElementIds: string[]) {
         )[0];
 
         if (!top) {
-          setActiveEra(null);
+          setActive({ era: null, year: null });
           return;
         }
 
@@ -35,7 +41,7 @@ export function useActiveEra(yearElementIds: string[]) {
         const era = LIFELINE_ERAS.find(
           (e) => age >= e.ageStart && age <= e.ageEnd
         );
-        setActiveEra(era?.label ?? null);
+        setActive({ era: era?.label ?? null, year });
       },
       { rootMargin: "-30% 0px -60% 0px" }
     );
@@ -48,5 +54,5 @@ export function useActiveEra(yearElementIds: string[]) {
     return () => observer.disconnect();
   }, [yearElementIds]);
 
-  return activeEra;
+  return active;
 }

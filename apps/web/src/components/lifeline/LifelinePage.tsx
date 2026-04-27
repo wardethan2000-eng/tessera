@@ -9,13 +9,13 @@ import {
   resolveCanonicalPersonId,
   resolveCanonicalTreeId,
 } from "@/lib/tree-route";
-import { extractYear, eraForAge, LIFELINE_ERAS } from "@/lib/date-utils";
+import { extractYear, eraForAge } from "@/lib/date-utils";
 import { getApiBase } from "@/lib/api-base";
 import { Shimmer } from "@/components/ui/Shimmer";
 
 import type { LifelinePerson, LifelineMemory, LifelineRelationshipEvent, LifelineYearGroup as LifelineYearGroupType } from "./lifelineTypes";
 import { LifelineHeader } from "./LifelineHeader";
-import { LifelineEraRail } from "./LifelineEraRail";
+import { LifelineTimelineMap } from "./LifelineTimelineMap";
 import { LifelineAnchorRow } from "./LifelineAnchorRow";
 import { LifelineYearGroup } from "./LifelineYearGroup";
 import { LifelineUndated } from "./LifelineUndated";
@@ -197,27 +197,37 @@ export function LifelinePageContent({
     return { years, undated };
   }, [person]);
 
-  const eraCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const era of LIFELINE_ERAS) counts[era.label] = 0;
-    for (const group of grouped.years) {
-      if (group.era) counts[group.era.label] = (counts[group.era.label] ?? 0) + group.memories.length;
+  const handleDecadeClick = useCallback((targetYear: number) => {
+    if (targetYear === birthYear) {
+      const el = document.getElementById("lifeline-anchor-born");
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+      }
     }
-    return counts;
-  }, [grouped.years]);
+    if (deathYear && targetYear >= deathYear) {
+      const el = document.getElementById("lifeline-anchor-passed");
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+      }
+    }
+    const target = grouped.years.find((g) => g.year >= targetYear && g.year < targetYear + 10);
+    if (target) {
+      const el = document.getElementById(`lifeline-year-${target.year}`);
+      el?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else if (grouped.years.length > 0) {
+      const last = grouped.years[grouped.years.length - 1]!;
+      const el = document.getElementById(`lifeline-year-${last.year}`);
+      el?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [birthYear, deathYear, grouped.years]);
   const yearElementIds = useMemo(
     () => grouped.years.map((g) => `lifeline-year-${g.year}`),
     [grouped.years]
   );
 
-  const activeEra = useActiveEra(yearElementIds);
-
-  const handleEraClick = useCallback((eraLabel: string) => {
-    const target = document.querySelector<HTMLElement>(
-      `[data-year][data-era="${CSS.escape(eraLabel)}"]`
-    );
-    target?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, []);
+  const activePosition = useActiveEra(yearElementIds);
 
   const openDrift = useCallback((filter?: DriftFilter | null) => {
     setDriftFilter(filter ?? null);
@@ -309,10 +319,13 @@ export function LifelinePageContent({
           <>
             {hasDatedTimeline && (
               <div className={styles.twoColumnLayout}>
-                <LifelineEraRail
-                  eraCounts={eraCounts}
-                  activeEra={activeEra}
-                  onEraClick={handleEraClick}
+                <LifelineTimelineMap
+                  birthYear={birthYear}
+                  deathYear={deathYear}
+                  isLiving={person.isLiving}
+                  yearGroups={grouped.years}
+                  activeYear={activePosition.year}
+                  onDecadeClick={handleDecadeClick}
                 />
                 <div className={styles.timelineWrap}>
                   <div className={styles.spine} aria-hidden="true" />

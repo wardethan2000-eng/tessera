@@ -16,7 +16,7 @@
 
 .twoColumnLayout {
   display: grid;
-  grid-template-columns: 160px 1fr;
+  grid-template-columns: 200px 1fr;
   gap: 24px;
   align-items: start;
 }
@@ -209,53 +209,151 @@
   border-color: rgba(246, 241, 231, 0.35);
 }
 
-/* ─── Era rail (desktop sidebar) ────────────────────────────────────────── */
+/* ─── Timeline map (desktop sidebar) ────────────────────────────────────── */
 
-.eraRail {
+.timelineMap {
   position: sticky;
-  top: 120px;
+  top: 80px;
+  padding: 0 0 24px;
+}
+
+.timelineMapTrack {
+  position: relative;
+  height: calc(100vh - 140px);
+  min-height: 400px;
+}
+
+.timelineMapLine {
+  position: absolute;
+  left: 20px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: linear-gradient(
+    to bottom,
+    var(--gilt),
+    var(--rule) 8%,
+    var(--rule) 92%,
+    var(--lifeline-passed)
+  );
+  border-radius: 1px;
+}
+
+.timelineEraBand {
+  position: absolute;
+  left: 16px;
+  width: 10px;
+  border-left: 3px solid;
+  opacity: 0.25;
+  border-radius: 1px;
+  transition: opacity var(--duration-micro) var(--ease-tessera);
+}
+
+.timelineMap:hover .timelineEraBand {
+  opacity: 0.45;
+}
+
+.timelineMapMarker {
+  position: absolute;
+  left: 0;
   display: flex;
-  flex-direction: column;
-  gap: 0;
-  padding: 16px 0;
-}
-
-.eraRailItem {
-  font-family: var(--font-ui);
-  font-size: 12px;
-  color: var(--ink-faded);
-  padding: 6px 10px;
-  border-left: 2px solid transparent;
-  cursor: pointer;
+  align-items: center;
+  gap: 6px;
   background: none;
-  border-top: none;
-  border-right: none;
-  border-bottom: none;
-  text-align: left;
-  transition:
-    color var(--duration-micro) var(--ease-tessera),
-    border-color var(--duration-micro) var(--ease-tessera);
+  border: none;
+  cursor: pointer;
+  padding: 2px 0;
+  transform: translateY(-50%);
+  z-index: 1;
+  transition: transform var(--duration-micro) var(--ease-tessera);
+  white-space: nowrap;
 }
 
-.eraRailItem:hover {
-  color: var(--ink-soft);
-}
-
-.eraRailItemActive {
+.timelineMapMarker:hover .timelineMapYearLabel {
   color: var(--ink);
-  border-left-color: var(--moss);
-  font-weight: 600;
 }
 
-.eraRailCount {
-  font-size: 10px;
+.timelineMapMarker:hover .timelineMapDot {
+  transform: scale(1.15);
+}
+
+.timelineMapMarkerAnchor {
+  font-weight: 500;
+}
+
+.timelineMapMarkerActive {
+  font-weight: 500;
+}
+
+.timelineMapMarkerActive .timelineMapDot {
+  box-shadow: 0 0 0 3px var(--paper), 0 0 0 5px var(--moss);
+  transform: scale(1.1);
+}
+
+.timelineMapMarkerActive .timelineMapYearLabel {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.timelineMapMarkerHasContent .timelineMapDot {
+  background: var(--lifeline-mid-life);
+}
+
+.timelineMapDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--rule);
+  background: var(--paper);
+  flex-shrink: 0;
+  transition:
+    background var(--duration-micro) var(--ease-tessera),
+    border-color var(--duration-micro) var(--ease-tessera),
+    transform var(--duration-micro) var(--ease-tessera),
+    box-shadow var(--duration-micro) var(--ease-tessera);
+}
+
+.timelineMapYearLabel {
+  font-family: var(--font-display);
+  font-size: 14px;
   color: var(--ink-faded);
-  margin-left: 4px;
+  min-width: 36px;
+  transition: color var(--duration-micro) var(--ease-tessera);
 }
 
-/* ─── Era ribbon (mobile horizontal) ───────────────────────────────────── */
+.timelineMapEraTag {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--ink-faded);
+  white-space: nowrap;
+}
 
-.eraRibbonMobile {
+.timelineMapYearDot {
+  position: absolute;
+  left: 17px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  opacity: 0.55;
+  z-index: 1;
+}
+
+.timelineMapActiveIndicator {
+  position: absolute;
+  left: 14px;
+  width: 14px;
+  height: 3px;
+  background: var(--moss);
+  border-radius: 2px;
+  transform: translateY(-50%);
+  z-index: 2;
+  box-shadow: 0 0 6px var(--moss);
+  transition: top 0.15s ease-out;
+}
+
+/* ─── Timeline map (mobile horizontal) ──────────────────────────────────── */
+
+.timelineMapMobile {
   display: none;
   overflow-x: auto;
   gap: 6px;
@@ -265,23 +363,23 @@
   scrollbar-width: none;
 }
 
-.eraRibbonMobile::-webkit-scrollbar {
+.timelineMapMobile::-webkit-scrollbar {
   display: none;
 }
 
 @media (max-width: 767px) {
-  .eraRibbonMobile {
+  .timelineMapMobile {
     display: flex;
   }
-  .eraRail {
+  .timelineMap {
     display: none;
   }
 }
 
-.eraChip {
+.timelineMapChip {
   flex-shrink: 0;
-  font-family: var(--font-ui);
-  font-size: 12px;
+  font-family: var(--font-display);
+  font-size: 13px;
   padding: 5px 12px;
   border-radius: 999px;
   border: 1px solid var(--rule);
@@ -294,15 +392,19 @@
     border-color var(--duration-micro) var(--ease-tessera);
 }
 
-.eraChip:hover {
+.timelineMapChip:hover {
   color: var(--ink-soft);
   border-color: var(--ink-faded);
 }
 
-.eraChipActive {
+.timelineMapChipActive {
   background: var(--moss);
   color: #fff;
   border-color: var(--moss);
+}
+
+.timelineMapChipHasContent {
+  font-weight: 500;
 }
 
 /* ─── Timeline wrapper and spine ───────────────────────────────────────── */
