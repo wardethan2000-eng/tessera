@@ -24,7 +24,7 @@ export interface PinPosition {
   isStartPin: boolean;
 }
 
-export type ThreadType = "temporal" | "person" | "branch";
+export type ThreadType = "temporal" | "person" | "branch" | "era" | "co-subject" | "place";
 
 export interface ThreadConnection {
   id: string;
@@ -51,6 +51,8 @@ export type ThreadVisibility = {
   temporal: boolean;
   person: boolean;
   branch: boolean;
+  era: boolean;
+  place: boolean;
 };
 
 export interface CorkboardDriftProps {

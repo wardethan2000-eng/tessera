@@ -6,6 +6,8 @@ import {
   CAMERA_GLIDE_DURATION,
   CAMERA_GLIDE_ZOOM_MID,
   CAMERA_FOCUSED_ZOOM,
+  CAMERA_ZOOM_MIN,
+  CAMERA_ZOOM_MAX,
   AMBIENT_DRIFT_SPEED,
   IDLE_THRESHOLD_MS,
 } from "./corkboardAnimations";
@@ -200,7 +202,7 @@ export function useCorkboardCamera(
       cancelGlide();
       lastInteraction.current = Date.now();
       const cur = cameraRef.current;
-      const nextZoom = Math.min(2.5, Math.max(0.3, cur.zoom * factor));
+      const nextZoom = Math.min(CAMERA_ZOOM_MAX, Math.max(CAMERA_ZOOM_MIN, cur.zoom * factor));
       const zoomRatio = nextZoom / cur.zoom;
       const nextX = cur.x + (mouseX / cur.zoom - mouseX / (cur.zoom * zoomRatio));
       const nextY = cur.y + (mouseY / cur.zoom - mouseY / (cur.zoom * zoomRatio));

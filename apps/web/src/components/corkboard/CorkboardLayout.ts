@@ -2,9 +2,11 @@ import type { PinPosition, ThreadConnection, ThreadType, BezierControlPoints } f
 import {
   PIN_ROTATION_RANGE,
   PIN_MIN_SPACING,
+  PIN_JITTER_RANGE,
   BOARD_PADDING,
   BOARD_BASE_WIDTH,
   BOARD_BASE_HEIGHT,
+  MAX_OUTGOING_THREADS_PER_PIN,
 } from "./corkboardAnimations";
 
 interface MemoryLike {
@@ -13,6 +15,10 @@ interface MemoryLike {
   dateOfEventText?: string | null;
   kind: string;
   branchId?: string | null;
+  body?: string | null;
+  title?: string | null;
+  transcriptText?: string | null;
+  placeId?: string | null;
 }
 
 function mulberry32(seedInput: number) {
@@ -56,8 +62,8 @@ export function computePositions(
 
   const rng = mulberry32(seedFromString(seed));
   const count = memories.length;
-  const boardWidth = Math.max(BOARD_BASE_WIDTH, count * 80);
-  const boardHeight = Math.max(BOARD_BASE_HEIGHT, count * 60);
+  const boardWidth = Math.max(BOARD_BASE_WIDTH, count * 220);
+  const boardHeight = Math.max(BOARD_BASE_HEIGHT, count * 165);
 
   const kindDimensions: Record<string, { width: number; height: number; scale: number }> = {
     image: { width: 220, height: 280, scale: 1.0 },
@@ -102,13 +108,13 @@ export function computePositions(
       const dims = kindDimensions[memory.kind] ?? kindDimensions["text"]!;
 
       const spiralAngle = baseAngle + i * 0.35;
-      const spiralRadius = 180 + i * (PIN_MIN_SPACING * 0.85);
+      const spiralRadius = 180 + i * (PIN_MIN_SPACING * 1.4);
 
       const baseX = center.x + spiralRadius * Math.cos(spiralAngle);
       const baseY = center.y + spiralRadius * Math.sin(spiralAngle);
 
-      const jitterX = (rng() - 0.5) * 80;
-      const jitterY = (rng() - 0.5) * 80;
+      const jitterX = (rng() - 0.5) * 2 * PIN_JITTER_RANGE;
+      const jitterY = (rng() - 0.5) * 2 * PIN_JITTER_RANGE;
 
       const rotation = gaussianish(rng) * (PIN_ROTATION_RANGE / 3);
 
@@ -175,6 +181,7 @@ export function computePositions(
 export function computeConnections(
   memories: MemoryLike[],
   positions: PinPosition[],
+  people?: { id: string; name: string }[],
 ): ThreadConnection[] {
   const conns: ThreadConnection[] = [];
   const posById = new Map(positions.map((p) => [p.memoryId, p]));
@@ -240,6 +247,116 @@ export function computeConnections(
         addEdge(sorted[i]!.id, sorted[i + 1]!.id, "branch", 0.4);
       }
     }
+  }
+
+  const byYear = new Map<number, MemoryLike[]>();
+  for (const m of memories) {
+    const yr = extractYearLocal(m.dateOfEventText);
+    if (yr == null) continue;
+    const group = byYear.get(yr) ?? [];
+    group.push(m);
+    byYear.set(yr, group);
+  }
+
+  const eraEdgeCount = new Map<string, number>();
+  for (const [, group] of byYear) {
+    if (group.length < 2) continue;
+    for (let i = 0; i < group.length; i++) {
+      for (let j = i + 1; j < group.length; j++) {
+        const fromId = group[i]!.id;
+        const toId = group[j]!.id;
+        const fromCount = eraEdgeCount.get(fromId) ?? 0;
+        const toCount = eraEdgeCount.get(toId) ?? 0;
+        if (fromCount >= 3 || toCount >= 3) continue;
+        addEdge(fromId, toId, "era", 0.4);
+        eraEdgeCount.set(fromId, fromCount + 1);
+        eraEdgeCount.set(toId, toCount + 1);
+      }
+    }
+  }
+
+  if (people && people.length > 0) {
+    const personNameMap = new Map(people.map((p) => [p.name.toLowerCase(), p.id]));
+    const memByPerson = new Map<string, MemoryLike[]>();
+    for (const m of memories) {
+      const group = memByPerson.get(m.primaryPersonId) ?? [];
+      group.push(m);
+      memByPerson.set(m.primaryPersonId, group);
+    }
+    const cosubEdgeCount = new Map<string, number>();
+    for (const m of memories) {
+      const text = ((m.title ?? "") + " " + (m.body ?? "") + " " + (m.transcriptText ?? "")).toLowerCase();
+      if (!text) continue;
+      const fromCount = cosubEdgeCount.get(m.id) ?? 0;
+      if (fromCount >= 3) continue;
+      for (const [name, personId] of personNameMap) {
+        if (personId === m.primaryPersonId) continue;
+        if (!text.includes(name)) continue;
+        const targetMems = memByPerson.get(personId);
+        if (!targetMems || targetMems.length === 0) continue;
+        const earliest = [...targetMems].sort((a, b) => {
+          const ya = extractYearLocal(a.dateOfEventText) ?? 9999;
+          const yb = extractYearLocal(b.dateOfEventText) ?? 9999;
+          return ya - yb;
+        })[0]!;
+        const toCount = cosubEdgeCount.get(earliest.id) ?? 0;
+        if (toCount >= 3) continue;
+        addEdge(m.id, earliest.id, "co-subject", 0.45);
+        cosubEdgeCount.set(m.id, fromCount + 1);
+        cosubEdgeCount.set(earliest.id, toCount + 1);
+      }
+    }
+  }
+
+  if (memories.some((m) => m.placeId)) {
+    const byPlace = new Map<string, MemoryLike[]>();
+    for (const m of memories) {
+      if (!m.placeId) continue;
+      const group = byPlace.get(m.placeId) ?? [];
+      group.push(m);
+      byPlace.set(m.placeId, group);
+    }
+    const placeEdgeCount = new Map<string, number>();
+    for (const [, group] of byPlace) {
+      if (group.length < 2) continue;
+      for (let i = 0; i < group.length; i++) {
+        for (let j = i + 1; j < group.length; j++) {
+          const fromId = group[i]!.id;
+          const toId = group[j]!.id;
+          const fromCount = placeEdgeCount.get(fromId) ?? 0;
+          const toCount = placeEdgeCount.get(toId) ?? 0;
+          if (fromCount >= 2 || toCount >= 2) continue;
+          addEdge(fromId, toId, "place", 0.3);
+          placeEdgeCount.set(fromId, fromCount + 1);
+          placeEdgeCount.set(toId, toCount + 1);
+        }
+      }
+    }
+  }
+
+  const outgoingDegree = new Map<string, { strength: number; idx: number }[]>();
+  for (let i = 0; i < conns.length; i++) {
+    const c = conns[i]!;
+    let fromList = outgoingDegree.get(c.from);
+    if (!fromList) { fromList = []; outgoingDegree.set(c.from, fromList); }
+    fromList.push({ strength: c.strength, idx: i });
+    let toList = outgoingDegree.get(c.to);
+    if (!toList) { toList = []; outgoingDegree.set(c.to, toList); }
+    toList.push({ strength: c.strength, idx: i });
+  }
+
+  const toRemove = new Set<number>();
+  for (const [, edges] of outgoingDegree) {
+    if (edges.length > MAX_OUTGOING_THREADS_PER_PIN) {
+      edges.sort((a, b) => a.strength - b.strength);
+      for (let i = 0; i < edges.length - MAX_OUTGOING_THREADS_PER_PIN; i++) {
+        toRemove.add(edges[i]!.idx);
+      }
+    }
+  }
+
+  if (toRemove.size > 0) {
+    return conns.filter((_, i) => !toRemove.has(i));
   }
 
   return conns;
@@ -311,8 +428,8 @@ export function computeSmartWeave(
 
 export function computeBoardSize(pinCount: number): { width: number; height: number } {
   return {
-    width: Math.max(BOARD_BASE_WIDTH, pinCount * 80),
-    height: Math.max(BOARD_BASE_HEIGHT, pinCount * 60),
+    width: Math.max(BOARD_BASE_WIDTH, pinCount * 220),
+    height: Math.max(BOARD_BASE_HEIGHT, pinCount * 165),
   };
 }
 
@@ -338,7 +455,15 @@ export function getThreadControlPoints(
   const perpY = dx;
   const len = Math.sqrt(perpX * perpX + perpY * perpY) || 1;
 
-  const curvature = type === "temporal" ? 0.15 : type === "person" ? 0.2 : 0.25;
+  const curvatureMap: Record<ThreadType, number> = {
+    temporal: 0.15,
+    person: 0.2,
+    branch: 0.25,
+    era: 0.18,
+    "co-subject": 0.22,
+    place: 0.2,
+  };
+  const curvature = curvatureMap[type] ?? 0.2;
   const seed = seedFromString(from.id + to.id);
   const rng = mulberry32(seed);
   const jitter = (rng() - 0.5) * 0.5 + 0.75;

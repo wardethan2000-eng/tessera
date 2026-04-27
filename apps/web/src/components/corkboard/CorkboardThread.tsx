@@ -19,19 +19,30 @@ const THREAD_COLORS: Record<ThreadType, string> = {
   temporal: "var(--ink-faded)",
   person: "var(--moss)",
   branch: "var(--rose)",
+  era: "var(--ink-faded)",
+  "co-subject": "var(--moss)",
+  place: "var(--rose)",
 };
 
 const THREAD_OPACITY: Record<ThreadType, number> = {
   temporal: 0.5,
   person: 0.35,
   branch: 0.3,
+  era: 0.4,
+  "co-subject": 0.45,
+  place: 0.3,
 };
 
 const THREAD_WIDTH: Record<ThreadType, number> = {
   temporal: 1.5,
   person: 1.2,
   branch: 1.0,
+  era: 1.0,
+  "co-subject": 1.0,
+  place: 0.8,
 };
+
+const DASHED_TYPES = new Set<ThreadType>(["era"]);
 
 export function CorkboardThread({
   from,
@@ -47,16 +58,15 @@ export function CorkboardThread({
   if (!visible) return null;
 
   const pathD = getThreadPath(from, to, type);
-  const color = THREAD_COLORS[type];
-  // Threads connected to the current memory are emphasized; the rest are
-  // present but quieter so the board still reads as a network.
+  const color = THREAD_COLORS[type] ?? "var(--ink-faded)";
   const isConnectedToCurrent =
     currentMemId != null && (thread.from === currentMemId || thread.to === currentMemId);
   const ambientFade = isConnectedToCurrent || isActive ? 1 : 0.45;
-  const baseOpacity = THREAD_OPACITY[type] * strength * ambientFade;
-  const baseWidth = THREAD_WIDTH[type];
+  const baseOpacity = (THREAD_OPACITY[type] ?? 0.5) * strength * ambientFade;
+  const baseWidth = THREAD_WIDTH[type] ?? 1.0;
   const width = isActive ? baseWidth + 1 : baseWidth;
   const opacity = isActive ? Math.min(1, baseOpacity + 0.4) : baseOpacity;
+  const isDashed = DASHED_TYPES.has(type);
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -81,6 +91,7 @@ export function CorkboardThread({
         strokeWidth={width}
         strokeLinecap="round"
         opacity={opacity}
+        strokeDasharray={isDashed ? "4 6" : undefined}
         className={isActive ? "corkboard-thread-path--active" : "corkboard-thread-path"}
         style={{ pointerEvents: "none" }}
       />
@@ -94,12 +105,21 @@ interface CorkboardThreadLayerProps {
   threads: ThreadConnection[];
   pins: PinPosition[];
   activeThreadId: string | null;
-  visibility: { temporal: boolean; person: boolean; branch: boolean };
+  visibility: { temporal: boolean; person: boolean; branch: boolean; era: boolean; place: boolean };
   width: number;
   height: number;
   onThreadClick?: (thread: ThreadConnection) => void;
   currentMemId: string | null;
 }
+
+const VISIBILITY_MAP: Record<ThreadType, keyof CorkboardThreadLayerProps["visibility"]> = {
+  temporal: "temporal",
+  person: "person",
+  branch: "branch",
+  era: "era",
+  "co-subject": "person",
+  place: "place",
+};
 
 export function CorkboardThreadLayer({
   threads,
@@ -125,7 +145,8 @@ export function CorkboardThreadLayer({
         const fromPin = pinById.get(thread.from);
         const toPin = pinById.get(thread.to);
         if (!fromPin || !toPin) return null;
-        if (!visibility[thread.type]) return null;
+        const visKey = VISIBILITY_MAP[thread.type];
+        if (!visKey || !visibility[visKey]) return null;
 
         return (
           <CorkboardThread

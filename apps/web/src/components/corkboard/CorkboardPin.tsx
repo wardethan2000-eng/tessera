@@ -12,7 +12,6 @@ interface CorkboardPinProps {
   isCurrent: boolean;
   isVisited: boolean;
   isUnfocused: boolean;
-  isAdjacent: boolean;
   isPlaying: boolean;
   onExpand: (id: string) => void;
   onContract: () => void;
@@ -41,7 +40,6 @@ export const CorkboardPin = memo(function CorkboardPin({
   isCurrent,
   isVisited,
   isUnfocused,
-  isAdjacent,
   isPlaying,
   onExpand,
   onContract,
@@ -60,7 +58,6 @@ export const CorkboardPin = memo(function CorkboardPin({
   const kindClass = `corkboard-pin--${memory.kind}`;
   const visitedClass = isVisited && !isCurrent ? " corkboard-pin--visited" : "";
   const unfocusedClass = isUnfocused ? " corkboard-pin--unfocused" : "";
-  const adjacentClass = isAdjacent ? " corkboard-pin--adjacent" : "";
   const expandedClass = isExpanded ? " corkboard-pin--expanded" : "";
   const startClass = pin.isStartPin ? " corkboard-pin--start" : "";
   const currentClass = isCurrent ? " corkboard-pin--current" : "";
@@ -78,7 +75,7 @@ export const CorkboardPin = memo(function CorkboardPin({
     }
   };
 
-  const targetOpacity = isExpanded ? 1 : isUnfocused ? (isAdjacent ? 0.55 : 0.25) : 1;
+  const targetOpacity = isExpanded ? 1 : isUnfocused ? 0.35 : 1;
   const targetScale = isExpanded ? 1.4 : pin.scale;
 
   const expandedRef = useRef<HTMLDivElement>(null);
@@ -112,7 +109,7 @@ export const CorkboardPin = memo(function CorkboardPin({
 
   return (
     <motion.div
-      className={`corkboard-pin ${kindClass}${visitedClass}${unfocusedClass}${adjacentClass}${expandedClass}${startClass}${currentClass}`}
+      className={`corkboard-pin ${kindClass}${visitedClass}${unfocusedClass}${expandedClass}${startClass}${currentClass}`}
       style={{
         left: pin.x - pin.width / 2,
         top: pin.y - pin.height / 2,

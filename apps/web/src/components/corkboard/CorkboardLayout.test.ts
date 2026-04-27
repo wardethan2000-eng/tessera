@@ -64,11 +64,11 @@ describe("computePositions", () => {
     assert.equal(startPins[0]!.memoryId, "mem-1");
   });
 
-  it("assigns rotation within -12 to +12 degrees", () => {
+  it("assigns rotation within -4 to +4 degrees", () => {
     const positions = computePositions(MEMORIES_FIXTURE, "test-seed");
     for (const pin of positions) {
-      assert.ok(pin.rotation >= -12, `rotation ${pin.rotation} >= -12`);
-      assert.ok(pin.rotation <= 12, `rotation ${pin.rotation} <= 12`);
+      assert.ok(pin.rotation >= -4, `rotation ${pin.rotation} >= -4`);
+      assert.ok(pin.rotation <= 4, `rotation ${pin.rotation} <= 4`);
     }
   });
 
@@ -108,7 +108,7 @@ describe("computePositions", () => {
         const dx = positions[j]!.x - positions[i]!.x;
         const dy = positions[j]!.y - positions[i]!.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        assert.ok(dist >= 150, `pin ${i} and ${j} are ${dist}px apart (min ~150, target 180)`);
+        assert.ok(dist >= 600, `pin ${i} and ${j} are ${dist}px apart (min ~600, target 700)`);
       }
     }
   });
@@ -185,6 +185,18 @@ describe("computeConnections", () => {
     assert.ok(personConns.length >= 1, "person-a has 3 memories, should have at least 1 person thread");
   });
 
+  it("creates era threads between memories of the same year", () => {
+    const eraMemories = [
+      { id: "e1", primaryPersonId: "p-a", dateOfEventText: "Summer 1985", kind: "image" },
+      { id: "e2", primaryPersonId: "p-b", dateOfEventText: "1985", kind: "story" },
+      { id: "e3", primaryPersonId: "p-c", dateOfEventText: "Fall 1985", kind: "voice" },
+    ];
+    const positions = computePositions(eraMemories, "era-test");
+    const connections = computeConnections(eraMemories, positions);
+    const eraConns = connections.filter((c) => c.type === "era");
+    assert.ok(eraConns.length >= 1, "should have era connections for same-year memories");
+  });
+
   it("does not duplicate connections that already exist as temporal", () => {
     const positions = computePositions(MEMORIES_FIXTURE, "dedup-test");
     const connections = computeConnections(MEMORIES_FIXTURE, positions);
@@ -215,6 +227,25 @@ describe("computeConnections", () => {
     const connections = computeConnections(MEMORIES_FIXTURE, positions);
     const branchConns = connections.filter((c) => c.type === "branch");
     assert.equal(branchConns.length, 0, "should have no branch connections without branchId");
+  });
+
+  it("caps outgoing threads per pin to MAX_OUTGOING_THREADS_PER_PIN", () => {
+    const manyMemories = Array.from({ length: 30 }, (_, i) => ({
+      id: `mem-${i}`,
+      primaryPersonId: i < 10 ? "person-a" : i < 20 ? "person-b" : "person-c",
+      dateOfEventText: `${1970 + i}`,
+      kind: "image" as const,
+    }));
+    const positions = computePositions(manyMemories, "cap-test");
+    const connections = computeConnections(manyMemories, positions);
+    const outgoingCount = new Map<string, number>();
+    for (const c of connections) {
+      outgoingCount.set(c.from, (outgoingCount.get(c.from) ?? 0) + 1);
+      outgoingCount.set(c.to, (outgoingCount.get(c.to) ?? 0) + 1);
+    }
+    for (const [, count] of outgoingCount) {
+      assert.ok(count <= 6, `pin has ${count} outgoing threads, max is 6`);
+    }
   });
 });
 
@@ -274,8 +305,8 @@ describe("computeSmartWeave", () => {
 describe("computeBoardSize", () => {
   it("returns minimum base dimensions for 0 pins", () => {
     const size = computeBoardSize(0);
-    assert.ok(size.width >= 4000);
-    assert.ok(size.height >= 3000);
+    assert.ok(size.width >= 8000);
+    assert.ok(size.height >= 6000);
   });
 
   it("scales up for large pin counts", () => {
@@ -289,8 +320,8 @@ describe("computeBoardSize", () => {
 describe("computePinCenter", () => {
   it("returns board center for no pins", () => {
     const center = computePinCenter([]);
-    assert.equal(center.x, 2000);
-    assert.equal(center.y, 1500);
+    assert.equal(center.x, 4000);
+    assert.equal(center.y, 3000);
   });
 
   it("returns start pin position as center", () => {

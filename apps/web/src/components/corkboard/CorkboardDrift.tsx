@@ -30,13 +30,13 @@ import {
   BOARD_ENTRY_DURATION,
   CAMERA_FOCUSED_ZOOM,
   CAMERA_GLIDE_DURATION,
+  FOCUS_VIGNETTE_OUTER_FACTOR,
 } from "./corkboardAnimations";
 import {
   computePositions,
   computeConnections,
   computeSmartWeave,
   computeBoardSize,
-  findThreadBetween,
 } from "./CorkboardLayout";
 import { useCorkboardCamera } from "./useCorkboardCamera";
 import { CorkboardBackdrop } from "./CorkboardBackdrop";
@@ -173,6 +173,8 @@ export function CorkboardDrift({
     temporal: true,
     person: true,
     branch: false,
+    era: true,
+    place: false,
   });
   const [pinsVisible, setPinsVisible] = useState(false);
   const [containerSize, setContainerSize] = useState({ w: 1200, h: 800 });
@@ -220,10 +222,14 @@ export function CorkboardDrift({
         primaryPersonId: i.memory.primaryPersonId,
         dateOfEventText: i.memory.dateOfEventText,
         kind: i.kind,
+        body: i.memory.body,
+        title: i.memory.title,
+        transcriptText: i.memory.transcriptText,
       })),
       pins,
+      people,
     );
-  }, [items, pins]);
+  }, [items, pins, people]);
 
   const cameraControls = useCorkboardCamera(pins, threads, {
     reduceMotion,
@@ -365,8 +371,12 @@ export function CorkboardDrift({
           primaryPersonId: i.memory.primaryPersonId,
           dateOfEventText: i.memory.dateOfEventText,
           kind: i.kind,
+          body: i.memory.body,
+          title: i.memory.title,
+          transcriptText: i.memory.transcriptText,
         })),
         tempPins,
+        people,
       );
 
       const smartWeave = computeSmartWeave(
@@ -670,16 +680,6 @@ export function CorkboardDrift({
     };
   }, [camera, containerSize]);
 
-  const adjacentMemoryIds = useMemo(() => {
-    if (!currentMemId) return new Set<string>();
-    const ids = new Set<string>();
-    for (const t of threads) {
-      if (t.from === currentMemId) ids.add(t.to);
-      if (t.to === currentMemId) ids.add(t.from);
-    }
-    return ids;
-  }, [currentMemId, threads]);
-
   return (
     <motion.div
       className={`corkboard-root${isRemembrance ? " corkboard-root--remembrance" : ""}`}
@@ -727,6 +727,22 @@ export function CorkboardDrift({
           />
           <span className="corkboard-thread-toggle__label" style={{ color: "var(--rose)" }}>Branch</span>
         </label>
+        <label className="corkboard-thread-toggle">
+          <input
+            type="checkbox"
+            checked={threadVisibility.era}
+            onChange={(e) => setThreadVisibility((v) => ({ ...v, era: e.target.checked }))}
+          />
+          <span className="corkboard-thread-toggle__label" style={{ color: "var(--ink-faded)" }}>Era</span>
+        </label>
+        <label className="corkboard-thread-toggle">
+          <input
+            type="checkbox"
+            checked={threadVisibility.place}
+            onChange={(e) => setThreadVisibility((v) => ({ ...v, place: e.target.checked }))}
+          />
+          <span className="corkboard-thread-toggle__label" style={{ color: "var(--rose)" }}>Place</span>
+        </label>
       </div>
 
       {isRemembrance && (remembrancePerson || currentMemory) && (
@@ -765,7 +781,6 @@ export function CorkboardDrift({
             const isExpanded = expandedPinId === pin.id;
             const isVisited = visitedIds.has(mem.id);
             const isUnfocused = !isCurrentPin && !isExpanded;
-            const isAdjacent = isUnfocused && adjacentMemoryIds.has(mem.id);
             // Stagger delay caps at 800ms regardless of pin count: with 200
             // memories at 60ms each the last pin would otherwise wait 12s.
             const staggerDelay = pinsVisible
@@ -781,7 +796,6 @@ export function CorkboardDrift({
                 isCurrent={isCurrentPin}
                 isVisited={isVisited}
                 isUnfocused={isUnfocused}
-                isAdjacent={isAdjacent}
                 isPlaying={isPlaying}
                 onExpand={handleExpand}
                 onContract={handleContract}
@@ -794,6 +808,20 @@ export function CorkboardDrift({
             );
           })}
         </div>
+
+        <div
+          className="corkboard-focus-vignette"
+          style={{
+            "--focus-x": `${containerSize.w / 2}px`,
+            "--focus-y": `${containerSize.h / 2}px`,
+            "--focus-radius": `${Math.max(
+              (pins.find((p) => p.memoryId === currentMemId)?.width ?? 220) *
+              FOCUS_VIGNETTE_OUTER_FACTOR *
+              camera.zoom,
+              280 * camera.zoom
+            )}px`,
+          } as React.CSSProperties}
+        />
       </div>
 
       {currentMemory && !isLoading && (
