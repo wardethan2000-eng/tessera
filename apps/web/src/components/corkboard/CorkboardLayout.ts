@@ -372,7 +372,6 @@ export function computeConnections(
 
 export function computeSmartWeave(
   memories: MemoryLike[],
-  connections: ThreadConnection[],
   seenMap: Record<string, number>,
 ): string[] {
   if (memories.length === 0) return [];
@@ -383,47 +382,7 @@ export function computeSmartWeave(
     return ya - yb;
   });
 
-  const order: string[] = [];
-  const visited = new Set<string>();
-  const rng = mulberry32(seedFromString("weave-" + memories.map((m) => m.id).join(",").slice(0, 64)));
-
-  function addMemory(id: string) {
-    if (visited.has(id)) return;
-    visited.add(id);
-    order.push(id);
-  }
-
-  let personStreak = 0;
-  const maxPersonStreak = 3;
-
-  for (const memory of chronological) {
-    if (visited.has(memory.id)) continue;
-
-    addMemory(memory.id);
-
-    const personMemories = connections
-      .filter((c) => c.type === "person" && (c.from === memory.id || c.to === memory.id))
-      .map((c) => (c.from === memory.id ? c.to : c.from));
-
-    if (personMemories.length > 0 && personStreak < maxPersonStreak && rng() < 0.6) {
-      for (const relatedId of personMemories) {
-        const related = memories.find((m) => m.id === relatedId);
-        if (related && !visited.has(relatedId)) {
-          addMemory(relatedId);
-          personStreak += 1;
-          break;
-        }
-      }
-    } else {
-      personStreak = 0;
-    }
-  }
-
-  for (const m of chronological) {
-    if (!visited.has(m.id)) {
-      addMemory(m.id);
-    }
-  }
+  const order = chronological.map((m) => m.id);
 
   if (Object.keys(seenMap).length > 0) {
     const unseenFirst = order.filter((id) => !(id in seenMap));

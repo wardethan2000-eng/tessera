@@ -251,53 +251,46 @@ describe("computeConnections", () => {
 
 describe("computeSmartWeave", () => {
   it("returns empty array for no memories", () => {
-    const result = computeSmartWeave([], [], {});
+    const result = computeSmartWeave([], {});
     assert.deepEqual(result, []);
   });
 
-  it("returns all memory ids", () => {
-    const positions = computePositions(MEMORIES_FIXTURE, "weave-test");
-    const connections = computeConnections(MEMORIES_FIXTURE, positions);
-    const result = computeSmartWeave(MEMORIES_FIXTURE, connections, {});
+  it("returns all memory ids in chronological order", () => {
+    const result = computeSmartWeave(MEMORIES_FIXTURE, {});
     assert.equal(result.length, MEMORIES_FIXTURE.length);
-    for (const mem of MEMORIES_FIXTURE) {
-      assert.ok(result.includes(mem.id), `missing ${mem.id}`);
-    }
+    assert.equal(result[0], "mem-1");
+    assert.equal(result[1], "mem-2");
+    assert.equal(result[2], "mem-3");
+    assert.equal(result[3], "mem-4");
+    assert.equal(result[4], "mem-5");
+    assert.equal(result[5], "mem-6");
   });
 
   it("does not repeat any memory id", () => {
-    const positions = computePositions(MEMORIES_FIXTURE, "weave-test");
-    const connections = computeConnections(MEMORIES_FIXTURE, positions);
-    const result = computeSmartWeave(MEMORIES_FIXTURE, connections, {});
+    const result = computeSmartWeave(MEMORIES_FIXTURE, {});
     const unique = new Set(result);
     assert.equal(result.length, unique.size);
   });
 
   it("starts with the earliest memory when no seen-map bias", () => {
-    const positions = computePositions(MEMORIES_FIXTURE, "weave-test");
-    const connections = computeConnections(MEMORIES_FIXTURE, positions);
-    const result = computeSmartWeave(MEMORIES_FIXTURE, connections, {});
+    const result = computeSmartWeave(MEMORIES_FIXTURE, {});
     assert.equal(result[0], "mem-1");
   });
 
   it("prioritizes unseen memories first when seen-map is provided", () => {
-    const positions = computePositions(MEMORIES_FIXTURE, "weave-test");
-    const connections = computeConnections(MEMORIES_FIXTURE, positions);
     const seenMap = { "mem-1": Date.now(), "mem-2": Date.now() };
-    const result = computeSmartWeave(MEMORIES_FIXTURE, connections, seenMap);
+    const result = computeSmartWeave(MEMORIES_FIXTURE, seenMap);
     assert.ok(!result.slice(0, 2).includes("mem-1"), "mem-1 should not be in first 2");
     assert.ok(!result.slice(0, 2).includes("mem-2"), "mem-2 should not be in first 2");
   });
 
   it("handles single memory", () => {
-    const result = computeSmartWeave(SINGLE_MEMORY, [], {});
+    const result = computeSmartWeave(SINGLE_MEMORY, {});
     assert.deepEqual(result, ["mem-solo"]);
   });
 
   it("handles memories without dates", () => {
-    const positions = computePositions(NO_DATE_MEMORIES, "weave-nodate");
-    const connections = computeConnections(NO_DATE_MEMORIES, positions);
-    const result = computeSmartWeave(NO_DATE_MEMORIES, connections, {});
+    const result = computeSmartWeave(NO_DATE_MEMORIES, {});
     assert.equal(result.length, 3);
   });
 });

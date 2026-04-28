@@ -1,17 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import type { PinPosition, ThreadConnection, CameraState } from "./corkboardTypes";
+import type { PinPosition, CameraState } from "./corkboardTypes";
 import {
   CAMERA_GLIDE_DURATION,
-  CAMERA_GLIDE_ZOOM_MID,
   CAMERA_FOCUSED_ZOOM,
   CAMERA_ZOOM_MIN,
   CAMERA_ZOOM_MAX,
   AMBIENT_DRIFT_SPEED,
   IDLE_THRESHOLD_MS,
 } from "./corkboardAnimations";
-import { sampleCameraPath, findThreadBetween } from "./CorkboardLayout";
 
 function easeBezier(t: number, p1: number, p2: number): number {
   const u = 1 - t;
@@ -30,7 +28,6 @@ interface UseCorkboardCameraOptions {
 
 export function useCorkboardCamera(
   pins: PinPosition[],
-  threads: ThreadConnection[],
   options: UseCorkboardCameraOptions,
 ) {
   const { reduceMotion, isPlaying, isExpanded, isDragging } = options;
@@ -85,29 +82,25 @@ export function useCorkboardCamera(
         return;
       }
 
-      const thread = findThreadBetween(threads, fromMemId, toMemId);
-      const threadType = thread?.type ?? "temporal";
-      const direction = thread?.from === fromMemId ? 1 : -1;
-
       const start = { ...cameraRef.current };
       const duration = durationMs ?? CAMERA_GLIDE_DURATION * 1000;
       const startTime = performance.now();
+
+      const targetZoom = CAMERA_FOCUSED_ZOOM;
+      const startZoom = start.zoom;
+
+      const dx = toPin.x - start.x;
+      const dy = toPin.y - start.y;
 
       function tick(now: number) {
         const elapsed = now - startTime;
         const rawT = Math.min(1, elapsed / duration);
         const t = easeBezier(rawT, EASE_P1, EASE_P2);
 
-        const pathT = direction === 1 ? t : 1 - t;
-        const point = sampleCameraPath(fromPin!, toPin!, threadType, pathT);
-
-        const zoomT = Math.sin(rawT * Math.PI);
-        const midZoom = start.zoom + (CAMERA_GLIDE_ZOOM_MID - start.zoom) * (4 * zoomT - 4 * zoomT * zoomT);
-
         const next: CameraState = {
-          x: point.x,
-          y: point.y,
-          zoom: rawT < 1 ? midZoom : CAMERA_FOCUSED_ZOOM,
+          x: start.x + dx * t,
+          y: start.y + dy * t,
+          zoom: startZoom + (targetZoom - startZoom) * t,
         };
         cameraRef.current = next;
         setCameraCallbackRef.current?.(next);
@@ -121,7 +114,7 @@ export function useCorkboardCamera(
       }
       rafRef.current = requestAnimationFrame(tick);
     },
-    [pins, threads, reduceMotion, cancelGlide, setCamera],
+    [pins, reduceMotion, cancelGlide, setCamera],
   );
 
   const jumpToPin = useCallback(

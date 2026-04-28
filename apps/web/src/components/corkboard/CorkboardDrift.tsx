@@ -238,7 +238,7 @@ export function CorkboardDrift({
     );
   }, [items, pins, people]);
 
-  const cameraControls = useCorkboardCamera(pins, threads, {
+  const cameraControls = useCorkboardCamera(pins, {
     reduceMotion,
     isPlaying,
     isExpanded: expandedPinId !== null,
@@ -394,7 +394,6 @@ export function CorkboardDrift({
           dateOfEventText: i.memory.dateOfEventText,
           kind: i.kind,
         })),
-        tempConnections,
         seen,
       );
       traverseOrder.current = smartWeave;
@@ -452,11 +451,14 @@ export function CorkboardDrift({
     const len = traverseOrder.current.length;
     setCurrentIndex((i) => {
       const next = i + 1;
-      const result = next >= len ? 0 : next;
-      const memId = traverseOrder.current[result];
+      if (next >= len) {
+        setIsPlaying(false);
+        return i;
+      }
+      const memId = traverseOrder.current[next];
       if (memId) setCurrentMemId(memId);
-      setNextMemId(traverseOrder.current[result + 1] ?? null);
-      return result;
+      setNextMemId(traverseOrder.current[next + 1] ?? null);
+      return next;
     });
   }, []);
 
