@@ -141,7 +141,6 @@ export const CorkboardPin = memo(function CorkboardPin({
       aria-label={ariaLabel}
       aria-expanded={isExpanded}
     >
-      <div className="corkboard-pushpin" aria-hidden="true" />
       <div className="corkboard-pin-content">
         {!isExpanded && (
           <>

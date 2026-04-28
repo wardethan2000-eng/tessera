@@ -1931,10 +1931,10 @@ body {
   inset: 0;
   z-index: 60;
   overflow: hidden;
-  background: var(--paper, #F6F1E7);
+  background: #1f1a14;
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
-  color: var(--ink);
+  color: #e8e0d0;
 }
 
 .corkboard-root--remembrance {
@@ -1960,19 +1960,16 @@ body {
   top: 0;
   left: 0;
   background:
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='3'/><feColorMatrix values='0 0 0 0 0.32  0 0 0 0 0.24  0 0 0 0 0.14  0 0 0 0.18 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"),
-    radial-gradient(ellipse at center, transparent 55%, rgba(28, 25, 21, 0.12) 100%),
-    radial-gradient(ellipse at 30% 25%, rgba(237, 230, 214, 0.4) 0%, transparent 50%),
-    radial-gradient(ellipse at 70% 75%, rgba(226, 217, 196, 0.3) 0%, transparent 50%),
-    linear-gradient(145deg, #F6F1E7 0%, #EDE6D6 35%, #E2D9C4 65%, #D9D0BC 100%);
-  background-color: var(--paper);
-  box-shadow: inset 0 0 80px rgba(28, 25, 21, 0.08);
+    radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.22) 100%),
+    radial-gradient(ellipse at 30% 20%, rgba(58, 46, 32, 0.45) 0%, transparent 50%),
+    linear-gradient(145deg, #2a231a 0%, #1f1a14 50%, #15110d 100%);
+  background-color: #1f1a14;
 }
 
 .corkboard-backdrop--remembrance {
   background:
-    radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.15) 100%),
-    linear-gradient(145deg, #1a1612 0%, #0f0d0a 100%) !important;
+    radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.25) 100%),
+    linear-gradient(145deg, #1a1612 0%, #0f0d0a 100%);
   background-color: #1a1612;
 }
 
@@ -1981,20 +1978,20 @@ body {
   top: 20px;
   left: 20px;
   z-index: 100;
-  background: rgba(246, 241, 231, 0.92);
-  border: 1px solid var(--rule, #D9D0BC);
-  color: var(--ink, #1C1915);
+  background: rgba(31, 26, 20, 0.92);
+  border: 1px solid rgba(232, 224, 208, 0.16);
+  color: #e8e0d0;
   border-radius: 8px;
   padding: 8px 16px;
   font-family: var(--font-ui);
   font-size: 14px;
   cursor: pointer;
-  box-shadow: 0 1px 3px rgba(28, 25, 21, 0.06);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
   transition: background 0.2s, border-color 0.2s;
 }
 .corkboard-close:hover {
-  background: var(--paper-deep, #EDE6D6);
-  border-color: var(--ink-faded, #847A66);
+  background: rgba(42, 35, 26, 0.95);
+  border-color: rgba(232, 224, 208, 0.3);
 }
 
 .corkboard-autoplay-toggle {
@@ -2005,20 +2002,20 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: rgba(246, 241, 231, 0.92);
-  border: 1px solid var(--rule, #D9D0BC);
-  color: var(--ink, #1C1915);
+  background: rgba(31, 26, 20, 0.92);
+  border: 1px solid rgba(232, 224, 208, 0.16);
+  color: #e8e0d0;
   border-radius: 8px;
   padding: 8px 16px;
   font-family: var(--font-ui);
   font-size: 13px;
   cursor: pointer;
-  box-shadow: 0 1px 3px rgba(28, 25, 21, 0.06);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
   transition: background 0.2s, border-color 0.2s;
 }
 .corkboard-autoplay-toggle:hover {
-  background: var(--paper-deep, #EDE6D6);
-  border-color: var(--ink-faded, #847A66);
+  background: rgba(42, 35, 26, 0.95);
+  border-color: rgba(232, 224, 208, 0.3);
 }
 
 .corkboard-autoplay-dot {
@@ -2036,12 +2033,12 @@ body {
   z-index: 100;
   display: flex;
   gap: 16px;
-  background: rgba(246, 241, 231, 0.92);
-  border: 1px solid var(--rule, #D9D0BC);
+  background: rgba(31, 26, 20, 0.92);
+  border: 1px solid rgba(232, 224, 208, 0.16);
   border-radius: 8px;
   padding: 8px 16px;
-  color: var(--ink, #1C1915);
-  box-shadow: 0 1px 3px rgba(28, 25, 21, 0.06);
+  color: #e8e0d0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
 .corkboard-thread-toggle {
@@ -2050,7 +2047,7 @@ body {
   gap: 6px;
   font-family: var(--font-ui);
   font-size: 13px;
-  color: var(--ink-faded, #847A66);
+  color: rgba(232, 224, 208, 0.6);
   cursor: pointer;
 }
 .corkboard-thread-toggle input {
@@ -2066,7 +2063,7 @@ body {
   transition: opacity 1.8s cubic-bezier(0.22, 0.61, 0.36, 1), stroke-width 0.3s ease-out;
 }
 .corkboard-thread-path--active {
-  opacity: 0.85;
+  opacity: 0.3;
 }
 
 .corkboard-pin {
@@ -2079,65 +2076,45 @@ body {
 }
 
 .corkboard-pin--image {
-  background: #fff;
-  padding: 10px 10px 6px;
-  border-radius: 2px;
-  box-shadow: 0 4px 16px rgba(28, 25, 21, 0.15), 0 1px 3px rgba(28, 25, 21, 0.1);
+  background: #2a231a;
+  padding: 10px;
+  border-radius: 3px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 .corkboard-pin--story,
 .corkboard-pin--text {
-  background: var(--paper-deep, #EDE6D6);
+  background: #1f1a14;
   padding: 14px 16px;
-  border-radius: 2px;
-  box-shadow: 0 3px 12px rgba(28, 25, 21, 0.12), 0 1px 3px rgba(28, 25, 21, 0.08);
+  border-radius: 3px;
+  box-shadow: 0 3px 16px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 .corkboard-pin--voice,
 .corkboard-pin--audio {
-  background: var(--paper-deep, #EDE6D6);
+  background: #1f1a14;
   padding: 14px 16px;
-  border-radius: 2px;
-  box-shadow: 0 3px 12px rgba(28, 25, 21, 0.12);
+  border-radius: 3px;
+  box-shadow: 0 3px 16px rgba(0, 0, 0, 0.3);
 }
 .corkboard-pin--video {
-  background: #fff;
-  padding: 10px 10px 6px;
-  border-radius: 2px;
-  box-shadow: 0 4px 16px rgba(28, 25, 21, 0.15), 0 1px 3px rgba(28, 25, 21, 0.1);
+  background: #2a231a;
+  padding: 10px;
+  border-radius: 3px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 .corkboard-pin--document,
 .corkboard-pin--link {
-  background: var(--paper-deep, #EDE6D6);
+  background: #1f1a14;
   padding: 14px 16px;
-  border-radius: 2px;
-  box-shadow: 0 3px 12px rgba(28, 25, 21, 0.12);
-}
-
-.corkboard-pushpin {
-  position: absolute;
-  top: -6px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, rgba(255, 240, 200, 0.7), transparent 60%), var(--gilt, #B08B3E);
-  box-shadow: 0 1px 3px rgba(28, 25, 21, 0.35), inset 0 -1px 1px rgba(0, 0, 0, 0.18);
-  z-index: 2;
-}
-
-.corkboard-pin--start .corkboard-pushpin {
-  background: radial-gradient(circle at 30% 30%, rgba(255, 220, 200, 0.7), transparent 60%), var(--rose, #A85D5D);
-  width: 12px;
-  height: 12px;
-  top: -7px;
+  border-radius: 3px;
+  box-shadow: 0 3px 16px rgba(0, 0, 0, 0.3);
 }
 
 .corkboard-pin--visited {
-  opacity: 0.75;
-  filter: saturate(0.7);
+  opacity: 0.65;
+  filter: saturate(0.6);
 }
 .corkboard-pin--unfocused {
-  opacity: 0.35;
+  opacity: 0.28;
   pointer-events: none;
 }
 .corkboard-pin--expanded {
@@ -2146,9 +2123,14 @@ body {
   filter: none !important;
   opacity: 1 !important;
   pointer-events: auto !important;
-  background: var(--paper, #F6F1E7) !important;
-  box-shadow: 0 8px 32px rgba(28, 25, 21, 0.2), 0 2px 8px rgba(28, 25, 21, 0.1) !important;
+  background: #2a231a !important;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.2) !important;
   border-radius: 4px;
+}
+
+.corkboard-pin--current {
+  box-shadow: 0 0 24px rgba(232, 224, 208, 0.12), 0 0 48px rgba(232, 224, 208, 0.06), 0 4px 20px rgba(0, 0, 0, 0.35) !important;
+  z-index: 10;
 }
 
 .corkboard-focus-vignette {
@@ -2160,7 +2142,7 @@ body {
     circle at var(--focus-x, 50%) var(--focus-y, 50%),
     transparent 0%,
     transparent calc(var(--focus-radius, 280px) * 0.6),
-    var(--paper) calc(var(--focus-radius, 280px) * 1.4)
+    #1f1a14 calc(var(--focus-radius, 280px) * 1.4)
   );
   transition: background 0.4s linear;
 }
@@ -2175,7 +2157,7 @@ body {
 .corkboard-pin-photo {
   width: 100%;
   overflow: hidden;
-  border-radius: 1px;
+  border-radius: 2px;
   margin-bottom: 4px;
 }
 .corkboard-pin-photo img {
@@ -2193,8 +2175,8 @@ body {
   justify-content: center;
   width: 100%;
   height: 145px;
-  color: var(--ink-soft, #403A2E);
-  background: var(--paper-deep, #EDE6D6);
+  color: rgba(232, 224, 208, 0.7);
+  background: #1f1a14;
   border-radius: 2px;
   overflow: hidden;
   margin-bottom: 4px;
@@ -2218,9 +2200,9 @@ body {
   justify-content: center;
   padding-left: 2px;
   font-size: 16px;
-  color: var(--paper, #F6F1E7);
-  background: rgba(28, 25, 21, 0.72);
-  box-shadow: 0 2px 8px rgba(28, 25, 21, 0.24);
+  color: #1f1a14;
+  background: rgba(232, 224, 208, 0.75);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .corkboard-pin-link-preview img {
@@ -2236,7 +2218,7 @@ body {
   height: 32px;
   font-size: 18px;
   color: var(--moss, #4E5D42);
-  background: var(--paper, #F6F1E7);
+  background: rgba(78, 93, 66, 0.12);
   border-radius: 50%;
   margin-bottom: 4px;
 }
@@ -2245,7 +2227,7 @@ body {
   font-family: var(--font-display);
   font-size: 13px;
   font-weight: 500;
-  color: var(--ink, #1C1915);
+  color: #e8e0d0;
   line-height: 1.3;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2255,7 +2237,7 @@ body {
 .corkboard-pin-snippet {
   font-family: var(--font-body);
   font-size: 11px;
-  color: var(--ink-soft, #403A2E);
+  color: rgba(232, 224, 208, 0.7);
   line-height: 1.4;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2267,7 +2249,7 @@ body {
 .corkboard-pin-meta {
   font-family: var(--font-ui);
   font-size: 10px;
-  color: var(--ink-faded, #847A66);
+  color: rgba(232, 224, 208, 0.5);
   margin-top: 2px;
 }
 
@@ -2286,7 +2268,7 @@ body {
   gap: 10px;
   font-family: var(--font-ui);
   font-size: 11px;
-  color: var(--ink-faded, #847A66);
+  color: rgba(232, 224, 208, 0.5);
 }
 
 .corkboard-pin-expanded-kind {
@@ -2338,7 +2320,7 @@ body {
   width: 80px;
   height: 80px;
   border-radius: 50%;
-  background: radial-gradient(circle at 40% 40%, rgba(78, 93, 66, 0.25), rgba(78, 93, 66, 0.08));
+  background: radial-gradient(circle at 40% 40%, rgba(78, 93, 66, 0.18), rgba(78, 93, 66, 0.05));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2361,7 +2343,7 @@ body {
   font-family: var(--font-body);
   font-size: 15px;
   line-height: 1.7;
-  color: var(--ink-soft, #403A2E);
+  color: rgba(232, 224, 208, 0.7);
   max-height: 200px;
   overflow-y: auto;
 }
@@ -2370,7 +2352,7 @@ body {
   font-family: var(--font-body);
   font-size: 17px;
   line-height: 1.7;
-  color: var(--ink, #1C1915);
+  color: #e8e0d0;
   max-height: 400px;
   overflow-y: auto;
 }
@@ -2385,7 +2367,7 @@ body {
   margin-top: 8px;
 }
 .corkboard-pin-expanded-link:hover {
-  color: var(--ink, #1C1915);
+  color: #e8e0d0;
 }
 
 .corkboard-pin-expanded-attribution {
@@ -2393,17 +2375,17 @@ body {
   flex-direction: column;
   gap: 2px;
   padding-top: 8px;
-  border-top: 1px solid var(--rule, #D9D0BC);
+  border-top: 1px solid rgba(232, 224, 208, 0.12);
 }
 .corkboard-pin-expanded-name {
   font-family: var(--font-display);
   font-size: 15px;
-  color: var(--ink, #1C1915);
+  color: #e8e0d0;
 }
 .corkboard-pin-expanded-title {
   font-family: var(--font-ui);
   font-size: 12px;
-  color: var(--ink-faded, #847A66);
+  color: rgba(232, 224, 208, 0.5);
 }
 
 .corkboard-pin-expanded-close {
@@ -2414,8 +2396,8 @@ body {
   height: 28px;
   border-radius: 50%;
   border: none;
-  background: var(--rule, #D9D0BC);
-  color: var(--ink, #1C1915);
+  background: rgba(232, 224, 208, 0.1);
+  color: rgba(232, 224, 208, 0.7);
   font-size: 16px;
   cursor: pointer;
   display: flex;
@@ -2425,13 +2407,8 @@ body {
   z-index: 2;
 }
 .corkboard-pin-expanded-close:hover {
-  background: var(--ink-faded, #847A66);
-  color: var(--paper, #F6F1E7);
-}
-
-.corkboard-pin--current {
-  box-shadow: 0 0 0 2px var(--moss, #4E5D42), 0 4px 20px rgba(78, 93, 66, 0.2), 0 2px 6px rgba(28, 25, 21, 0.12) !important;
-  z-index: 10;
+  background: rgba(232, 224, 208, 0.2);
+  color: #e8e0d0;
 }
 
 .corkboard-progress-track {
@@ -2440,12 +2417,12 @@ body {
   left: 0;
   right: 0;
   height: 2px;
-  background: rgba(132, 122, 102, 0.2);
+  background: rgba(232, 224, 208, 0.08);
   z-index: 95;
 }
 .corkboard-progress-fill {
   height: 100%;
-  background: var(--moss, #4E5D42);
+  background: rgba(232, 224, 208, 0.35);
   transition: width 0.4s ease-out;
 }
 
@@ -2459,9 +2436,9 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 14px 24px;
-  background: rgba(246, 241, 231, 0.94);
-  border-top: 1px solid var(--rule, #D9D0BC);
-  color: var(--ink, #1C1915);
+  background: rgba(31, 26, 20, 0.94);
+  border-top: 1px solid rgba(232, 224, 208, 0.12);
+  color: #e8e0d0;
 }
 
 .corkboard-bottom > * {
@@ -2483,14 +2460,14 @@ body {
 .corkboard-bottom__detail {
   font-family: var(--font-ui);
   font-size: 12px;
-  color: var(--ink-faded, #847A66);
+  color: rgba(232, 224, 208, 0.5);
 }
 
 .corkboard-bottom__cta {
   font-family: var(--font-ui);
   font-size: 13px;
-  color: var(--moss, #4E5D42);
-  background: var(--paper, #F6F1E7);
+  color: var(--paper, #F6F1E7);
+  background: var(--moss, #4E5D42);
   border: none;
   border-radius: 6px;
   padding: 6px 14px;
@@ -2498,7 +2475,7 @@ body {
   transition: background 0.2s;
 }
 .corkboard-bottom__cta:hover {
-  background: var(--paper-deep, #EDE6D6);
+  background: #5d6e4e;
 }
 
 .corkboard-remembrance-header {
@@ -2508,7 +2485,7 @@ body {
   transform: translateX(-50%);
   z-index: 100;
   text-align: center;
-  color: var(--ink-faded, #847A66);
+  color: rgba(232, 224, 208, 0.5);
   font-family: var(--font-ui);
 }
 
@@ -2522,7 +2499,7 @@ body {
 .corkboard-remembrance-name {
   font-family: var(--font-display);
   font-size: 20px;
-  color: var(--ink, #1C1915);
+  color: #e8e0d0;
 }
 
 .corkboard-loader {
@@ -2532,8 +2509,8 @@ body {
   transform: translate(-50%, -50%);
   width: 32px;
   height: 32px;
-  border: 3px solid var(--rule, #D9D0BC);
-  border-top-color: var(--moss, #4E5D42);
+  border: 3px solid rgba(232, 224, 208, 0.1);
+  border-top-color: rgba(232, 224, 208, 0.45);
   border-radius: 50%;
   animation: corkboard-spin 0.8s linear infinite;
 }
@@ -2548,7 +2525,7 @@ body {
   left: 50%;
   transform: translate(-50%, -50%);
   text-align: center;
-  color: var(--ink-soft, #403A2E);
+  color: rgba(232, 224, 208, 0.7);
   z-index: 10;
 }
 
@@ -2561,7 +2538,7 @@ body {
 .corkboard-empty__body {
   font-family: var(--font-body);
   font-size: 15px;
-  color: var(--ink-faded, #847A66);
+  color: rgba(232, 224, 208, 0.5);
   line-height: 1.6;
 }
 
@@ -2571,70 +2548,14 @@ body {
   font-size: 14px;
   color: var(--moss, #4E5D42);
   background: none;
-  border: 1px solid var(--moss, #4E5D42);
+  border: 1px solid rgba(78, 93, 66, 0.4);
   border-radius: 8px;
   padding: 8px 20px;
   cursor: pointer;
   transition: background 0.2s;
 }
 .corkboard-empty__btn:hover {
-  background: var(--paper-deep, #EDE6D6);
-}
-
-[data-theme="dark"] .corkboard-root {
-  background: #1f1a14;
-  color: #e8e0d0;
-}
-
-[data-theme="dark"] .corkboard-pin--image,
-[data-theme="dark"] .corkboard-pin--video {
-  background: #2a231a;
-}
-[data-theme="dark"] .corkboard-pin--story,
-[data-theme="dark"] .corkboard-pin--text,
-[data-theme="dark"] .corkboard-pin--voice,
-[data-theme="dark"] .corkboard-pin--audio,
-[data-theme="dark"] .corkboard-pin--document,
-[data-theme="dark"] .corkboard-pin--link {
-  background: #1f1a14;
-}
-[data-theme="dark"] .corkboard-pin--expanded {
-  background: #2a231a !important;
-}
-[data-theme="dark"] .corkboard-close,
-[data-theme="dark"] .corkboard-autoplay-toggle,
-[data-theme="dark"] .corkboard-controls {
-  background: rgba(31, 26, 20, 0.92);
-  border-color: rgba(232, 224, 208, 0.16);
-  color: #e8e0d0;
-}
-[data-theme="dark"] .corkboard-bottom {
-  background: rgba(31, 26, 20, 0.94);
-  border-top-color: rgba(232, 224, 208, 0.16);
-  color: #e8e0d0;
-}
-[data-theme="dark"] .corkboard-bottom__detail {
-  color: rgba(232, 224, 208, 0.6);
-}
-[data-theme="dark"] .corkboard-bottom__cta {
-  background: var(--moss);
-  color: var(--paper);
-}
-[data-theme="dark"] .corkboard-focus-vignette {
-  background: radial-gradient(
-    circle at var(--focus-x, 50%) var(--focus-y, 50%),
-    transparent 0%,
-    transparent calc(var(--focus-radius, 280px) * 0.6),
-    #1f1a14 calc(var(--focus-radius, 280px) * 1.4)
-  );
-}
-[data-theme="dark"] .corkboard-backdrop {
-  background:
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='3'/><feColorMatrix values='0 0 0 0 0.32  0 0 0 0 0.24  0 0 0 0 0.14  0 0 0 0.18 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"),
-    radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.25) 100%),
-    radial-gradient(ellipse at 30% 20%, rgba(58, 46, 32, 0.5) 0%, transparent 50%),
-    linear-gradient(145deg, #2a231a 0%, #1f1a14 50%, #15110d 100%);
-  background-color: #1f1a14;
+  background: rgba(78, 93, 66, 0.1);
 }
 
 /* ─── Corkboard responsive ────────────────────────────────────────── */
@@ -2643,8 +2564,9 @@ body {
   .corkboard-pin {
     transform-origin: center center;
   }
-  .corkboard-pin--image {
-    padding: 6px 6px 4px;
+  .corkboard-pin--image,
+  .corkboard-pin--video {
+    padding: 6px;
   }
   .corkboard-pin-photo img {
     max-height: 100px;
@@ -2701,7 +2623,7 @@ body {
     bottom: 44px;
   }
   .corkboard-pin--unfocused {
-    opacity: 0.35;
+    opacity: 0.28;
     pointer-events: none;
   }
 }
@@ -2712,90 +2634,6 @@ body {
   .drift-image,
   .drift-audio-orb,
   .drift-loader,
-  .corkboard-audio-orb,
-  .corkboard-thread-path--active,
-  .corkboard-ken-burns-photo img,
-  a[href],
-  button {
-    animation: none !important;
-    transition-duration: 0.01ms !important;
-  }
-}
-
-/* ─── Corkboard responsive ────────────────────────────────────────── */
-
-@media (max-width: 768px) {
-  .corkboard-pin {
-    transform-origin: center center;
-  }
-  .corkboard-pin--image {
-    padding: 6px 6px 4px;
-  }
-  .corkboard-pin-photo img {
-    max-height: 100px;
-  }
-  .corkboard-pin-title {
-    font-size: 11px;
-  }
-  .corkboard-pin-snippet {
-    font-size: 10px;
-    -webkit-line-clamp: 1;
-  }
-  .corkboard-pin-meta {
-    font-size: 9px;
-  }
-  .corkboard-pin--expanded {
-    width: 90vw !important;
-    max-width: 360px;
-    min-height: 240px;
-  }
-  .corkboard-controls {
-    bottom: 52px;
-    padding: 6px 10px;
-    gap: 10px;
-  }
-  .corkboard-thread-toggle__label {
-    font-size: 11px;
-  }
-  .corkboard-close {
-    top: 12px;
-    left: 12px;
-    padding: 6px 12px;
-    font-size: 12px;
-  }
-  .corkboard-autoplay-toggle {
-    top: 12px;
-    right: 12px;
-    padding: 6px 12px;
-    font-size: 11px;
-  }
-  .corkboard-bottom {
-    padding: 10px 16px;
-  }
-  .corkboard-bottom__name {
-    font-size: 13px;
-  }
-  .corkboard-bottom__detail {
-    font-size: 11px;
-  }
-  .corkboard-bottom__cta {
-    font-size: 11px;
-    padding: 5px 10px;
-  }
-  .corkboard-progress-track {
-    bottom: 44px;
-  }
-  .corkboard-pin--unfocused {
-    opacity: 0.35;
-    pointer-events: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .mosaic-piece,
-  .mosaic-header__link,
-  .drift-image,
-  .drift-audio-orb,
   .corkboard-audio-orb,
   .corkboard-thread-path--active,
   .corkboard-ken-burns-photo img,

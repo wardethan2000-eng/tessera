@@ -6,8 +6,6 @@ import { getThreadPath } from "./CorkboardLayout";
 interface CorkboardThreadProps {
   from: PinPosition;
   to: PinPosition;
-  type: ThreadType;
-  strength: number;
   isActive: boolean;
   visible: boolean;
   onThreadClick?: (thread: ThreadConnection) => void;
@@ -15,40 +13,16 @@ interface CorkboardThreadProps {
   currentMemId?: string | null;
 }
 
-const THREAD_COLORS: Record<ThreadType, string> = {
-  temporal: "var(--ink-faded)",
-  person: "var(--moss)",
-  branch: "var(--rose)",
-  era: "var(--ink-faded)",
-  "co-subject": "var(--moss)",
-  place: "var(--rose)",
-};
-
-const THREAD_OPACITY: Record<ThreadType, number> = {
-  temporal: 0.5,
-  person: 0.35,
-  branch: 0.3,
-  era: 0.4,
-  "co-subject": 0.45,
-  place: 0.3,
-};
-
-const THREAD_WIDTH: Record<ThreadType, number> = {
-  temporal: 1.5,
-  person: 1.2,
-  branch: 1.0,
-  era: 1.0,
-  "co-subject": 1.0,
-  place: 0.8,
-};
-
-const DASHED_TYPES = new Set<ThreadType>(["era"]);
+const THREAD_COLOR = "rgba(232, 224, 208, 0.35)";
+const THREAD_WIDTH = 0.6;
+const THREAD_OPACITY = 0.14;
+const THREAD_ACTIVE_OPACITY = 0.28;
+const THREAD_ACTIVE_WIDTH = 1.0;
+const THREAD_CONNECTED_OPACITY = 0.2;
 
 export function CorkboardThread({
   from,
   to,
-  type,
-  strength,
   isActive,
   visible,
   onThreadClick,
@@ -57,16 +31,11 @@ export function CorkboardThread({
 }: CorkboardThreadProps) {
   if (!visible) return null;
 
-  const pathD = getThreadPath(from, to, type);
-  const color = THREAD_COLORS[type] ?? "var(--ink-faded)";
+  const pathD = getThreadPath(from, to, "temporal");
   const isConnectedToCurrent =
     currentMemId != null && (thread.from === currentMemId || thread.to === currentMemId);
-  const ambientFade = isConnectedToCurrent || isActive ? 1 : 0.45;
-  const baseOpacity = (THREAD_OPACITY[type] ?? 0.5) * strength * ambientFade;
-  const baseWidth = THREAD_WIDTH[type] ?? 1.0;
-  const width = isActive ? baseWidth + 1 : baseWidth;
-  const opacity = isActive ? Math.min(1, baseOpacity + 0.4) : baseOpacity;
-  const isDashed = DASHED_TYPES.has(type);
+  const opacity = isActive ? THREAD_ACTIVE_OPACITY : isConnectedToCurrent ? THREAD_CONNECTED_OPACITY : THREAD_OPACITY;
+  const width = isActive ? THREAD_ACTIVE_WIDTH : THREAD_WIDTH;
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -87,16 +56,13 @@ export function CorkboardThread({
       <path
         d={pathD}
         fill="none"
-        stroke={color}
+        stroke={THREAD_COLOR}
         strokeWidth={width}
         strokeLinecap="round"
         opacity={opacity}
-        strokeDasharray={isDashed ? "4 6" : undefined}
         className={isActive ? "corkboard-thread-path--active" : "corkboard-thread-path"}
         style={{ pointerEvents: "none" }}
       />
-      <circle cx={from.x} cy={from.y} r={3} fill={color} opacity={opacity * 0.8} style={{ pointerEvents: "none" }} />
-      <circle cx={to.x} cy={to.y} r={3} fill={color} opacity={opacity * 0.8} style={{ pointerEvents: "none" }} />
     </g>
   );
 }
@@ -153,8 +119,6 @@ export function CorkboardThreadLayer({
             key={thread.id}
             from={fromPin}
             to={toPin}
-            type={thread.type}
-            strength={thread.strength}
             isActive={thread.id === activeThreadId}
             visible
             onThreadClick={onThreadClick}

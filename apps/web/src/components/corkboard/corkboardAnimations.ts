@@ -17,7 +17,7 @@ export const IDLE_THRESHOLD_MS = 5000;
 export const FOCUS_VIGNETTE_INNER_FACTOR = 0.7;
 export const FOCUS_VIGNETTE_OUTER_FACTOR = 1.4;
 
-export const PIN_ROTATION_RANGE = 4;
+export const PIN_ROTATION_RANGE = 2;
 export const PIN_MIN_SPACING = 700;
 export const PIN_JITTER_RANGE = 120;
 export const BOARD_PADDING = 200;
