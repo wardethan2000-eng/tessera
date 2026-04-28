@@ -152,10 +152,10 @@ To confirm the working directories:
 ssh -i ~/.ssh/proxmox_key ubuntu@192.168.68.110 'pwdx <pid>'
 ```
 
-Current verified live pids after homepage revision + video fix deploy on 2026-04-28:
+Current verified live pids after mosaic integration deploy on 2026-04-28:
 
-- API listener pid: `194919`
-- Web listener pid: `194920`
+- API listener pid: `199462`
+- Web listener pid: `199463`
 
 ## Historical Startup Shape On The App VM
 
@@ -258,7 +258,7 @@ This helper intentionally avoids `pkill -f "next start"` style matches, kills li
 - Previous live checkout: `/home/ubuntu/tessera-onboarding-live`
 - Previous live checkout: `/home/ubuntu/heirloom-media-fix-live`
 - Previous live checkout: `/home/ubuntu/heirloom-immersive-scroll-live`
-- Current live checkout: `/home/ubuntu/heirloom-homepage-revise-live`
+- Current live checkout: `/home/ubuntu/heirloom-mosaic-integration-live`
 - Previous live checkout: `/home/ubuntu/heirloom-corkboard-rev1-live`
 - Previous live checkout: `/home/ubuntu/heirloom-decade-rail-live`
 - Historical launcher script: `/home/ubuntu/start-heirloom.sh`
