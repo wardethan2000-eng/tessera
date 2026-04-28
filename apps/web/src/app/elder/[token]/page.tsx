@@ -29,7 +29,9 @@ export default function ElderLandingPage({
       (navigator as Navigator & { standalone?: boolean }).standalone === true;
     if (isIOS && !isStandalone) {
       const dismissed = window.localStorage.getItem(`elder-install-nudge:${token}`);
-      if (!dismissed) setShowInstall(true);
+      if (!dismissed) {
+        window.setTimeout(() => setShowInstall(true), 0);
+      }
     }
   }, [token]);
 
@@ -60,78 +62,33 @@ export default function ElderLandingPage({
           <h1 style={familyTitleStyle}>{inbox.familyLabel}</h1>
         </header>
 
-        <ElderQueuePill />
+        <ElderQueuePill token={token} />
 
         {showInstall && (
           <div style={installNudgeStyle}>
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
-              <div
-                aria-hidden
-                style={{
-                  width: 54,
-                  height: 54,
-                  flexShrink: 0,
-                  background: "#4E5D42",
-                  borderRadius: 10,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "#F6F1E7",
-                  fontFamily: "Georgia, serif",
-                  fontWeight: 700,
-                  fontSize: 30,
-                }}
-              >
-                T
-              </div>
-              <div style={{ flex: 1 }}>
-                <p style={{ margin: "0 0 8px", lineHeight: 1.5, fontSize: 16 }}>
-                  <strong>Add this to your home screen.</strong>
-                </p>
-                <ol
-                  style={{
-                    margin: "0 0 12px",
-                    paddingLeft: 22,
-                    lineHeight: 1.6,
-                    fontSize: 15,
-                    color: "#403A2E",
-                  }}
-                >
-                  <li>
-                    Tap the <strong>Share</strong> button{" "}
-                    <span
-                      aria-hidden
-                      style={{
-                        display: "inline-block",
-                        padding: "0 6px",
-                        border: "1px solid #B08B3E",
-                        borderRadius: 3,
-                        fontSize: 12,
-                      }}
-                    >
-                      ⬆︎
-                    </span>{" "}
-                    at the bottom of Safari.
-                  </li>
-                  <li>
-                    Scroll and tap <strong>Add to Home Screen</strong>.
-                  </li>
-                  <li>Tap <strong>Add</strong> in the top-right.</li>
-                </ol>
-                <button
-                  onClick={() => {
-                    window.localStorage.setItem(
-                      `elder-install-nudge:${token}`,
-                      "1",
-                    );
-                    setShowInstall(false);
-                  }}
-                  style={dismissButtonStyle}
-                >
-                  Got it
-                </button>
-              </div>
-            </div>
+            <p style={installTitleStyle}>Put this button on your phone.</p>
+            <p style={installCopyStyle}>
+              It makes sharing a photo or voice note one tap from your home
+              screen.
+            </p>
+            <Link
+              href={`/elder/${encodeURIComponent(token)}/install`}
+              style={installButtonStyle}
+            >
+              Show me how
+            </Link>
+            <button
+              onClick={() => {
+                window.localStorage.setItem(
+                  `elder-install-nudge:${token}`,
+                  "1",
+                );
+                setShowInstall(false);
+              }}
+              style={dismissButtonStyle}
+            >
+              Not now
+            </button>
           </div>
         )}
 
@@ -158,8 +115,14 @@ export default function ElderLandingPage({
           href={`/elder/${encodeURIComponent(token)}/compose`}
           style={bigCtaStyle}
         >
-          <span style={{ fontSize: 32 }}>＋</span>
-          <span>Send a memory</span>
+          <span>Send a photo, voice note, or story</span>
+        </Link>
+
+        <Link
+          href={`/elder/${encodeURIComponent(token)}/install`}
+          style={secondaryCtaStyle}
+        >
+          Add this to my phone
         </Link>
 
         {inbox.recent.length > 0 && (
@@ -186,7 +149,7 @@ export default function ElderLandingPage({
         )}
 
         <p style={footerStyle}>
-          This link is private to {inbox.email}. Don't share it.
+          This link is private to {inbox.email}. Do not share it.
         </p>
       </div>
     </main>
@@ -197,7 +160,7 @@ const pageStyle: CSSProperties = {
   minHeight: "100vh",
   background: "var(--paper)",
   color: "var(--ink)",
-  padding: "24px 16px 80px",
+  padding: "24px 16px calc(80px + env(safe-area-inset-bottom))",
   display: "flex",
   justifyContent: "center",
 };
@@ -278,14 +241,30 @@ const bigCtaStyle: CSSProperties = {
   alignItems: "center",
   justifyContent: "center",
   gap: 12,
-  padding: "26px 20px",
+  padding: "30px 22px",
   borderRadius: 14,
   background: "var(--moss)",
   color: "#fff",
   textDecoration: "none",
   fontFamily: "var(--font-ui)",
-  fontSize: 22,
-  fontWeight: 600,
+  fontSize: 24,
+  fontWeight: 800,
+  lineHeight: 1.2,
+  textAlign: "center",
+};
+const secondaryCtaStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "20px 18px",
+  borderRadius: 14,
+  border: "2px solid var(--rule)",
+  background: "var(--paper-deep)",
+  color: "var(--ink-soft)",
+  textDecoration: "none",
+  fontFamily: "var(--font-ui)",
+  fontSize: 20,
+  fontWeight: 800,
 };
 const recentRowStyle: CSSProperties = {
   display: "grid",
@@ -328,13 +307,40 @@ const installNudgeStyle: CSSProperties = {
   background: "var(--paper-deep)",
   border: "1px solid var(--rule)",
   borderRadius: 12,
-  padding: "14px 16px",
+  padding: "18px 16px",
   fontFamily: "var(--font-ui)",
-  fontSize: 14,
+  fontSize: 17,
   color: "var(--ink-soft)",
   display: "flex",
   flexDirection: "column",
-  gap: 8,
+  gap: 10,
+};
+const installTitleStyle: CSSProperties = {
+  margin: 0,
+  fontFamily: "var(--font-ui)",
+  fontSize: 20,
+  fontWeight: 800,
+  color: "var(--ink)",
+};
+const installCopyStyle: CSSProperties = {
+  margin: 0,
+  fontFamily: "var(--font-ui)",
+  fontSize: 17,
+  lineHeight: 1.45,
+  color: "var(--ink-soft)",
+};
+const installButtonStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  borderRadius: 12,
+  background: "var(--moss)",
+  color: "#fff",
+  textDecoration: "none",
+  fontFamily: "var(--font-ui)",
+  fontSize: 19,
+  fontWeight: 800,
+  padding: "16px 18px",
 };
 const dismissButtonStyle: CSSProperties = {
   alignSelf: "flex-end",
