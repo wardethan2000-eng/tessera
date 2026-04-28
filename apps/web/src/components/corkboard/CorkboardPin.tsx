@@ -15,10 +15,12 @@ interface CorkboardPinProps {
   isPlaying: boolean;
   onExpand: (id: string) => void;
   onContract: () => void;
-  onSelect: (memoryId: string) => void;
+  onSelect: (memoryId: string, pinId?: string, expand?: boolean) => void;
   reduceMotion: boolean;
   delay: number;
   visible: boolean;
+  expandedWidth: number;
+  expandedMinHeight: number;
   onMediaEnded?: () => void;
 }
 
@@ -47,6 +49,8 @@ export const CorkboardPin = memo(function CorkboardPin({
   reduceMotion,
   delay,
   visible,
+  expandedWidth,
+  expandedMinHeight,
   onMediaEnded,
 }: CorkboardPinProps) {
   const rawMediaUrl = memory.primaryMedia?.mediaUrl ?? memory.memory.mediaUrl ?? null;
@@ -72,9 +76,7 @@ export const CorkboardPin = memo(function CorkboardPin({
     } else if (isCurrent) {
       onExpand(pin.id);
     } else {
-      // Clicking a non-current pin focuses it: camera glides over and the
-      // pin becomes current. A second click then expands it.
-      onSelect(memory.id);
+      onSelect(memory.id, pin.id, true);
     }
   };
 
@@ -114,10 +116,10 @@ export const CorkboardPin = memo(function CorkboardPin({
     <motion.div
       className={`corkboard-pin ${kindClass}${visitedClass}${unfocusedClass}${expandedClass}${startClass}${currentClass}`}
       style={{
-        left: pin.x - pin.width / 2,
-        top: pin.y - pin.height / 2,
-        width: isExpanded ? 480 : pin.width,
-        minHeight: isExpanded ? 320 : pin.height,
+        left: pin.x - (isExpanded ? expandedWidth : pin.width) / 2,
+        top: pin.y - (isExpanded ? expandedMinHeight : pin.height) / 2,
+        width: isExpanded ? expandedWidth : pin.width,
+        minHeight: isExpanded ? expandedMinHeight : pin.height,
         height: isExpanded ? "auto" : pin.height,
         zIndex: isExpanded ? 50 : isCurrent ? 10 : undefined,
         transformOrigin: "center center",

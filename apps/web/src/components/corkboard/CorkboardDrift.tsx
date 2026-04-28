@@ -37,6 +37,7 @@ import {
   computeConnections,
   computeSmartWeave,
   computeBoardSize,
+  findThreadBetween,
 } from "./CorkboardLayout";
 import { useCorkboardCamera } from "./useCorkboardCamera";
 import { CorkboardBackdrop } from "./CorkboardBackdrop";
@@ -135,11 +136,15 @@ function readingTimeMs(text: string | null | undefined): number {
   return Math.min(DURATION_STORY_MAX, Math.max(DURATION_STORY_MIN, ms));
 }
 
-function expandedCardZoom(containerSize: { w: number; h: number }): number {
-  const horizontalFit = (containerSize.w - 96) / 560;
-  const verticalFit = (containerSize.h - 180) / 640;
-  const fit = Math.min(horizontalFit, verticalFit, 1.15);
-  return Math.max(0.65, fit);
+function expandedCardLayout(containerSize: { w: number; h: number }) {
+  const sideContext = containerSize.w >= 900 ? 280 : 32;
+  const verticalContext = containerSize.h >= 720 ? 180 : 120;
+  const targetWidth = Math.max(320, Math.min(960, containerSize.w - sideContext));
+  const targetHeight = Math.max(420, containerSize.h - verticalContext);
+  const width = Math.max(520, Math.min(900, targetWidth / 0.95));
+  const minHeight = Math.max(460, Math.min(680, targetHeight / 0.95));
+  const zoom = Math.max(0.55, Math.min(targetWidth / width, targetHeight / minHeight, 1.08));
+  return { width, minHeight, zoom };
 }
 
 export function CorkboardDrift({
@@ -186,6 +191,7 @@ export function CorkboardDrift({
   const [pinsVisible, setPinsVisible] = useState(false);
   const [containerSize, setContainerSize] = useState({ w: 1200, h: 800 });
   const [cameraInitialized, setCameraInitialized] = useState(false);
+  const [activeRoute, setActiveRoute] = useState<{ from: string; to: string } | null>(null);
 
   const traverseOrder = useRef<string[]>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -251,6 +257,7 @@ export function CorkboardDrift({
   }, [setCameraCallback]);
 
   const boardSize = useMemo(() => computeBoardSize(pins.length), [pins.length]);
+  const expandedLayout = useMemo(() => expandedCardLayout(containerSize), [containerSize]);
 
   const itemsById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
 
@@ -260,12 +267,12 @@ export function CorkboardDrift({
   }, [currentMemId, items, itemsById]);
 
   const activeThreadId = useMemo(() => {
-    if (!currentMemId || !nextMemId) return null;
-    const conn = threads.find(
-      (t) => (t.from === currentMemId && t.to === nextMemId) || (t.from === nextMemId && t.to === currentMemId),
-    );
+    const routeFrom = activeRoute?.from ?? currentMemId;
+    const routeTo = activeRoute?.to ?? nextMemId;
+    if (!routeFrom || !routeTo) return null;
+    const conn = findThreadBetween(threads, routeFrom, routeTo);
     return conn?.id ?? null;
-  }, [currentMemId, nextMemId, threads]);
+  }, [activeRoute, currentMemId, nextMemId, threads]);
 
   const markVisited = useCallback((memId: string) => {
     setVisitedIds((prev) => {
@@ -363,29 +370,6 @@ export function CorkboardDrift({
       }
 
       setItems(memories);
-
-      const tempPins = computePositions(
-        memories.map((i) => ({
-          id: i.id,
-          primaryPersonId: i.memory.primaryPersonId,
-          dateOfEventText: i.memory.dateOfEventText,
-          kind: i.kind,
-        })),
-        treeId,
-      );
-      const tempConnections = computeConnections(
-        memories.map((i) => ({
-          id: i.id,
-          primaryPersonId: i.memory.primaryPersonId,
-          dateOfEventText: i.memory.dateOfEventText,
-          kind: i.kind,
-          body: i.memory.body,
-          title: i.memory.title,
-          transcriptText: i.memory.transcriptText,
-        })),
-        tempPins,
-        people,
-      );
 
       const smartWeave = computeSmartWeave(
         memories.map((i) => ({
@@ -541,19 +525,22 @@ export function CorkboardDrift({
     const glideDuration = expandedPinId
       ? CAMERA_GLIDE_DURATION * 1000 * 0.5
       : CAMERA_GLIDE_DURATION * 1000;
+    const targetZoom = expandedPinId ? expandedLayout.zoom : CAMERA_FOCUSED_ZOOM;
 
     isGlideTransitionRef.current = true;
-    cameraControls.glideToPin(prevMemId, curMemId, glideDuration);
+    setActiveRoute({ from: prevMemId, to: curMemId });
+    cameraControls.glideToPin(prevMemId, curMemId, glideDuration, targetZoom);
 
     const glideTimeout = setTimeout(() => {
       isGlideTransitionRef.current = false;
+      setActiveRoute(null);
     }, glideDuration + 50);
 
     prevMemIdRef.current = curMemId;
     markVisited(curMemId);
 
     return () => clearTimeout(glideTimeout);
-  }, [currentIndex, expandedPinId, cameraControls, markVisited]);
+  }, [currentIndex, expandedPinId, expandedLayout.zoom, cameraControls, markVisited]);
 
   useEffect(() => {
     if (!isPlaying || items.length === 0 || !currentMemory) return;
@@ -571,9 +558,9 @@ export function CorkboardDrift({
     if (timerRef.current) clearTimeout(timerRef.current);
     const pin = pins.find((p) => p.id === pinId);
     if (pin) {
-      cameraControls.jumpToPin(pin.memoryId, expandedCardZoom(containerSize));
+      cameraControls.jumpToPin(pin.memoryId, expandedLayout.zoom);
     }
-  }, [cameraControls, containerSize, pins]);
+  }, [cameraControls, expandedLayout.zoom, pins]);
 
   const handleContract = useCallback(() => {
     setExpandedPinId(null);
@@ -586,10 +573,13 @@ export function CorkboardDrift({
     });
   }, [cameraControls, currentMemId]);
 
-  const handlePinSelect = useCallback((memId: string) => {
+  const handlePinSelect = useCallback((memId: string, pinId?: string, expand = false) => {
     if (isGlideTransitionRef.current) return;
     const idx = traverseOrder.current.indexOf(memId);
-    if (idx >= 0) updateIndex(idx);
+    if (idx < 0) return;
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (expand && pinId) setExpandedPinId(pinId);
+    updateIndex(idx);
   }, [updateIndex]);
 
   const handleMediaEnded = useCallback(() => {
@@ -830,6 +820,7 @@ export function CorkboardDrift({
             threads={threads}
             pins={pins}
             activeThreadId={activeThreadId}
+            activeRoute={activeRoute}
             visibility={threadVisibility}
             width={boardSize.width}
             height={boardSize.height}
@@ -866,6 +857,8 @@ export function CorkboardDrift({
                 reduceMotion={reduceMotion}
                 delay={staggerDelay}
                 visible={pinsVisible}
+                expandedWidth={expandedLayout.width}
+                expandedMinHeight={expandedLayout.minHeight}
                 onMediaEnded={isExpanded ? handleMediaEnded : undefined}
               />
             );
@@ -878,9 +871,11 @@ export function CorkboardDrift({
             "--focus-x": `${containerSize.w / 2}px`,
             "--focus-y": `${containerSize.h / 2}px`,
             "--focus-radius": `${Math.max(
-              (pins.find((p) => p.memoryId === currentMemId)?.width ?? 220) *
-              FOCUS_VIGNETTE_OUTER_FACTOR *
-              camera.zoom,
+              expandedPinId
+                ? expandedLayout.width * expandedLayout.zoom * 0.72
+                : (pins.find((p) => p.memoryId === currentMemId)?.width ?? 220) *
+                  FOCUS_VIGNETTE_OUTER_FACTOR *
+                  camera.zoom,
               280 * camera.zoom
             )}px`,
           } as React.CSSProperties}

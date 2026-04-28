@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { PinPosition, CameraState } from "./corkboardTypes";
+import { sampleCameraPath } from "./CorkboardLayout";
 import {
   CAMERA_GLIDE_DURATION,
   CAMERA_FOCUSED_ZOOM,
@@ -58,7 +59,7 @@ export function useCorkboardCamera(
   }, []);
 
   const glideToPin = useCallback(
-    (fromMemId: string, toMemId: string, durationMs?: number) => {
+    (fromMemId: string, toMemId: string, durationMs?: number, targetZoom = CAMERA_FOCUSED_ZOOM) => {
       cancelGlide();
       isGlidingRef.current = true;
       lastInteraction.current = Date.now();
@@ -77,29 +78,28 @@ export function useCorkboardCamera(
       }
 
       if (reduceMotion) {
-        setCamera({ x: toPin.x, y: toPin.y, zoom: CAMERA_FOCUSED_ZOOM });
+        setCamera({ x: toPin.x, y: toPin.y, zoom: targetZoom });
         isGlidingRef.current = false;
         return;
       }
 
+      const pathFromPin = fromPin;
+      const pathToPin = toPin;
       const start = { ...cameraRef.current };
       const duration = durationMs ?? CAMERA_GLIDE_DURATION * 1000;
       const startTime = performance.now();
 
-      const targetZoom = CAMERA_FOCUSED_ZOOM;
       const startZoom = start.zoom;
-
-      const dx = toPin.x - start.x;
-      const dy = toPin.y - start.y;
 
       function tick(now: number) {
         const elapsed = now - startTime;
         const rawT = Math.min(1, elapsed / duration);
         const t = easeBezier(rawT, EASE_P1, EASE_P2);
+        const pathPoint = sampleCameraPath(pathFromPin, pathToPin, "temporal", t);
 
         const next: CameraState = {
-          x: start.x + dx * t,
-          y: start.y + dy * t,
+          x: pathPoint.x,
+          y: pathPoint.y,
           zoom: startZoom + (targetZoom - startZoom) * t,
         };
         cameraRef.current = next;

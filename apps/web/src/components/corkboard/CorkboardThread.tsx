@@ -71,6 +71,7 @@ interface CorkboardThreadLayerProps {
   threads: ThreadConnection[];
   pins: PinPosition[];
   activeThreadId: string | null;
+  activeRoute?: { from: string; to: string } | null;
   visibility: { temporal: boolean; person: boolean; branch: boolean; era: boolean; place: boolean };
   width: number;
   height: number;
@@ -91,6 +92,7 @@ export function CorkboardThreadLayer({
   threads,
   pins,
   activeThreadId,
+  activeRoute,
   visibility,
   width,
   height,
@@ -98,6 +100,8 @@ export function CorkboardThreadLayer({
   currentMemId,
 }: CorkboardThreadLayerProps) {
   const pinById = new Map(pins.map((p) => [p.memoryId, p]));
+  const renderedPairs = new Set<string>();
+  const pairKey = (from: string, to: string) => [from, to].sort().join("|");
 
   return (
     <svg
@@ -113,6 +117,7 @@ export function CorkboardThreadLayer({
         if (!fromPin || !toPin) return null;
         const visKey = VISIBILITY_MAP[thread.type];
         if (!visKey || !visibility[visKey]) return null;
+        renderedPairs.add(pairKey(thread.from, thread.to));
 
         return (
           <CorkboardThread
@@ -127,6 +132,31 @@ export function CorkboardThreadLayer({
           />
         );
       })}
+      {activeRoute &&
+        !renderedPairs.has(pairKey(activeRoute.from, activeRoute.to)) &&
+        (() => {
+          const fromPin = pinById.get(activeRoute.from);
+          const toPin = pinById.get(activeRoute.to);
+          if (!fromPin || !toPin) return null;
+          const syntheticThread: ThreadConnection = {
+            id: "active-route",
+            from: activeRoute.from,
+            to: activeRoute.to,
+            type: "temporal",
+            strength: 1,
+          };
+          return (
+            <CorkboardThread
+              from={fromPin}
+              to={toPin}
+              isActive
+              visible
+              onThreadClick={onThreadClick}
+              thread={syntheticThread}
+              currentMemId={currentMemId}
+            />
+          );
+        })()}
     </svg>
   );
 }

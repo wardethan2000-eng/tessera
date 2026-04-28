@@ -2115,7 +2115,6 @@ body {
 }
 .corkboard-pin--unfocused {
   opacity: 0.28;
-  pointer-events: none;
 }
 .corkboard-pin--expanded {
   z-index: 50;
@@ -2152,6 +2151,10 @@ body {
   flex-direction: column;
   gap: 4px;
   overflow: hidden;
+}
+.corkboard-pin--expanded .corkboard-pin-content {
+  height: 100%;
+  overflow: visible;
 }
 
 .corkboard-pin-photo {
@@ -2256,10 +2259,11 @@ body {
 .corkboard-pin-expanded {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 20px;
-  min-height: 200px;
+  gap: 16px;
+  padding: 28px;
+  min-height: inherit;
   position: relative;
+  justify-content: center;
 }
 
 .corkboard-pin-expanded-header {
@@ -2282,14 +2286,14 @@ body {
 
 .corkboard-pin-expanded-photo {
   width: 100%;
-  max-height: 500px;
+  max-height: 58vh;
   overflow: hidden;
   border-radius: 2px;
 }
 .corkboard-pin-expanded-photo img {
   width: 100%;
   height: auto;
-  max-height: 500px;
+  max-height: 58vh;
   object-fit: contain;
 }
 
@@ -2304,7 +2308,7 @@ body {
 
 .corkboard-pin-expanded-video {
   width: 100%;
-  max-height: 500px;
+  max-height: 58vh;
   border-radius: 2px;
 }
 
@@ -2350,10 +2354,10 @@ body {
 
 .corkboard-pin-expanded-body {
   font-family: var(--font-body);
-  font-size: 17px;
+  font-size: 19px;
   line-height: 1.7;
   color: #e8e0d0;
-  max-height: 400px;
+  max-height: 52vh;
   overflow-y: auto;
 }
 
