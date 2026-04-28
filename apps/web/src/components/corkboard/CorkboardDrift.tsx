@@ -476,45 +476,55 @@ export function CorkboardDrift({
       const dirX = Math.cos(angleRad);
       const dirY = Math.sin(angleRad);
 
+      const scorePin = (pin: typeof pins[number]) => {
+        const dx = pin.x - fx;
+        const dy = pin.y - fy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist === 0) return null;
+        const nx = dx / dist;
+        const ny = dy / dist;
+        const dot = nx * dirX + ny * dirY; // 1 = same direction, -1 = opposite
+        const cross = Math.abs(nx * dirY - ny * dirX); // 0 = directly on the axis
+        return { id: pin.memoryId, dist, dot, cross };
+      };
+
+      let bestConnected: { id: string; score: number } | null = null;
+      for (const thread of threads) {
+        const targetId =
+          thread.from === fromMemId ? thread.to :
+          thread.to === fromMemId ? thread.from :
+          null;
+        if (!targetId) continue;
+        const pin = pins.find((p) => p.memoryId === targetId);
+        if (!pin) continue;
+        const scored = scorePin(pin);
+        if (!scored || scored.dot < 0.42) continue;
+        const score = scored.dist * (1 + scored.cross * 1.8) - scored.dot * 260;
+        if (!bestConnected || score < bestConnected.score) {
+          bestConnected = { id: scored.id, score };
+        }
+      }
+      if (bestConnected) return bestConnected.id;
+
       let best: { id: string; score: number } | null = null;
 
       for (const pin of pins) {
         if (pin.memoryId === fromMemId) continue;
-        const dx = pin.x - fx;
-        const dy = pin.y - fy;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist === 0) continue;
-        const nx = dx / dist;
-        const ny = dy / dist;
-        const dot = nx * dirX + ny * dirY; // 1 = same direction, -1 = opposite
+        const scored = scorePin(pin);
+        if (!scored) continue;
 
-        // Only consider pins that are roughly in the requested direction.
-        if (dot < 0.15) continue;
+        // Keep arrow navigation cardinal: right should feel right, not diagonal.
+        if (scored.dot < 0.58) continue;
 
-        const score = dist * (2.5 - dot); // closer + more aligned = better
+        const score = scored.dist * (1 + scored.cross * 2.4) - scored.dot * 180;
         if (!best || score < best.score) {
-          best = { id: pin.memoryId, score };
+          best = { id: scored.id, score };
         }
       }
 
-      // Fallback: if nothing is in that direction, pick the closest pin overall.
-      if (!best) {
-        let closest: { id: string; dist: number } | null = null;
-        for (const pin of pins) {
-          if (pin.memoryId === fromMemId) continue;
-          const dx = pin.x - fx;
-          const dy = pin.y - fy;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (!closest || dist < closest.dist) {
-            closest = { id: pin.memoryId, dist };
-          }
-        }
-        return closest?.id ?? null;
-      }
-
-      return best.id;
+      return best?.id ?? null;
     },
-    [pins]
+    [pins, threads]
   );
 
   /* ─── Navigate spatially instead of chronologically ──────────────────────── */
@@ -667,6 +677,27 @@ export function CorkboardDrift({
   }, [cameraControls, expandedPinId]);
 
   useEffect(() => {
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+
+    const blockScroll = (e: Event) => {
+      e.preventDefault();
+    };
+
+    window.addEventListener("wheel", blockScroll, { passive: false });
+    window.addEventListener("touchmove", blockScroll, { passive: false });
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      window.removeEventListener("wheel", blockScroll);
+      window.removeEventListener("touchmove", blockScroll);
+    };
+  }, []);
+
+  useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         if (expandedPinId) {
@@ -692,25 +723,25 @@ export function CorkboardDrift({
       if (e.key === "ArrowRight") {
         e.preventDefault();
         if (expandedPinId) handleContract();
-        goSpatial(e.shiftKey ? 30 : 0);
+        goSpatial(0);
         return;
       }
       if (e.key === "ArrowLeft") {
         e.preventDefault();
         if (expandedPinId) handleContract();
-        goSpatial(e.shiftKey ? 150 : 180);
+        goSpatial(180);
         return;
       }
       if (e.key === "ArrowUp") {
         e.preventDefault();
         if (expandedPinId) handleContract();
-        goSpatial(e.shiftKey ? 120 : 90);
+        goSpatial(270);
         return;
       }
       if (e.key === "ArrowDown") {
         e.preventDefault();
         if (expandedPinId) handleContract();
-        goSpatial(e.shiftKey ? 60 : 270);
+        goSpatial(90);
         return;
       }
     };
