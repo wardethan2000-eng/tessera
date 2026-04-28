@@ -79,7 +79,7 @@ export const CorkboardPin = memo(function CorkboardPin({
   };
 
   const targetOpacity = isExpanded ? 1 : isUnfocused ? 0.35 : 1;
-  const targetScale = isExpanded ? 1 : pin.scale;
+  const targetScale = isExpanded ? 1 : isCurrent ? 1.25 : pin.scale;
 
   const expandedRef = useRef<HTMLDivElement>(null);
 

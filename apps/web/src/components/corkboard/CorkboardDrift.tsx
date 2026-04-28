@@ -475,6 +475,75 @@ export function CorkboardDrift({
     });
   }, []);
 
+  /* ─── Spatial keyboard navigation helpers ────────────────────────────────── */
+
+  const findNearestInDirection = useCallback(
+    (fromMemId: string, angleDeg: number): string | null => {
+      const fromPin = pins.find((p) => p.memoryId === fromMemId);
+      if (!fromPin) return null;
+
+      const fx = fromPin.x;
+      const fy = fromPin.y;
+      const angleRad = (angleDeg * Math.PI) / 180;
+      const dirX = Math.cos(angleRad);
+      const dirY = Math.sin(angleRad);
+
+      let best: { id: string; dist: number; dot: number } | null = null;
+
+      for (const pin of pins) {
+        if (pin.memoryId === fromMemId) continue;
+        const dx = pin.x - fx;
+        const dy = pin.y - fy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist === 0) continue;
+        const nx = dx / dist;
+        const ny = dy / dist;
+        const dot = nx * dirX + ny * dirY; // 1 = same direction, -1 = opposite
+
+        // Only consider pins that are roughly in the requested direction.
+        if (dot < 0.15) continue;
+
+        const score = dist * (2.5 - dot); // closer + more aligned = better
+        if (!best || score < dist * (2.5 - dot)) {
+          best = { id: pin.memoryId, dist, dot };
+        }
+      }
+
+      // Fallback: if nothing is in that direction, pick the closest pin overall.
+      if (!best) {
+        let closest: { id: string; dist: number } | null = null;
+        for (const pin of pins) {
+          if (pin.memoryId === fromMemId) continue;
+          const dx = pin.x - fx;
+          const dy = pin.y - fy;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (!closest || dist < closest.dist) {
+            closest = { id: pin.memoryId, dist };
+          }
+        }
+        return closest?.id ?? null;
+      }
+
+      return best.id;
+    },
+    [pins]
+  );
+
+  /* ─── Navigate spatially instead of chronologically ──────────────────────── */
+
+  const goSpatial = useCallback(
+    (directionDeg: number) => {
+      if (isGlideTransitionRef.current) return;
+      const fromId = currentMemId ?? traverseOrder.current[0];
+      if (!fromId) return;
+      const targetId = findNearestInDirection(fromId, directionDeg);
+      if (!targetId) return;
+      const idx = traverseOrder.current.indexOf(targetId);
+      if (idx >= 0) updateIndex(idx);
+    },
+    [currentMemId, updateIndex, findNearestInDirection]
+  );
+
   const jumpNext = useCallback(() => {
     if (isGlideTransitionRef.current) return;
     const len = traverseOrder.current.length;
@@ -605,6 +674,10 @@ export function CorkboardDrift({
     const el = viewportRef.current;
     if (!el) return;
     const handler = (e: WheelEvent) => {
+      if (expandedPinId) {
+        e.preventDefault();
+        return;
+      }
       e.preventDefault();
       cameraControls.touchInteraction();
 
@@ -621,7 +694,7 @@ export function CorkboardDrift({
     };
     el.addEventListener("wheel", handler, { passive: false });
     return () => el.removeEventListener("wheel", handler);
-  }, [cameraControls]);
+  }, [cameraControls, expandedPinId]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -631,33 +704,49 @@ export function CorkboardDrift({
         } else {
           onClose();
         }
+        return;
       }
-      if (e.key === "ArrowRight") {
+
+      // Space advances to the next memory (or expands current if not yet current)
+      if (e.key === " ") {
         e.preventDefault();
-        if (expandedPinId) handleContract();
-        if (e.shiftKey) {
-          jumpNext();
+        if (expandedPinId) {
+          handleContract();
         } else {
           advance();
         }
+        return;
+      }
+
+      // Arrow keys navigate spatially on the board
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        if (expandedPinId) handleContract();
+        goSpatial(e.shiftKey ? 30 : 0);
+        return;
       }
       if (e.key === "ArrowLeft") {
         e.preventDefault();
         if (expandedPinId) handleContract();
-        if (e.shiftKey) {
-          jumpPrev();
-        } else {
-          stepBack();
-        }
+        goSpatial(e.shiftKey ? 150 : 180);
+        return;
       }
-      if (e.key === " ") {
+      if (e.key === "ArrowUp") {
         e.preventDefault();
-        setIsPlaying((p) => !p);
+        if (expandedPinId) handleContract();
+        goSpatial(e.shiftKey ? 120 : 90);
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (expandedPinId) handleContract();
+        goSpatial(e.shiftKey ? 60 : 270);
+        return;
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onClose, advance, stepBack, jumpNext, jumpPrev, expandedPinId, handleContract]);
+  }, [onClose, advance, goSpatial, expandedPinId, handleContract]);
 
   const handleThreadClick = useCallback((thread: ThreadConnection) => {
     if (!currentMemId) return;

@@ -117,6 +117,39 @@ export function useCorkboardCamera(
     [pins, reduceMotion, cancelGlide, setCamera],
   );
 
+  const jumpToXY = useCallback(
+    (x: number, y: number, zoom = CAMERA_FOCUSED_ZOOM) => {
+      cancelGlide();
+      const target: CameraState = { x, y, zoom };
+      if (reduceMotion) {
+        setCamera(target);
+        return;
+      }
+      const start = { ...cameraRef.current };
+      const duration = 600;
+      const startTime = performance.now();
+      function tick(now: number) {
+        const elapsed = now - startTime;
+        const rawT = Math.min(1, elapsed / duration);
+        const t = easeBezier(rawT, EASE_P1, EASE_P2);
+        const next: CameraState = {
+          x: start.x + (target.x - start.x) * t,
+          y: start.y + (target.y - start.y) * t,
+          zoom: start.zoom + (target.zoom - start.zoom) * t,
+        };
+        cameraRef.current = next;
+        setCameraCallbackRef.current?.(next);
+        if (rawT < 1) {
+          rafRef.current = requestAnimationFrame(tick);
+        } else {
+          rafRef.current = null;
+        }
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    },
+    [reduceMotion, cancelGlide, setCamera],
+  );
+
   const jumpToPin = useCallback(
     (memId: string, zoom = CAMERA_FOCUSED_ZOOM) => {
       cancelGlide();
@@ -255,6 +288,7 @@ export function useCorkboardCamera(
       setSetCamera,
       glideToPin,
       jumpToPin,
+      jumpToXY,
       initCamera,
       panBy,
       zoomBy,
@@ -262,6 +296,6 @@ export function useCorkboardCamera(
       isGliding: isGlidingRef,
       touchInteraction,
     }),
-    [setCamera, setSetCamera, glideToPin, jumpToPin, initCamera, panBy, zoomBy, cancelGlide, touchInteraction],
+    [setCamera, setSetCamera, glideToPin, jumpToPin, jumpToXY, initCamera, panBy, zoomBy, cancelGlide, touchInteraction],
   );
 }
