@@ -42,7 +42,20 @@ import { GearIcon, InboxIcon } from "@/components/tree/SurfaceToolbarIcons";
 import { DriftCastControls } from "@/components/cast/DriftCastControls";
 import { CastButton } from "@/components/cast/CastButton";
 import { ViewModeDropdown } from "@/components/home/ViewModeDropdown";
-import { ArchiveSwitcher } from "@/components/home/ArchiveSwitcher";
+import { useMosaicData } from "@/components/home/useMosaicData";
+import { ArchiveTile } from "@/components/mosaic/ArchiveTile";
+import { MemoryTile } from "@/components/mosaic/MemoryTile";
+import { NewArchiveTile } from "@/components/mosaic/NewArchiveTile";
+import { InvitationTile } from "@/components/mosaic/InvitationTile";
+import { MosaicSurface } from "@/components/mosaic/MosaicTile";
+import {
+  formatTodayNote,
+  formatGenerationsLabel,
+  formatSpanLabel,
+  formatUnfinishedNote,
+  isSparseArchive,
+  type TodayHighlight,
+} from "@/components/mosaic/mosaicUtils";
 import { useChromecast } from "@/hooks/useChromecast";
 import { fetchWithTimeout } from "@/lib/fetch-timeout";
 import { usePendingTimeout } from "@/lib/usePendingTimeout";
@@ -147,6 +160,8 @@ export default function AtriumPage() {
 
   const openMobileMenu = useCallback(() => setMobileMenuOpen(true), []);
   const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
+
+  const mosaic = useMosaicData(treeId);
 
   const scrollToMemories = useCallback(() => {
     memoriesRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -554,32 +569,26 @@ export default function AtriumPage() {
           transition: "transform 400ms cubic-bezier(0.22, 0.61, 0.36, 1)",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            flexWrap: "wrap",
-            minWidth: 0,
-          }}
-        >
-          <Link
-            href="/dashboard"
-            style={{
-              fontFamily: "var(--font-ui)",
-              fontSize: 12,
-              color: "var(--ink-faded)",
-              textDecoration: "none",
-              padding: "8px 4px",
-              minHeight: 44,
-              display: "inline-flex",
-              alignItems: "center",
-            }}
-          >
-            ← Archives
-          </Link>
-          <ArchiveSwitcher currentTreeId={treeId} currentTreeName={tree?.name ?? "Tessera"} />
-        </div>
+         <div
+           style={{
+             display: "flex",
+             alignItems: "center",
+             gap: 12,
+             flexWrap: "wrap",
+             minWidth: 0,
+           }}
+         >
+           <span
+             style={{
+               fontFamily: "var(--font-ui)",
+               fontSize: 14,
+               fontWeight: 500,
+               color: "var(--ink)",
+             }}
+           >
+             {tree?.name ?? "Tessera"}
+           </span>
+         </div>
 
         <div
           className="tessera-header-nav"
@@ -906,6 +915,156 @@ export default function AtriumPage() {
         familyTreeHref={`/trees/${treeId}/tree`}
       />
 
+      {!mosaic.loading && !mosaic.loadError && mosaic.summaries.length > 0 && (
+        <section className="mosaic-main" style={{ paddingTop: 0 }}>
+          <div className="mosaic-intro">
+            {mosaic.primary && (
+              <p className="mosaic-subtitle">
+                {formatGenerationsLabel(mosaic.primary.stats.generationCount) && formatSpanLabel(mosaic.primary.coverage.earliestYear, mosaic.primary.coverage.latestYear)
+                  ? `${mosaic.primary.stats.peopleCount} people across ${formatGenerationsLabel(mosaic.primary.stats.generationCount)}, ${formatSpanLabel(mosaic.primary.coverage.earliestYear, mosaic.primary.coverage.latestYear)}`
+                  : formatGenerationsLabel(mosaic.primary.stats.generationCount)
+                    ? `${mosaic.primary.stats.peopleCount} people across ${formatGenerationsLabel(mosaic.primary.stats.generationCount)}`
+                    : formatSpanLabel(mosaic.primary.coverage.earliestYear, mosaic.primary.coverage.latestYear)
+                      ? `${mosaic.primary.stats.peopleCount} people, ${formatSpanLabel(mosaic.primary.coverage.earliestYear, mosaic.primary.coverage.latestYear)}`
+                      : ""}
+                {mosaic.primary && formatUnfinishedNote(mosaic.primary.stats) && (
+                  <span className="mosaic-subtitle__note">{formatUnfinishedNote(mosaic.primary.stats)}</span>
+                )}
+              </p>
+            )}
+          </div>
+
+          {mosaic.todayHighlights.length > 0 && (
+            <div className="mosaic-today">
+              {mosaic.todayHighlights.map((h, i) => (
+                <TodayLink key={i} highlight={h} />
+              ))}
+            </div>
+          )}
+
+          <MosaicSurface>
+            {mosaic.primary && (
+              <ArchiveTile
+                key={mosaic.primary.tree.id}
+                treeName={mosaic.primary.tree.name}
+                role={mosaic.primary.tree.role}
+                stats={mosaic.primary.stats}
+                coverage={mosaic.primary.coverage}
+                heroMemory={mosaic.primary.heroCandidates[0] ?? null}
+                isFoundedByYou={mosaic.primary.isFoundedByYou}
+                isPrimary
+                isSparse={isSparseArchive(mosaic.primary.stats)}
+                href={`/trees/${mosaic.primary.tree.id}/home`}
+                stagger={0}
+              />
+            )}
+
+            {mosaic.mosaicMemories.map((tile, i) => (
+              <MemoryTile
+                key={`${tile.treeId}:${tile.memory.id}`}
+                memory={tile.memory}
+                treeName={tile.treeName}
+                href={`/trees/${tile.treeId}/memories/${tile.memory.id}`}
+                weight={tile.weight}
+                index={i}
+                stagger={i + 1}
+              />
+            ))}
+
+            {mosaic.pendingInvites.map((invite, i) => (
+              <InvitationTile
+                key={invite.id}
+                treeName={invite.treeName}
+                invitedByName={invite.invitedByName}
+                proposedRole={invite.proposedRole}
+                linkedPersonName={invite.linkedPersonName}
+                treeId={invite.treeId}
+                inviteId={invite.id}
+                stagger={mosaic.mosaicMemories.length + i + 1}
+              />
+            ))}
+
+            {mosaic.secondary.map((summary, i) => (
+              <ArchiveTile
+                key={summary.tree.id}
+                treeName={summary.tree.name}
+                role={summary.tree.role}
+                stats={summary.stats}
+                coverage={summary.coverage}
+                heroMemory={summary.heroCandidates[0] ?? null}
+                isFoundedByYou={summary.isFoundedByYou}
+                isPrimary={false}
+                isSparse={isSparseArchive(summary.stats)}
+                href={`/trees/${summary.tree.id}/home`}
+                stagger={mosaic.mosaicMemories.length + mosaic.pendingInvites.length + i + 1}
+              />
+            ))}
+
+            <NewArchiveTile
+              onClick={() => {
+                mosaic.setCreatingLineage(true);
+                mosaic.setCreateError(null);
+                mosaic.setNewLineageName("");
+              }}
+              stagger={mosaic.mosaicMemories.length + mosaic.pendingInvites.length + mosaic.secondary.length + 1}
+            />
+          </MosaicSurface>
+
+          {mosaic.summaries.length === 1 && (
+            <p className="mosaic-epilogue">
+              Start another archive for a spouse-family line, a maternal branch, or a chosen family — shared relatives become the bridges between them.
+            </p>
+          )}
+        </section>
+      )}
+
+      {mosaic.creatingLineage && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => { if (!mosaic.submittingLineage) mosaic.setCreatingLineage(false); }}
+          className="mosaic-overlay"
+        >
+          <form
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={mosaic.handleCreateLineage}
+            className="mosaic-dialog"
+          >
+            <h2 className="mosaic-dialog__title">Start a new archive</h2>
+            <p className="mosaic-dialog__desc">
+              An archive can be a family name like <em>Ward Family</em> or <em>Karsen Family</em>, a line like <em>Maternal Line</em>, or a framing like <em>Chosen Family</em>.
+            </p>
+            <input
+              autoFocus
+              value={mosaic.newLineageName}
+              onChange={(e) => mosaic.setNewLineageName(e.target.value)}
+              placeholder="e.g. Karsen Family"
+              className="mosaic-dialog__input"
+            />
+            {mosaic.createError && (
+              <p className="mosaic-dialog__error">{mosaic.createError}</p>
+            )}
+            <div className="mosaic-dialog__actions">
+              <button
+                type="button"
+                disabled={mosaic.submittingLineage}
+                onClick={() => mosaic.setCreatingLineage(false)}
+                className="mosaic-btn-muted"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={mosaic.submittingLineage}
+                className="mosaic-btn-primary"
+              >
+                {mosaic.submittingLineage ? "Creating..." : "Create archive"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {memories.length === 0 ? (
         <AtriumStartState
           treeName={tree?.name ?? "Family Archive"}
@@ -1168,4 +1327,20 @@ function getHeaderNavButtonStyle(active: boolean) {
     ...getHeaderNavItemStyle(active),
     cursor: "pointer",
   } as const;
+}
+
+function TodayLink({ highlight }: { highlight: TodayHighlight }) {
+  const note = formatTodayNote(highlight);
+  if (!note) return null;
+  const treeId = highlight.treeId;
+  const kind = highlight.kind;
+  return (
+    <a
+      href={`/trees/${treeId}/home`}
+      className={`mosaic-today__note mosaic-today__note--${kind}`}
+    >
+      <span className="mosaic-today__dot" />
+      {note}
+    </a>
+  );
 }

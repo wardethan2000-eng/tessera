@@ -154,8 +154,8 @@ ssh -i ~/.ssh/proxmox_key ubuntu@192.168.68.110 'pwdx <pid>'
 
 Current verified live pids after homepage revision + video fix deploy on 2026-04-28:
 
-- API listener pid: `194919`
-- Web listener pid: `194920`
+- API listener pid: `195733`
+- Web listener pid: `195734`
 
 ## Historical Startup Shape On The App VM
 

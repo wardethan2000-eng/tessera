@@ -892,6 +892,106 @@ export async function treesPlugin(app: FastifyInstance): Promise<void> {
     return reply.send(memberships.map((m) => ({ ...m.tree, role: m.role })));
   });
 
+  app.get("/api/trees/summaries", async (request, reply) => {
+    const session = await getSession(request.headers);
+    if (!session) return reply.status(401).send({ error: "Unauthorized" });
+
+    const memberships = await db.query.treeMemberships.findMany({
+      where: (t, { eq }) => eq(t.userId, session.user.id),
+      with: { tree: true },
+    });
+
+    // Fetch pending invitations in parallel with tree data
+    const [pendingInvites, ...treeResults] = await Promise.all([
+      (async () => {
+        const email = session.user.email.toLowerCase();
+        const now = new Date();
+        const invites = await db.query.invitations.findMany({
+          where: (inv, { and, eq }) =>
+            and(eq(inv.email, email), eq(inv.status, "pending")),
+          with: { tree: true, invitedBy: true, linkedPerson: true },
+          orderBy: (inv, { desc }) => [desc(inv.createdAt)],
+        });
+        return invites
+          .filter((inv) => inv.expiresAt > now)
+          .map((inv) => ({
+            id: inv.id,
+            treeId: inv.treeId,
+            treeName: inv.tree?.name ?? "Unknown",
+            invitedByName: inv.invitedBy?.name ?? inv.invitedBy?.email ?? "Unknown",
+            invitedByEmail: inv.invitedBy?.email ?? null,
+            proposedRole: inv.proposedRole,
+            linkedPersonName: inv.linkedPerson?.displayName ?? null,
+            expiresAt: inv.expiresAt.toISOString(),
+            createdAt: inv.createdAt.toISOString(),
+          }));
+      })(),
+      // Per-tree data: people, memories, relationships, hero candidates, today highlights
+      ...memberships.map(async (m) => {
+        const tree = m.tree;
+        const [people, memories, relationships] = await Promise.all([
+          getTreeScopedPeople(tree.id),
+          getTreeMemories(tree.id, { limit: 50, viewerUserId: session.user.id }),
+          getTreeRelationships(tree.id),
+        ]);
+
+        const directMemoryPersonIds = new Set<string>();
+        for (const memory of memories) {
+          if (memory.primaryPersonId) directMemoryPersonIds.add(memory.primaryPersonId);
+          for (const tag of memory.personTags) directMemoryPersonIds.add(tag.personId);
+        }
+
+        const years = [
+          ...people.flatMap((p) =>
+            [p.birthDateText, p.deathDateText]
+              .map((v) => extractYear(v))
+              .filter((v): v is number => v !== null),
+          ),
+          ...memories.map((m) => extractYear(m.dateOfEventText)).filter((v): v is number => v !== null),
+        ];
+        const earliestYear = years.length > 0 ? Math.min(...years) : null;
+        const latestYear = years.length > 0 ? Math.max(...years) : null;
+
+        const heroCandidates = selectHeroCandidates(memories, 1);
+
+        const todayHighlights = buildTodayHighlights({ people, memories });
+        const hasTodayHighlights =
+          todayHighlights.birthdays.length > 0 ||
+          todayHighlights.deathiversaries.length > 0 ||
+          todayHighlights.memoryAnniversaries.length > 0;
+
+        return {
+          tree: {
+            id: tree.id,
+            name: tree.name,
+            role: m.role,
+            createdAt: tree.createdAt.toISOString(),
+            founderUserId: tree.founderUserId,
+          },
+          stats: {
+            peopleCount: people.length,
+            memoryCount: memories.length,
+            generationCount: computeGenerationCount(people, relationships),
+            peopleWithoutPortraitCount: people.filter((p) => !p.portraitMedia).length,
+            peopleWithoutDirectMemoriesCount: people.filter(
+              (p) => !directMemoryPersonIds.has(p.id),
+            ).length,
+          },
+          coverage: {
+            earliestYear,
+            latestYear,
+            decadeBuckets: buildDecadeBuckets(memories),
+          },
+          heroCandidates: heroCandidates.map(serializeHomeMemory),
+          isFoundedByYou: !!tree.founderUserId && tree.founderUserId === session.user.id,
+          today: hasTodayHighlights ? todayHighlights : null,
+        };
+      }),
+    ]);
+
+    return reply.send({ trees: treeResults, pendingInvites });
+  });
+
   app.get("/api/trees/:treeId/home", async (request, reply) => {
     const session = await getSession(request.headers);
     if (!session) return reply.status(401).send({ error: "Unauthorized" });
