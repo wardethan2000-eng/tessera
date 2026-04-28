@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useRef } from "react";
+import { memo, useCallback, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import type { CorkboardMemory, DetectedKind, PinPosition } from "./corkboardTypes";
 import { getProxiedMediaUrl } from "@/lib/media-url";
@@ -99,9 +99,25 @@ export const CorkboardPin = memo(function CorkboardPin({
   const previewVideoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
+  // React's `muted` JSX prop sets the attribute but doesn't reliably sync the
+  // property — and browsers gate autoplay on the property, not the attribute.
+  // Set it via the ref callback so it's true before the browser evaluates
+  // autoplay; otherwise the play() promise rejects and the .catch() below
+  // hides the failure.
+  const setExpandedVideoRef = useCallback((node: HTMLVideoElement | null) => {
+    videoRef.current = node;
+    if (node) node.muted = true;
+  }, []);
+
+  const setPreviewVideoRef = useCallback((node: HTMLVideoElement | null) => {
+    previewVideoRef.current = node;
+    if (node) node.muted = true;
+  }, []);
+
   useEffect(() => {
     if (isExpanded && isPlaying) {
       if (memory.kind === "video" && videoRef.current) {
+        videoRef.current.muted = true;
         videoRef.current.play().catch(() => {});
       }
       if (memory.kind === "audio" && audioRef.current) {
@@ -166,14 +182,17 @@ export const CorkboardPin = memo(function CorkboardPin({
               <div className="corkboard-pin-video-preview" aria-hidden="true">
                 {resolvedMediaUrl ? (
                   <video
-                    ref={previewVideoRef}
+                    ref={setPreviewVideoRef}
                     src={resolvedMediaUrl}
                     autoPlay
                     loop
                     muted
                     playsInline
                     preload="metadata"
-                    onCanPlay={(e) => e.currentTarget.play().catch(() => {})}
+                    onCanPlay={(e) => {
+                      e.currentTarget.muted = true;
+                      e.currentTarget.play().catch(() => {});
+                    }}
                   />
                 ) : (
                   resolvedPreviewUrl && <img src={resolvedPreviewUrl} alt="" loading="lazy" decoding="async" />
@@ -235,13 +254,17 @@ export const CorkboardPin = memo(function CorkboardPin({
 
             {memory.kind === "video" && resolvedMediaUrl && (
               <video
-                ref={videoRef}
+                ref={setExpandedVideoRef}
                 src={resolvedMediaUrl}
                 autoPlay
                 playsInline
                 muted
                 controls
-                preload="metadata"
+                preload="auto"
+                onCanPlay={(e) => {
+                  e.currentTarget.muted = true;
+                  e.currentTarget.play().catch(() => {});
+                }}
                 onEnded={onMediaEnded}
                 onClick={(e) => e.stopPropagation()}
                 onPointerDown={(e) => e.stopPropagation()}
