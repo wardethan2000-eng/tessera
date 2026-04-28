@@ -1966,7 +1966,6 @@ body {
     linear-gradient(118deg, rgba(126, 113, 78, 0.26), transparent 34%, rgba(70, 91, 77, 0.18) 67%, transparent),
     linear-gradient(145deg, #6d634f 0%, #515943 38%, #3f4338 68%, #333328 100%);
   background-color: #4f533f;
-  animation: corkboard-field-drift 90s ease-in-out infinite alternate;
 }
 
 .corkboard-backdrop::before {
@@ -1979,7 +1978,6 @@ body {
     linear-gradient(14deg, rgba(44, 59, 50, 0.2), transparent 34%, rgba(137, 122, 86, 0.14));
   opacity: 0.78;
   transform: translateX(-8%);
-  animation: corkboard-light-sweep 52s ease-in-out infinite alternate;
 }
 
 .corkboard-backdrop::after {
@@ -1992,17 +1990,6 @@ body {
     repeating-linear-gradient(135deg, rgba(20, 27, 24, 0.028) 0 1px, transparent 1px 13px);
   mix-blend-mode: soft-light;
   opacity: 0.72;
-}
-
-@keyframes corkboard-field-drift {
-  0% { background-position: 0 0, 0 0, 0 0, 0 0; }
-  100% { background-position: 120px 40px, -70px 95px, 180px -120px, 0 0; }
-}
-
-@keyframes corkboard-light-sweep {
-  0% { transform: translateX(-10%) skewX(-2deg); opacity: 0.48; }
-  55% { opacity: 0.78; }
-  100% { transform: translateX(10%) skewX(2deg); opacity: 0.62; }
 }
 
 .corkboard-backdrop--remembrance {
@@ -2100,28 +2087,18 @@ body {
 
 .corkboard-thread-path {
   mix-blend-mode: screen;
-  transition: opacity 1.8s cubic-bezier(0.22, 0.61, 0.36, 1), stroke-width 0.3s ease-out, filter 0.3s ease-out;
+  transition: opacity 1.8s cubic-bezier(0.22, 0.61, 0.36, 1), stroke-width 0.3s ease-out;
 }
 .corkboard-thread-path--active {
-  filter: drop-shadow(0 0 5px rgba(255, 238, 196, 0.22));
-  animation: corkboard-active-route-breathe 1.8s ease-in-out infinite;
+  opacity: 0.86;
 }
 .corkboard-thread-glow {
-  filter: blur(1.2px);
+  opacity: 0.28;
 }
 .corkboard-thread--era .corkboard-thread-path,
 .corkboard-thread--place .corkboard-thread-path {
   stroke-dasharray: 7 12;
 }
-.corkboard-thread--person .corkboard-thread-path {
-  filter: drop-shadow(0 0 3px rgba(202, 214, 178, 0.08));
-}
-
-@keyframes corkboard-active-route-breathe {
-  0%, 100% { opacity: 0.72; }
-  50% { opacity: 1; }
-}
-
 .corkboard-pin {
   position: absolute;
   display: flex;

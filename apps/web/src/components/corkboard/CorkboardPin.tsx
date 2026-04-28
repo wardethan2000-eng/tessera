@@ -96,6 +96,7 @@ export const CorkboardPin = memo(function CorkboardPin({
   }, [isExpanded]);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const previewVideoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
@@ -112,6 +113,13 @@ export const CorkboardPin = memo(function CorkboardPin({
       if (audioRef.current) audioRef.current.pause();
     }
   }, [isExpanded, isPlaying, memory.kind]);
+
+  useEffect(() => {
+    if (memory.kind !== "video" || isExpanded || !previewVideoRef.current) return;
+    const video = previewVideoRef.current;
+    video.muted = true;
+    video.play().catch(() => {});
+  }, [isExpanded, memory.kind, resolvedMediaUrl]);
 
   const ariaLabel = `${kindLabel}: ${title} by ${personName}${dateText ? `, ${dateText}` : ""}`;
 
@@ -158,6 +166,7 @@ export const CorkboardPin = memo(function CorkboardPin({
               <div className="corkboard-pin-video-preview" aria-hidden="true">
                 {resolvedMediaUrl ? (
                   <video
+                    ref={previewVideoRef}
                     src={resolvedMediaUrl}
                     autoPlay
                     loop
@@ -232,6 +241,7 @@ export const CorkboardPin = memo(function CorkboardPin({
                 playsInline
                 muted
                 controls
+                preload="metadata"
                 onEnded={onMediaEnded}
                 onClick={(e) => e.stopPropagation()}
                 onPointerDown={(e) => e.stopPropagation()}

@@ -141,9 +141,9 @@ function expandedCardLayout(containerSize: { w: number; h: number }) {
   const verticalContext = containerSize.h >= 720 ? 180 : 120;
   const targetWidth = Math.max(320, Math.min(960, containerSize.w - sideContext));
   const targetHeight = Math.max(420, containerSize.h - verticalContext);
-  const width = Math.max(520, Math.min(900, targetWidth / 0.95));
-  const minHeight = Math.max(460, Math.min(680, targetHeight / 0.95));
-  const zoom = Math.max(0.55, Math.min(targetWidth / width, targetHeight / minHeight, 1.08));
+  const width = Math.max(520, Math.min(900, targetWidth));
+  const minHeight = Math.max(460, Math.min(680, targetHeight));
+  const zoom = 1;
   return { width, minHeight, zoom };
 }
 
