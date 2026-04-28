@@ -62,6 +62,7 @@ export default function CurationPage() {
   const { treeId } = useParams<{ treeId: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const batchId = searchParams.get("batchId");
   const { data: session, isPending } = useSession();
 
   const [queue, setQueue] = useState<Queue | null>(null);
@@ -91,7 +92,8 @@ export default function CurationPage() {
   const fetchQueue = useCallback(async () => {
     if (!treeId) return;
     try {
-      const res = await fetch(`${API}/api/trees/${treeId}/curation/queue`, {
+      const query = batchId ? `?batchId=${encodeURIComponent(batchId)}` : "";
+      const res = await fetch(`${API}/api/trees/${treeId}/curation/queue${query}`, {
         credentials: "include",
       });
       if (res.ok) {
@@ -104,7 +106,7 @@ export default function CurationPage() {
       setFetchError("Network error — could not load the review queue.");
     }
     setLoading(false);
-  }, [treeId]);
+  }, [batchId, treeId]);
 
   useEffect(() => { fetchQueue(); }, [fetchQueue]);
 
@@ -347,6 +349,23 @@ export default function CurationPage() {
         <p style={subheadStyle}>
           Clean up missing metadata, then shape a person page into a calmer chapter by featuring and ordering direct memories.
         </p>
+
+        {batchId && (
+          <div style={{ ...cardStyle, marginBottom: 24 }}>
+            <p style={{ fontFamily: "var(--font-ui)", fontSize: 14, color: "var(--ink)", margin: "0 0 4px", fontWeight: 500 }}>
+              Reviewing one import
+            </p>
+            <p style={{ fontFamily: "var(--font-body)", fontSize: 14, lineHeight: 1.6, color: "var(--ink-soft)", margin: 0 }}>
+              This queue is filtered to the memories created by the selected collection import.
+            </p>
+            <a
+              href={`/trees/${treeId}/import`}
+              style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--moss)", textDecoration: "underline", marginTop: 10, display: "inline-flex" }}
+            >
+              Back to imports
+            </a>
+          </div>
+        )}
 
         <div style={{ display: "flex", gap: 8, marginBottom: 28, flexWrap: "wrap" }}>
           <button
