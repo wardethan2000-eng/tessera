@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { and, eq, isNull, notExists } from "drizzle-orm";
+import { and, eq, inArray, isNull, notExists } from "drizzle-orm";
 import * as schema from "@tessera/database";
 import { db } from "../lib/db.js";
 import { getSession } from "../lib/session.js";
@@ -56,6 +56,7 @@ export async function curationPlugin(app: FastifyInstance): Promise<void> {
     if (!session) return reply.status(401).send({ error: "Unauthorized" });
 
     const { treeId } = request.params as { treeId: string };
+    const { batchId } = request.query as { batchId?: string };
 
     const membership = await db.query.treeMemberships.findFirst({
       where: (t, { and, eq }) => and(eq(t.treeId, treeId), eq(t.userId, session.user.id)),
@@ -65,7 +66,41 @@ export async function curationPlugin(app: FastifyInstance): Promise<void> {
       return reply.status(403).send({ error: "Not a member of this tree" });
     }
 
-    const baseWhere = eq(schema.memories.treeId, treeId);
+    let batchMemoryIds: string[] | null = null;
+    if (batchId) {
+      const batch = await db.query.importBatches.findFirst({
+        where: (candidate, { and, eq }) =>
+          and(eq(candidate.id, batchId), eq(candidate.treeId, treeId)),
+        columns: { id: true },
+      });
+      if (!batch) return reply.status(404).send({ error: "Import batch not found" });
+
+      const batchItems = await db.query.importBatchItems.findMany({
+        where: (item, { and, eq, isNotNull }) =>
+          and(
+            eq(item.batchId, batchId),
+            eq(item.treeId, treeId),
+            isNotNull(item.memoryId),
+          ),
+        columns: { memoryId: true },
+      });
+      batchMemoryIds = batchItems
+        .map((item) => item.memoryId)
+        .filter((id): id is string => Boolean(id));
+
+      if (batchMemoryIds.length === 0) {
+        return reply.send({
+          needsDate: [],
+          needsPlace: [],
+          needsPeople: [],
+          distinctCount: 0,
+        });
+      }
+    }
+
+    const baseWhere = batchMemoryIds
+      ? and(eq(schema.memories.treeId, treeId), inArray(schema.memories.id, batchMemoryIds))
+      : eq(schema.memories.treeId, treeId);
 
     // Run all three queries in parallel
     const [needsDateRaw, needsPlaceRaw, needsPeopleRaw] = await Promise.all([

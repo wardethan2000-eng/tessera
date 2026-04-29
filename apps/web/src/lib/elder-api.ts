@@ -80,7 +80,18 @@ export async function submitElderMemory(
   token: string,
   input: ElderSubmitInput,
   promptId?: string,
-) {
+): Promise<
+  | {
+      id: string;
+      title?: string | null;
+      kind: string;
+      body?: string | null;
+      createdAt?: string;
+      mediaUrl: string | null;
+      mimeType?: string | null;
+    }
+  | { queued: true }
+> {
   const API = getApiBase();
   const path = promptId
     ? `/api/elder/${encodeURIComponent(token)}/reply/${encodeURIComponent(promptId)}`

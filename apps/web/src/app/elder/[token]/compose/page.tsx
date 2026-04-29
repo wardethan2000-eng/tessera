@@ -1,8 +1,10 @@
 "use client";
 
-import { use, useEffect, useState, type CSSProperties } from "react";
+import { use, useEffect, useMemo, useState, type CSSProperties } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ElderComposer } from "@/components/elder/ElderComposer";
+import { ElderQueuePill } from "@/components/elder/ElderQueuePill";
 
 export default function ElderComposePage({
   params,
@@ -10,7 +12,16 @@ export default function ElderComposePage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = use(params);
+  const searchParams = useSearchParams();
   const [sharedFile, setSharedFile] = useState<File | null>(null);
+  const initialText = useMemo(() => {
+    const parts = [
+      searchParams.get("title"),
+      searchParams.get("text"),
+      searchParams.get("url"),
+    ].filter(Boolean);
+    return parts.join("\n\n") || null;
+  }, [searchParams]);
 
   useEffect(() => {
     // Web Share Target POSTs to this URL with FormData; capture via launch queue
@@ -37,9 +48,10 @@ export default function ElderComposePage({
     <main style={pageStyle}>
       <div style={containerStyle}>
         <Link href={`/elder/${encodeURIComponent(token)}`} style={backLinkStyle}>
-          ← Back
+          Back
         </Link>
-        <ElderComposer token={token} initialFile={sharedFile} />
+        <ElderQueuePill token={token} />
+        <ElderComposer token={token} initialFile={sharedFile} initialBody={initialText} />
       </div>
     </main>
   );
@@ -49,7 +61,7 @@ const pageStyle: CSSProperties = {
   minHeight: "100vh",
   background: "var(--paper)",
   color: "var(--ink)",
-  padding: "24px 16px 80px",
+  padding: "24px 16px calc(80px + env(safe-area-inset-bottom))",
   display: "flex",
   justifyContent: "center",
 };
@@ -61,7 +73,8 @@ const containerStyle: CSSProperties = {
 };
 const backLinkStyle: CSSProperties = {
   fontFamily: "var(--font-ui)",
-  fontSize: 15,
+  fontSize: 18,
   color: "var(--ink-soft)",
   textDecoration: "none",
+  padding: "8px 0",
 };

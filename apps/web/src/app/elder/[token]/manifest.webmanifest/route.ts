@@ -16,9 +16,9 @@ export async function GET(
   }
   const scope = `/elder/${encodeURIComponent(token)}`;
   const manifest = {
-    name: `${familyLabel} · Memories`,
+    name: `${familyLabel} memory button`,
     short_name: familyLabel.slice(0, 24),
-    description: "Share photos, voice notes, and stories for your family archive.",
+    description: "A simple private button for sending photos, voice notes, and stories.",
     start_url: scope,
     scope,
     display: "standalone",
@@ -45,6 +45,14 @@ export async function GET(
         purpose: "maskable",
       },
     ],
+    shortcuts: [
+      {
+        name: "Send a memory",
+        short_name: "Send",
+        url: `${scope}/compose`,
+        icons: [{ src: "/elder-icon-192.png", sizes: "192x192" }],
+      },
+    ],
     share_target: {
       action: `${scope}/compose`,
       method: "POST",
@@ -52,6 +60,7 @@ export async function GET(
       params: {
         title: "title",
         text: "text",
+        url: "url",
         files: [
           {
             name: "media",

@@ -15,6 +15,7 @@ import { promptCampaignsPlugin } from "./routes/prompt-campaigns.js";
 import { elderCapturePlugin } from "./routes/elder-capture.js";
 import { placesPlugin } from "./routes/places.js";
 import { importPlugin } from "./routes/import.js";
+import { importBatchesPlugin } from "./routes/import-batches.js";
 import { curationPlugin } from "./routes/curation.js";
 import { mePlugin } from "./routes/me.js";
 import { driftPlugin } from "./routes/drift.js";
@@ -125,6 +126,7 @@ export function buildApp() {
   app.register(elderCapturePlugin);
   app.register(placesPlugin);
   app.register(importPlugin);
+  app.register(importBatchesPlugin);
   app.register(curationPlugin);
   app.register(mePlugin);
   app.register(driftPlugin);

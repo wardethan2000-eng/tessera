@@ -53,6 +53,9 @@ These are the highest-value gaps relative to the product thesis:
 - There is no ambient surface for TV, frame, or kiosk experiences.
 - Hosted / BYO-storage / self-hosted modes are not yet productized.
 
+See `FEATURE-GAP-IMPLEMENTATION-PLAN.md` for implementation-level detail on
+these gaps, including data model, API, UI, rollout, and risk notes.
+
 ## Cross-Tree Guardrails
 
 The repo now has enough cross-tree groundwork that product boundaries need to

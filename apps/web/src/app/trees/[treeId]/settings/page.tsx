@@ -260,6 +260,8 @@ export default function TreeSettingsPage() {
   }
 
   const isManager = myRole === "founder" || myRole === "steward";
+  const canImportCollections =
+    myRole === "founder" || myRole === "steward" || myRole === "contributor";
   const linkedInvitePeople = people
     .filter((person) => person.isLiving)
     .sort((left, right) => left.displayName.localeCompare(right.displayName));
@@ -488,6 +490,22 @@ export default function TreeSettingsPage() {
           </div>
         </section>
 
+        {/* Collection import */}
+        {canImportCollections && (
+          <section style={{ ...sectionStyle, marginTop: 32 }}>
+            <h2 style={sectionHeadingStyle}>Import a collection</h2>
+            <p style={sectionDescStyle}>
+              Upload a folder-sized set of photos, recordings, videos, or documents and turn them into draft memories for one person.
+              After upload, review the batch to add dates, places, and any missing people.
+            </p>
+            <div style={{ marginTop: 20 }}>
+              <Link href={`/trees/${treeId}/import`} style={primaryLinkStyle}>
+                Start collection import
+              </Link>
+            </div>
+          </section>
+        )}
+
         {/* GEDCOM import — founders and stewards only */}
         {isManager && (
           <section style={{ ...sectionStyle, marginTop: 32 }}>
@@ -643,6 +661,14 @@ const primaryBtnStyle: React.CSSProperties = {
   borderRadius: 6,
   padding: "9px 20px",
   cursor: "pointer",
+};
+
+const primaryLinkStyle: React.CSSProperties = {
+  ...primaryBtnStyle,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  textDecoration: "none",
 };
 
 const rowStyle: React.CSSProperties = {

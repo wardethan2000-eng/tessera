@@ -220,6 +220,8 @@ body {
   background: var(--paper);
   color: var(--ink);
   font-family: var(--font-ui), 'Inter', sans-serif;
+  padding-left: env(safe-area-inset-left, 0);
+  padding-right: env(safe-area-inset-right, 0);
 }
 
 /* ─── Mobile baseline ──────────────────────────────────────────────────── */

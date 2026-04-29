@@ -3,6 +3,7 @@
 import { use, useEffect, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { ElderComposer } from "@/components/elder/ElderComposer";
+import { ElderQueuePill } from "@/components/elder/ElderQueuePill";
 import { fetchInbox, type ElderInbox } from "@/lib/elder-api";
 
 export default function ElderReplyPage({
@@ -39,8 +40,9 @@ export default function ElderReplyPage({
     <main style={pageStyle}>
       <div style={containerStyle}>
         <Link href={`/elder/${encodeURIComponent(token)}`} style={backLinkStyle}>
-          ← Back
+          Back
         </Link>
+        <ElderQueuePill token={token} />
         <ElderComposer
           token={token}
           promptId={promptId}
@@ -56,7 +58,7 @@ const pageStyle: CSSProperties = {
   minHeight: "100vh",
   background: "var(--paper)",
   color: "var(--ink)",
-  padding: "24px 16px 80px",
+  padding: "24px 16px calc(80px + env(safe-area-inset-bottom))",
   display: "flex",
   justifyContent: "center",
 };
@@ -68,9 +70,10 @@ const containerStyle: CSSProperties = {
 };
 const backLinkStyle: CSSProperties = {
   fontFamily: "var(--font-ui)",
-  fontSize: 15,
+  fontSize: 18,
   color: "var(--ink-soft)",
   textDecoration: "none",
+  padding: "8px 0",
 };
 const hintStyle: CSSProperties = {
   margin: 0,

@@ -1,7 +1,7 @@
 // Tessera Elder PWA service worker.
 // Goals: app-shell precache, SWR for inbox, Background Sync queue for submits.
 
-const VERSION = "elder-v1";
+const VERSION = "elder-v2";
 const SHELL_CACHE = `elder-shell-${VERSION}`;
 const RUNTIME_CACHE = `elder-runtime-${VERSION}`;
 
@@ -90,13 +90,23 @@ async function networkFirst(req) {
 
 // --- Background Sync queue ---
 const DB_NAME = "elder-queue";
+const DB_VERSION = 2;
 const STORE = "submissions";
+const CAPTURES_STORE = "captures";
 
 function openDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
-      req.result.createObjectStore(STORE, { keyPath: "id", autoIncrement: true });
+      if (!req.result.objectStoreNames.contains(STORE)) {
+        req.result.createObjectStore(STORE, { keyPath: "id", autoIncrement: true });
+      }
+      if (!req.result.objectStoreNames.contains(CAPTURES_STORE)) {
+        req.result.createObjectStore(CAPTURES_STORE, {
+          keyPath: "id",
+          autoIncrement: true,
+        });
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -163,6 +173,12 @@ async function submitWithBackgroundSync(req) {
 
 self.addEventListener("sync", (event) => {
   if (event.tag === "elder-submit-queue") {
+    event.waitUntil(drainQueue());
+  }
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "DRAIN_ELDER_SUBMIT_QUEUE") {
     event.waitUntil(drainQueue());
   }
 });

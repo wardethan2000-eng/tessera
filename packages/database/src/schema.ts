@@ -601,6 +601,38 @@ export const elderCaptureTokens = pgTable(
   ],
 );
 
+export const importBatches = pgTable(
+  "import_batches",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    treeId: uuid("tree_id")
+      .notNull()
+      .references(() => trees.id, { onDelete: "cascade" }),
+    createdByUserId: text("created_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    label: varchar("label", { length: 200 }).notNull(),
+    sourceKind: varchar("source_kind", { length: 40 })
+      .default("multi_file_upload")
+      .notNull(),
+    status: varchar("status", { length: 40 }).default("uploading").notNull(),
+    totalItems: integer("total_items").default(0).notNull(),
+    processedItems: integer("processed_items").default(0).notNull(),
+    failedItems: integer("failed_items").default(0).notNull(),
+    defaultPersonId: uuid("default_person_id").references(() => people.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("import_batches_tree_idx").on(table.treeId),
+    index("import_batches_created_by_idx").on(table.createdByUserId),
+    index("import_batches_status_idx").on(table.status),
+    index("import_batches_default_person_idx").on(table.defaultPersonId),
+  ],
+);
+
 export const memories = pgTable(
   "memories",
   {
@@ -654,6 +686,44 @@ export const memories = pgTable(
     index("memories_linked_media_item_idx").on(table.linkedMediaProviderItemId),
     index("memories_place_idx").on(table.placeId),
     index("memories_transcript_status_idx").on(table.transcriptStatus),
+  ],
+);
+
+export const importBatchItems = pgTable(
+  "import_batch_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    batchId: uuid("batch_id")
+      .notNull()
+      .references(() => importBatches.id, { onDelete: "cascade" }),
+    treeId: uuid("tree_id")
+      .notNull()
+      .references(() => trees.id, { onDelete: "cascade" }),
+    mediaId: uuid("media_id").references(() => media.id, { onDelete: "set null" }),
+    memoryId: uuid("memory_id").references(() => memories.id, {
+      onDelete: "set null",
+    }),
+    originalFilename: text("original_filename").notNull(),
+    detectedMimeType: varchar("detected_mime_type", { length: 255 }),
+    sizeBytes: bigint("size_bytes", { mode: "number" }),
+    checksum: varchar("checksum", { length: 128 }),
+    capturedAt: timestamp("captured_at", { withTimezone: true }),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    status: varchar("status", { length: 40 }).default("uploaded").notNull(),
+    reviewState: varchar("review_state", { length: 40 })
+      .default("needs_review")
+      .notNull(),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("import_batch_items_batch_idx").on(table.batchId),
+    index("import_batch_items_tree_idx").on(table.treeId),
+    index("import_batch_items_media_idx").on(table.mediaId),
+    index("import_batch_items_memory_idx").on(table.memoryId),
+    index("import_batch_items_status_idx").on(table.status),
+    index("import_batch_items_review_state_idx").on(table.reviewState),
   ],
 );
 
@@ -1045,6 +1115,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   personMergeAudits: many(personMergeAudit),
   memoryPerspectives: many(memoryPerspectives),
   curatedPersonMemories: many(personMemoryCuration),
+  importBatchesCreated: many(importBatches),
   castTokens: many(castTokens),
 }));
 
@@ -1080,6 +1151,8 @@ export const treesRelations = relations(trees, ({ one, many }) => ({
   archiveExports: many(archiveExports),
   prompts: many(prompts),
   promptReplyLinks: many(promptReplyLinks),
+  importBatches: many(importBatches),
+  importBatchItems: many(importBatchItems),
   transcriptionJobs: many(transcriptionJobs),
   memoryPerspectives: many(memoryPerspectives),
   branches: many(branches),
@@ -1114,6 +1187,7 @@ export const mediaRelations = relations(media, ({ one, many }) => ({
   memories: many(memories),
   memoryItems: many(memoryMedia),
   memoryPerspectives: many(memoryPerspectives),
+  importBatchItems: many(importBatchItems),
 }));
 
 export const placesRelations = relations(places, ({ one, many }) => ({
@@ -1171,6 +1245,7 @@ export const peopleRelations = relations(people, ({ one, many }) => ({
   curatedMemories: many(personMemoryCuration),
   invitations: many(invitations),
   promptsReceived: many(prompts),
+  defaultForImportBatches: many(importBatches),
 }));
 
 export const relationshipsRelations = relations(relationships, ({ one, many }) => ({
@@ -1227,6 +1302,7 @@ export const memoriesRelations = relations(memories, ({ one, many }) => ({
   treeVisibility: many(memoryTreeVisibility),
   personSuppressions: many(memoryPersonSuppressions),
   branches: many(memoryBranches),
+  importBatchItems: many(importBatchItems),
 }));
 
 export const promptsRelations = relations(prompts, ({ one, many }) => ({
@@ -1304,6 +1380,38 @@ export const elderCaptureTokensRelations = relations(
     }),
   }),
 );
+
+export const importBatchesRelations = relations(importBatches, ({ one, many }) => ({
+  tree: one(trees, { fields: [importBatches.treeId], references: [trees.id] }),
+  createdBy: one(users, {
+    fields: [importBatches.createdByUserId],
+    references: [users.id],
+  }),
+  defaultPerson: one(people, {
+    fields: [importBatches.defaultPersonId],
+    references: [people.id],
+  }),
+  items: many(importBatchItems),
+}));
+
+export const importBatchItemsRelations = relations(importBatchItems, ({ one }) => ({
+  batch: one(importBatches, {
+    fields: [importBatchItems.batchId],
+    references: [importBatches.id],
+  }),
+  tree: one(trees, {
+    fields: [importBatchItems.treeId],
+    references: [trees.id],
+  }),
+  media: one(media, {
+    fields: [importBatchItems.mediaId],
+    references: [media.id],
+  }),
+  memory: one(memories, {
+    fields: [importBatchItems.memoryId],
+    references: [memories.id],
+  }),
+}));
 
 export const invitationsRelations = relations(invitations, ({ one }) => ({
   tree: one(trees, { fields: [invitations.treeId], references: [trees.id] }),

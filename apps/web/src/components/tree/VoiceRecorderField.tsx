@@ -13,6 +13,7 @@ type VoiceRecorderFieldProps = {
   onChange: (file: File | null) => void;
   disabled?: boolean;
   baseName?: string;
+  large?: boolean;
 };
 
 export function VoiceRecorderField({
@@ -20,6 +21,7 @@ export function VoiceRecorderField({
   onChange,
   disabled = false,
   baseName = "voice-note",
+  large = false,
 }: VoiceRecorderFieldProps) {
   const [supportChecked, setSupportChecked] = useState(false);
   const [supportState, setSupportState] = useState(
@@ -52,11 +54,14 @@ export function VoiceRecorderField({
       isSecureContext: typeof window !== "undefined" ? window.isSecureContext : false,
     });
 
-    setSupportState(nextSupportState);
-    setSupportChecked(true);
-    if (!nextSupportState.supported) {
-      setStage("unsupported");
-    }
+    const id = window.setTimeout(() => {
+      setSupportState(nextSupportState);
+      setSupportChecked(true);
+      if (!nextSupportState.supported) {
+        setStage("unsupported");
+      }
+    }, 0);
+    return () => window.clearTimeout(id);
   }, []);
 
   const stopElapsedTimer = useCallback(() => {
@@ -121,25 +126,28 @@ export function VoiceRecorderField({
   }, [stopElapsedTimer, stopStream]);
 
   useEffect(() => {
-    if (!value) {
-      clearPreviewUrl();
-      if (stage === "recorded") {
-        setStage(supportState.supported ? "idle" : "unsupported");
-        resetElapsedTimer();
+    const id = window.setTimeout(() => {
+      if (!value) {
+        clearPreviewUrl();
+        if (stage === "recorded") {
+          setStage(supportState.supported ? "idle" : "unsupported");
+          resetElapsedTimer();
+        }
+        return;
       }
-      return;
-    }
 
-    setPreviewUrl((current) => {
-      if (current) {
-        URL.revokeObjectURL(current);
+      setPreviewUrl((current) => {
+        if (current) {
+          URL.revokeObjectURL(current);
+        }
+        return URL.createObjectURL(value);
+      });
+
+      if (stage !== "recording" && stage !== "paused") {
+        setStage("recorded");
       }
-      return URL.createObjectURL(value);
-    });
-
-    if (stage !== "recording" && stage !== "paused") {
-      setStage("recorded");
-    }
+    }, 0);
+    return () => window.clearTimeout(id);
   }, [clearPreviewUrl, resetElapsedTimer, stage, supportState.supported, value]);
 
   useEffect(() => {
@@ -263,16 +271,18 @@ export function VoiceRecorderField({
 
   if (!supportChecked) {
     return (
-      <div style={containerStyle}>
-        <p style={supportTextStyle}>Checking microphone support…</p>
+      <div style={large ? largeContainerStyle : containerStyle}>
+        <p style={large ? largeSupportTextStyle : supportTextStyle}>
+          Checking microphone support...
+        </p>
       </div>
     );
   }
 
   if (!supportState.supported) {
     return (
-      <div style={containerStyle}>
-        <p style={supportTextStyle}>
+      <div style={large ? largeContainerStyle : containerStyle}>
+        <p style={large ? largeSupportTextStyle : supportTextStyle}>
           {supportState.reason === "secure_context_required"
             ? "Microphone recording requires HTTPS or localhost. This page is running without a secure browser context, so upload an audio file instead."
             : "This browser does not support in-browser audio recording here. Upload an audio file instead."}
@@ -282,9 +292,9 @@ export function VoiceRecorderField({
   }
 
   return (
-    <div style={containerStyle}>
+    <div style={large ? largeContainerStyle : containerStyle}>
       <div style={statusRowStyle}>
-        <span style={statusLabelStyle}>
+        <span style={large ? largeStatusLabelStyle : statusLabelStyle}>
           {stage === "recording"
             ? "Recording"
             : stage === "paused"
@@ -293,7 +303,7 @@ export function VoiceRecorderField({
             ? "Recording ready"
             : "Ready to record"}
         </span>
-        <span style={durationStyle}>{formattedDuration}</span>
+        <span style={large ? largeDurationStyle : durationStyle}>{formattedDuration}</span>
       </div>
 
       <div style={buttonRowStyle}>
@@ -302,7 +312,7 @@ export function VoiceRecorderField({
             type="button"
             onClick={() => void handleStartRecording()}
             disabled={disabled}
-            style={primaryButtonStyle}
+            style={large ? largePrimaryButtonStyle : primaryButtonStyle}
           >
             {value ? "Record again" : "Start recording"}
           </button>
@@ -314,7 +324,7 @@ export function VoiceRecorderField({
               type="button"
               onClick={handlePauseResume}
               disabled={disabled}
-              style={secondaryButtonStyle}
+              style={large ? largeSecondaryButtonStyle : secondaryButtonStyle}
             >
               {stage === "recording" ? "Pause" : "Resume"}
             </button>
@@ -322,7 +332,7 @@ export function VoiceRecorderField({
               type="button"
               onClick={handleStopRecording}
               disabled={disabled}
-              style={primaryButtonStyle}
+              style={large ? largePrimaryButtonStyle : primaryButtonStyle}
             >
               Stop
             </button>
@@ -331,13 +341,13 @@ export function VoiceRecorderField({
 
         {value && stage !== "recording" && stage !== "paused" && (
           <button
-            type="button"
-            onClick={handleDiscard}
-            disabled={disabled}
-            style={secondaryButtonStyle}
-          >
-            Discard
-          </button>
+          type="button"
+          onClick={handleDiscard}
+          disabled={disabled}
+          style={large ? largeSecondaryButtonStyle : secondaryButtonStyle}
+        >
+          Discard
+        </button>
         )}
       </div>
 
@@ -347,12 +357,11 @@ export function VoiceRecorderField({
         </audio>
       )}
 
-      <p style={helpTextStyle}>
-        Record a voice note in the browser, review it, then save it with the
-        memory. If microphone access fails, upload a file instead.
+      <p style={large ? largeHelpTextStyle : helpTextStyle}>
+        Record a voice note, listen if you want, then tap Send.
       </p>
 
-      {error && <p style={errorTextStyle}>{error}</p>}
+      {error && <p style={large ? largeErrorTextStyle : errorTextStyle}>{error}</p>}
     </div>
   );
 }
@@ -441,4 +450,55 @@ const errorTextStyle: CSSProperties = {
   fontSize: 12,
   color: "#8B2F2F",
   lineHeight: 1.45,
+};
+
+const largeContainerStyle: CSSProperties = {
+  ...containerStyle,
+  borderRadius: 14,
+  padding: "22px 18px",
+  background: "var(--paper)",
+};
+
+const largeStatusLabelStyle: CSSProperties = {
+  ...statusLabelStyle,
+  fontSize: 16,
+  letterSpacing: "0.04em",
+};
+
+const largeDurationStyle: CSSProperties = {
+  ...durationStyle,
+  fontSize: 18,
+  fontWeight: 700,
+};
+
+const largePrimaryButtonStyle: CSSProperties = {
+  ...primaryButtonStyle,
+  borderRadius: 12,
+  padding: "18px 22px",
+  fontSize: 21,
+  fontWeight: 800,
+};
+
+const largeSecondaryButtonStyle: CSSProperties = {
+  ...secondaryButtonStyle,
+  borderRadius: 12,
+  padding: "18px 22px",
+  fontSize: 21,
+  fontWeight: 800,
+};
+
+const largeHelpTextStyle: CSSProperties = {
+  ...helpTextStyle,
+  fontSize: 16,
+  lineHeight: 1.5,
+};
+
+const largeSupportTextStyle: CSSProperties = {
+  ...supportTextStyle,
+  fontSize: 17,
+};
+
+const largeErrorTextStyle: CSSProperties = {
+  ...errorTextStyle,
+  fontSize: 16,
 };
