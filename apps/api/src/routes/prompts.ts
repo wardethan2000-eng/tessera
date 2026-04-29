@@ -830,6 +830,55 @@ export async function promptsPlugin(app: FastifyInstance): Promise<void> {
       mimeType: memory.media?.mimeType ?? null,
     });
   });
+
+  /** POST /api/prompt-replies/:token/skip — mark prompt as skipped by this recipient */
+  app.post("/api/prompt-replies/:token/skip", async (request, reply) => {
+    const { token } = request.params as { token: string };
+    const resolved = await resolveReplyLink(token);
+    if (!resolved.ok) return reply.status(resolved.status).send({ error: resolved.error });
+
+    const link = resolved.link;
+    if (link.status === "used") return reply.status(409).send({ error: "Already replied" });
+
+    await db
+      .update(schema.promptReplyLinks)
+      .set({ status: "skipped", usedAt: new Date() })
+      .where(eq(schema.promptReplyLinks.id, link.id));
+
+    return reply.send({ ok: true });
+  });
+
+  /** POST /api/prompt-replies/:token/suggest — suggest another person for this question */
+  app.post("/api/prompt-replies/:token/suggest", async (request, reply) => {
+    const { token } = request.params as { token: string };
+    const resolved = await resolveReplyLink(token);
+    if (!resolved.ok) return reply.status(resolved.status).send({ error: resolved.error });
+
+    const body = request.body as { suggestedEmail?: string; note?: string };
+    if (!body.suggestedEmail?.trim()) {
+      return reply.status(400).send({ error: "suggestedEmail is required" });
+    }
+
+    const suggestedEmail = body.suggestedEmail.trim().toLowerCase();
+    const existingRecipient = await db.query.promptCampaignRecipients.findFirst({
+      where: (r, { eq }) => eq(r.email, suggestedEmail),
+    });
+
+    if (!existingRecipient) {
+      const campaignQuestion = await db.query.promptCampaignQuestions.findFirst({
+        where: (q, { eq }) => eq(q.sentPromptId, resolved.link.promptId),
+      });
+      if (campaignQuestion) {
+        await db.insert(schema.promptCampaignRecipients).values({
+          campaignId: campaignQuestion.campaignId,
+          email: suggestedEmail,
+          status: "active",
+        });
+      }
+    }
+
+    return reply.send({ ok: true, suggestedEmail });
+  });
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

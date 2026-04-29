@@ -435,6 +435,13 @@ export async function importBatchesPlugin(app: FastifyInstance): Promise<void> {
               mediaIds: item.mediaId ? [item.mediaId] : [],
             });
             await tx
+              .update(schema.memories)
+              .set({
+                sourceBatchId: batchId,
+                sourceFilename: item.originalFilename,
+              })
+              .where(eq(schema.memories.id, createdMemory.id));
+            await tx
               .update(schema.importBatchItems)
               .set({
                 memoryId: createdMemory.id,

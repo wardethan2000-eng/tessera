@@ -116,6 +116,9 @@ function PromptReplyContent() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submittedMemory, setSubmittedMemory] = useState<SubmittedReplyMemory | null>(null);
+  const [showSuggest, setShowSuggest] = useState(false);
+  const [suggestEmail, setSuggestEmail] = useState("");
+  const [suggestSent, setSuggestSent] = useState(false);
 
   // Load reply details
   useEffect(() => {
@@ -314,6 +317,19 @@ function PromptReplyContent() {
   }
 
   if (submitted) {
+    if (!submittedMemory) {
+      return (
+        <main style={pageStyle}>
+          <div style={cardStyle}>
+            <div style={thankYouMarkStyle}>&#10003;</div>
+            <h1 style={headlineStyle}>No problem.</h1>
+            <p style={leadStyle}>
+              That&rsquo;s perfectly fine. Another question will arrive soon.
+            </p>
+          </div>
+        </main>
+      );
+    }
     const transcriptLabel = getVoiceTranscriptLabel(submittedMemory);
     const submittedMemoryMediaUrl = getProxiedMediaUrl(submittedMemory?.mediaUrl);
     return (
@@ -434,9 +450,12 @@ function PromptReplyContent() {
               value={body}
               onChange={(e) => setBody(e.target.value)}
               rows={3}
-              placeholder="Add a note about this photo (optional)…"
+              placeholder="Add a note about this photo — who's in it, when it was taken…"
               style={smallTextAreaStyle}
             />
+            <p style={hintStyle}>
+              Date and caption help the archive. If you recognize people or places in the photo, mention them.
+            </p>
           </div>
         )}
 
@@ -449,10 +468,88 @@ function PromptReplyContent() {
             cursor: submitting ? "wait" : "pointer",
           }}
         >
-          {submitting ? "Sending…" : "Send my reply"}
+          {submitting ? "Sending\u2026" : "Send my reply"}
         </button>
 
         {submitError && <p style={errorStyle}>{submitError}</p>}
+
+        <div style={altActionsRowStyle}>
+          <button
+            type="button"
+            onClick={async () => {
+              if (!token) return;
+              try {
+                const res = await fetch(`${API}/api/prompt-replies/${encodeURIComponent(token)}/skip`, {
+                  method: "POST",
+                  credentials: "include",
+                });
+                if (res.ok) {
+                  setSubmitted(true);
+                  setSubmittedMemory(null);
+                }
+              } catch {}
+            }}
+            style={altBtnStyle}
+          >
+            I don&rsquo;t know the answer
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowSuggest(!showSuggest)}
+            style={altBtnStyle}
+          >
+            Ask someone else
+          </button>
+        </div>
+
+        {showSuggest && (
+          <div style={suggestBlockStyle}>
+            <p style={{ ...hintStyle, margin: "0 0 8px" }}>
+              Enter the email of someone who might know. We&rsquo;ll add them to this campaign.
+            </p>
+            <div style={{ display: "flex", gap: 6 }}>
+              <input
+                type="email"
+                value={suggestEmail}
+                onChange={(e) => setSuggestEmail(e.target.value)}
+                placeholder="their-email@example.com"
+                style={smallInputStyle}
+              />
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!token || !suggestEmail.trim()) return;
+                  try {
+                    const res = await fetch(`${API}/api/prompt-replies/${encodeURIComponent(token)}/suggest`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ suggestedEmail: suggestEmail.trim() }),
+                    });
+                    if (res.ok) {
+                      setSuggestEmail("");
+                      setSuggestSent(true);
+                    }
+                  } catch {}
+                }}
+                disabled={!suggestEmail.trim()}
+                style={{
+                  ...primaryButtonStyle,
+                  padding: "8px 14px",
+                  fontSize: 13,
+                  marginTop: 0,
+                  opacity: suggestEmail.trim() ? 1 : 0.5,
+                }}
+              >
+                Suggest
+              </button>
+            </div>
+            {suggestSent && (
+              <p style={{ ...hintStyle, color: "var(--moss)", margin: "6px 0 0" }}>
+                Thank you &mdash; they may receive future questions.
+              </p>
+            )}
+          </div>
+        )}
 
         <button
           type="button"
@@ -817,4 +914,29 @@ const transcriptMetaStyle: CSSProperties = {
   fontFamily: "var(--font-ui)",
   fontSize: 11,
   color: "var(--ink-faded)",
+};
+
+const altActionsRowStyle: CSSProperties = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+};
+
+const altBtnStyle: CSSProperties = {
+  background: "transparent",
+  border: "1px solid var(--rule)",
+  borderRadius: 8,
+  padding: "10px 14px",
+  color: "var(--ink-soft)",
+  fontFamily: "var(--font-ui)",
+  fontSize: 13,
+  cursor: "pointer",
+};
+
+const suggestBlockStyle: CSSProperties = {
+  borderTop: "1px solid var(--rule)",
+  paddingTop: 14,
+  display: "flex",
+  flexDirection: "column",
+  gap: 8,
 };

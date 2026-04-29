@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
 import { getApiBase } from "@/lib/api-base";
 
@@ -28,6 +28,7 @@ interface Campaign {
   nextSendAt: string;
   lastSentAt: string | null;
   createdAt: string;
+  campaignType?: string;
   toPerson: { id: string; name: string } | null;
   fromUser: { id: string; name: string | null } | null;
   recipients: { id: string; email: string }[];
@@ -35,6 +36,36 @@ interface Campaign {
   sentCount: number;
   totalCount: number;
 }
+
+interface TemplateQuestion {
+  id: string;
+  position: number;
+  questionText: string;
+  theme: string;
+  tier: string;
+  sensitivity: string;
+}
+
+interface CampaignTemplate {
+  id: string;
+  name: string;
+  description: string;
+  campaignType: string;
+  theme: string;
+  defaultCadenceDays: number;
+  sensitivityCeiling: string;
+  questionCount: number;
+  questions: TemplateQuestion[];
+}
+
+const STEPS = [
+  { label: "Type", icon: "1" },
+  { label: "Subject", icon: "2" },
+  { label: "Recipients", icon: "3" },
+  { label: "Cadence", icon: "4" },
+  { label: "Questions", icon: "5" },
+  { label: "Review", icon: "6" },
+];
 
 export default function PromptCampaignsPage() {
   const params = useParams<{ treeId: string }>();
@@ -44,7 +75,7 @@ export default function PromptCampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!treeId) return;
@@ -95,7 +126,7 @@ export default function PromptCampaignsPage() {
             textDecoration: "none",
           }}
         >
-          ← Back to Atrium
+          &larr; Back to Atrium
         </Link>
       </div>
 
@@ -131,13 +162,13 @@ export default function PromptCampaignsPage() {
               lineHeight: 1.5,
             }}
           >
-            A series of questions sent to family members on a cadence (e.g. one a
-            week). Replies are added to the archive automatically.
+            A series of questions sent to family members on a cadence. Replies
+            are added to the archive automatically.
           </p>
         </div>
         <button
           type="button"
-          onClick={() => setShowCreate(true)}
+          onClick={() => setShowWizard(true)}
           style={{
             fontFamily: "var(--font-ui)",
             fontSize: 13,
@@ -154,9 +185,9 @@ export default function PromptCampaignsPage() {
       </header>
 
       {loading ? (
-        <p style={{ fontFamily: "var(--font-ui)", color: "var(--ink-faded)" }}>Loading…</p>
+        <p style={{ fontFamily: "var(--font-ui)", color: "var(--ink-faded)" }}>Loading&hellip;</p>
       ) : campaigns.length === 0 ? (
-        <EmptyState onCreate={() => setShowCreate(true)} />
+        <EmptyState onCreate={() => setShowWizard(true)} />
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {campaigns.map((c) => (
@@ -167,13 +198,13 @@ export default function PromptCampaignsPage() {
 
       <ElderContributorsPanel treeId={treeId} people={people} />
 
-      {showCreate && (
-        <CreateCampaignModal
+      {showWizard && (
+        <GuidedCampaignWizard
           treeId={treeId}
           people={people}
-          onClose={() => setShowCreate(false)}
+          onClose={() => setShowWizard(false)}
           onCreated={() => {
-            setShowCreate(false);
+            setShowWizard(false);
             void refresh();
           }}
         />
@@ -213,9 +244,9 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
           lineHeight: 1.55,
         }}
       >
-        Pick a relative, draft a list of questions, and we'll email one to your
-        chosen family members on the cadence you set. Each question becomes a
-        prompt anyone can reply to.
+        Choose a campaign template, pick a subject, and we&apos;ll walk you
+        through setting everything up. Each question becomes a prompt anyone
+        can reply to.
       </div>
       <button
         type="button"
@@ -246,6 +277,7 @@ function CampaignCard({
   treeId: string;
   onChanged: () => void;
 }) {
+  const router = useRouter();
   const [busy, setBusy] = useState(false);
 
   async function patch(body: Record<string, unknown>) {
@@ -260,7 +292,8 @@ function CampaignCard({
     onChanged();
   }
 
-  async function remove() {
+  async function remove(e?: React.MouseEvent) {
+    e?.stopPropagation();
     if (!confirm(`Delete campaign "${campaign.name}"? This cannot be undone.`)) return;
     setBusy(true);
     await fetch(`${API}/api/trees/${treeId}/prompt-campaigns/${campaign.id}`, {
@@ -271,7 +304,8 @@ function CampaignCard({
     onChanged();
   }
 
-  async function sendTest() {
+  async function sendTest(e?: React.MouseEvent) {
+    e?.stopPropagation();
     if (
       !confirm(
         `Send the next question of "${campaign.name}" right now to all ${campaign.recipients.length} recipient${campaign.recipients.length === 1 ? "" : "s"}? This will advance the schedule.`,
@@ -302,12 +336,21 @@ function CampaignCard({
 
   return (
     <article
+      onClick={() => router.push(`/trees/${treeId}/prompts/campaigns/${campaign.id}`)}
       style={{
         border: "1px solid var(--rule)",
         borderRadius: 10,
         padding: 18,
         background: "var(--paper)",
         opacity: busy ? 0.6 : 1,
+        cursor: "pointer",
+        transition: "box-shadow 0.15s",
+      }}
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLElement).style.boxShadow = "0 2px 12px rgba(0,0,0,0.08)";
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLElement).style.boxShadow = "none";
       }}
     >
       <header
@@ -341,6 +384,22 @@ function CampaignCard({
               {campaign.name}
             </h2>
             <StatusBadge status={campaign.status} />
+            {campaign.campaignType && (
+              <span
+                style={{
+                  fontFamily: "var(--font-ui)",
+                  fontSize: 10,
+                  textTransform: "uppercase",
+                  letterSpacing: 1,
+                  color: "var(--ink-faded)",
+                  background: "var(--paper-deep)",
+                  padding: "2px 8px",
+                  borderRadius: 999,
+                }}
+              >
+                {campaign.campaignType.replace(/_/g, " ")}
+              </span>
+            )}
           </div>
           <div
             style={{
@@ -350,14 +409,17 @@ function CampaignCard({
               lineHeight: 1.55,
             }}
           >
-            For {campaign.toPerson?.name ?? "—"} · every {campaign.cadenceDays} day
-            {campaign.cadenceDays === 1 ? "" : "s"} ·{" "}
-            {campaign.recipients.length} recipient
-            {campaign.recipients.length === 1 ? "" : "s"} ·{" "}
+            For {campaign.toPerson?.name ?? "\u2014"} &middot; every{" "}
+            {campaign.cadenceDays} day{campaign.cadenceDays === 1 ? "" : "s"}{" "}
+            &middot; {campaign.recipients.length} recipient
+            {campaign.recipients.length === 1 ? "" : "s"} &middot;{" "}
             {campaign.sentCount} of {campaign.totalCount} sent
           </div>
         </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <div
+          style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
+          onClick={(e) => e.stopPropagation()}
+        >
           <SmallBtn onClick={sendTest}>Send test now</SmallBtn>
           {campaign.status === "active" && (
             <SmallBtn onClick={() => patch({ status: "paused" })}>Pause</SmallBtn>
@@ -392,7 +454,8 @@ function CampaignCard({
           }}
         >
           {campaign.questions.length} question
-          {campaign.questions.length === 1 ? "" : "s"} · {campaign.recipients.length} recipient
+          {campaign.questions.length === 1 ? "" : "s"} &middot;{" "}
+          {campaign.recipients.length} recipient
           {campaign.recipients.length === 1 ? "" : "s"}
         </summary>
         <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -426,7 +489,7 @@ function CampaignCard({
                 {q.questionText}
                 {q.sentAt && (
                   <span style={{ fontSize: 11, color: "var(--ink-faded)", marginLeft: 8 }}>
-                    · sent {new Date(q.sentAt).toLocaleDateString()}
+                    &middot; sent {new Date(q.sentAt).toLocaleDateString()}
                   </span>
                 )}
               </li>
@@ -469,7 +532,7 @@ function SmallBtn({
   danger,
 }: {
   children: React.ReactNode;
-  onClick: () => void;
+  onClick: (e?: React.MouseEvent) => void;
   danger?: boolean;
 }) {
   return (
@@ -492,7 +555,11 @@ function SmallBtn({
   );
 }
 
-function CreateCampaignModal({
+/* ------------------------------------------------------------------ */
+/*  Guided Campaign Wizard (6-step)                                    */
+/* ------------------------------------------------------------------ */
+
+function GuidedCampaignWizard({
   treeId,
   people,
   onClose,
@@ -503,57 +570,86 @@ function CreateCampaignModal({
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const [name, setName] = useState("");
+  const [step, setStep] = useState(0);
+  const [templates, setTemplates] = useState<CampaignTemplate[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<CampaignTemplate | null>(null);
   const [toPersonId, setToPersonId] = useState(people[0]?.id ?? "");
+  const [recipientText, setRecipientText] = useState("");
   const [cadenceDays, setCadenceDays] = useState(7);
-  const [recipients, setRecipients] = useState("");
-  const [questions, setQuestions] = useState<string[]>([""]);
+  const [startsAt, setStartsAt] = useState("");
+  const [customizations, setCustomizations] = useState<Record<number, string>>({});
+  const [removedPositions, setRemovedPositions] = useState<Set<number>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`${API}/api/prompt-campaign-templates`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((d) => setTemplates((d as { templates: CampaignTemplate[] }).templates))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!toPersonId && people[0]) setToPersonId(people[0].id);
   }, [people, toPersonId]);
 
+  useEffect(() => {
+    if (selectedTemplate) setCadenceDays(selectedTemplate.defaultCadenceDays);
+  }, [selectedTemplate]);
+
   const recipientList = useMemo(
     () =>
-      recipients
+      recipientText
         .split(/[\s,;]+/)
         .map((s) => s.trim())
         .filter(Boolean),
-    [recipients],
+    [recipientText],
   );
-  const filledQuestions = useMemo(
-    () => questions.map((q) => q.trim()).filter(Boolean),
-    [questions],
-  );
-  const canSubmit =
-    Boolean(name.trim()) &&
-    Boolean(toPersonId) &&
-    cadenceDays >= 1 &&
-    recipientList.length > 0 &&
-    filledQuestions.length > 0;
+
+  const activeQuestions = useMemo(() => {
+    if (!selectedTemplate) return [];
+    return selectedTemplate.questions
+      .filter((q) => !removedPositions.has(q.position))
+      .map((q) => ({
+        ...q,
+        questionText: customizations[q.position]?.trim() || q.questionText,
+      }));
+  }, [selectedTemplate, customizations, removedPositions]);
+
+  const canAdvance = useMemo(() => {
+    switch (step) {
+      case 0: return Boolean(selectedTemplate);
+      case 1: return Boolean(toPersonId);
+      case 2: return recipientList.length > 0;
+      case 3: return cadenceDays >= 1;
+      case 4: return activeQuestions.length > 0;
+      case 5: return true;
+      default: return false;
+    }
+  }, [step, selectedTemplate, toPersonId, recipientList.length, cadenceDays, activeQuestions.length]);
 
   async function submit() {
-    if (!canSubmit) return;
+    if (!selectedTemplate || !toPersonId) return;
     setSubmitting(true);
     setErr(null);
     try {
-      const res = await fetch(`${API}/api/trees/${treeId}/prompt-campaigns`, {
+      const res = await fetch(`${API}/api/trees/${treeId}/prompt-campaigns/from-template`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: name.trim(),
+          templateId: selectedTemplate.id,
           toPersonId,
+          name: selectedTemplate.name,
           cadenceDays,
           recipientEmails: recipientList,
-          questions: filledQuestions,
+          startsAt: startsAt || undefined,
+          customizations,
         }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? `Request failed (${res.status})`);
+        throw new Error((data as { error?: string }).error ?? `Request failed (${res.status})`);
       }
       onCreated();
     } catch (e) {
@@ -562,6 +658,18 @@ function CreateCampaignModal({
       setSubmitting(false);
     }
   }
+
+  function goBack() {
+    if (step > 0) setStep(step - 1);
+    else onClose();
+  }
+
+  function goNext() {
+    if (step < 5) setStep(step + 1);
+    else submit();
+  }
+
+  const subjectName = people.find((p) => p.id === toPersonId)?.name ?? "this person";
 
   return (
     <div
@@ -582,175 +690,146 @@ function CreateCampaignModal({
         style={{
           background: "var(--paper)",
           borderRadius: 12,
-          padding: "22px 24px 24px",
-          width: "min(620px, 100%)",
+          width: "min(720px, 100%)",
           maxHeight: "90vh",
-          overflowY: "auto",
+          display: "flex",
+          flexDirection: "column",
           boxShadow: "0 8px 40px rgba(0,0,0,0.25)",
         }}
       >
-        <h2
+        {/* Header with step indicator */}
+        <div
           style={{
-            fontFamily: "var(--font-display)",
-            fontSize: 22,
-            fontWeight: 400,
-            margin: "0 0 4px",
-            color: "var(--ink)",
+            display: "flex",
+            alignItems: "center",
+            gap: 0,
+            padding: "20px 24px 0",
+            borderBottom: "1px solid var(--rule)",
+            paddingBottom: 16,
           }}
         >
-          New prompt campaign
-        </h2>
-        <p
-          style={{
-            fontFamily: "var(--font-ui)",
-            fontSize: 12,
-            color: "var(--ink-faded)",
-            margin: "0 0 18px",
-            lineHeight: 1.5,
-          }}
-        >
-          Each question will be emailed to the recipients on the cadence you set,
-          one at a time. Replies become memories on the chosen person's page.
-        </p>
-
-        <Field label="Campaign name">
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Weekly questions for Grandma"
-            style={inputStyle}
-          />
-        </Field>
-
-        <Field label="Subject (who is this about?)">
-          <select
-            value={toPersonId}
-            onChange={(e) => setToPersonId(e.target.value)}
-            style={inputStyle}
-          >
-            {people.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-
-        <Field label="How often (days between sends)">
-          <input
-            type="number"
-            min={1}
-            max={365}
-            value={cadenceDays}
-            onChange={(e) => setCadenceDays(Math.max(1, Number.parseInt(e.target.value || "1", 10)))}
-            style={{ ...inputStyle, maxWidth: 120 }}
-          />
-          <span
-            style={{
-              fontFamily: "var(--font-ui)",
-              fontSize: 11,
-              color: "var(--ink-faded)",
-              marginLeft: 10,
-            }}
-          >
-            7 = weekly · 14 = biweekly · 30 = monthly
-          </span>
-        </Field>
-
-        <Field
-          label="Recipient emails"
-          hint="Comma- or newline-separated. Each receives every question."
-        >
-          <textarea
-            value={recipients}
-            onChange={(e) => setRecipients(e.target.value)}
-            placeholder="grandma@example.com, aunt@example.com"
-            rows={2}
-            style={{ ...inputStyle, fontFamily: "var(--font-ui)", resize: "vertical" }}
-          />
-        </Field>
-
-        <Field
-          label="Questions"
-          hint="One per send, in order. Add as many as you like."
-        >
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {questions.map((q, i) => (
-              <div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
-                <textarea
-                  value={q}
-                  onChange={(e) => {
-                    const next = [...questions];
-                    next[i] = e.target.value;
-                    setQuestions(next);
-                  }}
-                  rows={2}
-                  placeholder={`Question ${i + 1}`}
+          <div style={{ flex: 1, display: "flex", gap: 4 }}>
+            {STEPS.map((s, i) => (
+              <div
+                key={s.label}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  opacity: i <= step ? 1 : 0.4,
+                  cursor: i < step ? "pointer" : "default",
+                }}
+                onClick={() => { if (i < step) setStep(i); }}
+              >
+                <span
                   style={{
-                    ...inputStyle,
-                    flex: 1,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: 22,
+                    height: 22,
+                    borderRadius: 999,
+                    fontSize: 11,
                     fontFamily: "var(--font-ui)",
-                    resize: "vertical",
+                    fontWeight: 600,
+                    background: i < step ? "var(--moss)" : i === step ? "var(--ink)" : "var(--paper-deep)",
+                    color: i <= step ? "var(--paper)" : "var(--ink-faded)",
                   }}
-                />
-                {questions.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => setQuestions(questions.filter((_, idx) => idx !== i))}
-                    style={{
-                      fontFamily: "var(--font-ui)",
-                      fontSize: 11,
-                      padding: "6px 10px",
-                      border: "1px solid var(--rule)",
-                      background: "var(--paper)",
-                      color: "var(--ink-faded)",
-                      borderRadius: 6,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Remove
-                  </button>
-                )}
+                >
+                  {i < step ? "\u2713" : s.icon}
+                </span>
+                <span
+                  style={{
+                    fontFamily: "var(--font-ui)",
+                    fontSize: 11,
+                    color: i <= step ? "var(--ink)" : "var(--ink-faded)",
+                    display: i === step || i < step ? "inline" : "none",
+                  }}
+                >
+                  {s.label}
+                </span>
               </div>
             ))}
-            <button
-              type="button"
-              onClick={() => setQuestions([...questions, ""])}
+          </div>
+        </div>
+
+        {/* Step content */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "24px" }}>
+          {step === 0 && (
+            <StepChooseType
+              templates={templates}
+              selected={selectedTemplate}
+              onSelect={setSelectedTemplate}
+            />
+          )}
+          {step === 1 && (
+            <StepChooseSubject
+              people={people}
+              selected={toPersonId}
+              onSelect={setToPersonId}
+            />
+          )}
+          {step === 2 && (
+            <StepChooseRecipients
+              value={recipientText}
+              onChange={setRecipientText}
+              count={recipientList.length}
+            />
+          )}
+          {step === 3 && (
+            <StepCadence
+              cadenceDays={cadenceDays}
+              setCadenceDays={setCadenceDays}
+              startsAt={startsAt}
+              setStartsAt={setStartsAt}
+            />
+          )}
+          {step === 4 && selectedTemplate && (
+            <StepCustomizeQuestions
+              template={selectedTemplate}
+              customizations={customizations}
+              setCustomizations={setCustomizations}
+              removedPositions={removedPositions}
+              setRemovedPositions={setRemovedPositions}
+            />
+          )}
+          {step === 5 && selectedTemplate && (
+            <StepReview
+              template={selectedTemplate}
+              subjectName={subjectName}
+              recipientCount={recipientList.length}
+              cadenceDays={cadenceDays}
+              startsAt={startsAt}
+              questions={activeQuestions}
+            />
+          )}
+
+          {err && (
+            <div
               style={{
-                alignSelf: "flex-start",
                 fontFamily: "var(--font-ui)",
                 fontSize: 12,
-                padding: "6px 12px",
-                border: "1px dashed var(--rule)",
-                background: "transparent",
-                color: "var(--ink-soft)",
-                borderRadius: 6,
-                cursor: "pointer",
+                color: "#a23a30",
+                marginTop: 12,
               }}
             >
-              + Add question
-            </button>
-          </div>
-        </Field>
+              {err}
+            </div>
+          )}
+        </div>
 
-        {err && (
-          <div
-            style={{
-              fontFamily: "var(--font-ui)",
-              fontSize: 12,
-              color: "#a23a30",
-              marginBottom: 10,
-            }}
-          >
-            {err}
-          </div>
-        )}
-
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
+        {/* Bottom bar */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            padding: "14px 24px",
+            borderTop: "1px solid var(--rule)",
+          }}
+        >
           <button
             type="button"
-            onClick={onClose}
+            onClick={goBack}
             style={{
               fontFamily: "var(--font-ui)",
               fontSize: 13,
@@ -762,25 +841,29 @@ function CreateCampaignModal({
               cursor: "pointer",
             }}
           >
-            Cancel
+            {step === 0 ? "Cancel" : "Back"}
           </button>
           <button
             type="button"
-            onClick={submit}
-            disabled={!canSubmit || submitting}
+            onClick={goNext}
+            disabled={!canAdvance || submitting}
             style={{
               fontFamily: "var(--font-ui)",
               fontSize: 13,
               padding: "9px 18px",
-              background: canSubmit ? "var(--moss)" : "var(--ink-faded)",
+              background: canAdvance ? "var(--moss)" : "var(--ink-faded)",
               color: "var(--paper)",
               border: "none",
               borderRadius: 6,
-              cursor: canSubmit ? "pointer" : "not-allowed",
+              cursor: canAdvance ? "pointer" : "not-allowed",
               minWidth: 130,
             }}
           >
-            {submitting ? "Creating…" : "Create campaign"}
+            {submitting
+              ? "Creating\u2026"
+              : step === 5
+                ? "Start campaign"
+                : "Continue"}
           </button>
         </div>
       </div>
@@ -788,17 +871,330 @@ function CreateCampaignModal({
   );
 }
 
-function Field({
-  label,
-  hint,
-  children,
+/* ---- Step 1: Choose campaign type ---- */
+
+function StepChooseType({
+  templates,
+  selected,
+  onSelect,
 }: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
+  templates: CampaignTemplate[];
+  selected: CampaignTemplate | null;
+  onSelect: (t: CampaignTemplate) => void;
+}) {
+  if (templates.length === 0) {
+    return (
+      <div style={{ textAlign: "center", padding: "32px 0" }}>
+        <p style={{ fontFamily: "var(--font-ui)", color: "var(--ink-faded)" }}>
+          Loading campaign templates&hellip;
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h2
+        style={{
+          fontFamily: "var(--font-display)",
+          fontSize: 22,
+          fontWeight: 400,
+          margin: "0 0 4px",
+          color: "var(--ink)",
+        }}
+      >
+        What kind of campaign?
+      </h2>
+      <p
+        style={{
+          fontFamily: "var(--font-ui)",
+          fontSize: 13,
+          color: "var(--ink-faded)",
+          margin: "0 0 18px",
+          lineHeight: 1.5,
+        }}
+      >
+        Each template comes with curated questions chosen for their theme and
+        sensitivity. You can customize them in a later step.
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        {templates.map((t) => {
+          const isSelected = selected?.id === t.id;
+          const cadenceLabel =
+            t.defaultCadenceDays === 7
+              ? "Weekly"
+              : t.defaultCadenceDays === 14
+                ? "Biweekly"
+                : t.defaultCadenceDays === 30
+                  ? "Monthly"
+                  : `Every ${t.defaultCadenceDays} days`;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => onSelect(t)}
+              style={{
+                textAlign: "left",
+                padding: 16,
+                border: isSelected ? "2px solid var(--moss)" : "1px solid var(--rule)",
+                borderRadius: 10,
+                background: isSelected ? "rgba(78,93,66,0.06)" : "var(--paper-deep)",
+                cursor: "pointer",
+                transition: "border-color 0.15s",
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontSize: 16,
+                  fontWeight: 500,
+                  color: "var(--ink)",
+                  marginBottom: 4,
+                }}
+              >
+                {t.name}
+              </div>
+              <div
+                style={{
+                  fontFamily: "var(--font-ui)",
+                  fontSize: 12,
+                  color: "var(--ink-soft)",
+                  lineHeight: 1.5,
+                  marginBottom: 8,
+                }}
+              >
+                {t.description}
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <span style={pillStyle}>{t.theme.replace(/_/g, " ")}</span>
+                <span style={pillStyle}>{t.questionCount} questions</span>
+                <span style={pillStyle}>{cadenceLabel}</span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+const pillStyle: React.CSSProperties = {
+  fontFamily: "var(--font-ui)",
+  fontSize: 10,
+  textTransform: "uppercase",
+  letterSpacing: 0.8,
+  background: "var(--paper)",
+  border: "1px solid var(--rule)",
+  padding: "2px 8px",
+  borderRadius: 999,
+  color: "var(--ink-faded)",
+};
+
+/* ---- Step 2: Choose subject ---- */
+
+function StepChooseSubject({
+  people,
+  selected,
+  onSelect,
+}: {
+  people: Person[];
+  selected: string;
+  onSelect: (id: string) => void;
 }) {
   return (
-    <div style={{ marginBottom: 14 }}>
+    <div>
+      <h2
+        style={{
+          fontFamily: "var(--font-display)",
+          fontSize: 22,
+          fontWeight: 400,
+          margin: "0 0 4px",
+          color: "var(--ink)",
+        }}
+      >
+        Who is this about?
+      </h2>
+      <p
+        style={{
+          fontFamily: "var(--font-ui)",
+          fontSize: 13,
+          color: "var(--ink-faded)",
+          margin: "0 0 18px",
+          lineHeight: 1.5,
+        }}
+      >
+        All questions in this campaign will be about this person. Their name
+        will appear in each email.
+      </p>
+      <select
+        value={selected}
+        onChange={(e) => onSelect(e.target.value)}
+        style={{
+          ...inputStyle,
+          maxWidth: 360,
+        }}
+      >
+        {people.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+      </select>
+      {selected && (
+        <p
+          style={{
+            fontFamily: "var(--font-body)",
+            fontSize: 14,
+            color: "var(--ink-soft)",
+            margin: "12px 0 0",
+            fontStyle: "italic",
+          }}
+        >
+          All questions will be about{" "}
+          <strong>{people.find((p) => p.id === selected)?.name ?? "this person"}</strong>.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ---- Step 3: Choose recipients ---- */
+
+function StepChooseRecipients({
+  value,
+  onChange,
+  count,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  count: number;
+}) {
+  return (
+    <div>
+      <h2
+        style={{
+          fontFamily: "var(--font-display)",
+          fontSize: 22,
+          fontWeight: 400,
+          margin: "0 0 4px",
+          color: "var(--ink)",
+        }}
+      >
+        Who will receive the questions?
+      </h2>
+      <p
+        style={{
+          fontFamily: "var(--font-ui)",
+          fontSize: 13,
+          color: "var(--ink-faded)",
+          margin: "0 0 4px",
+          lineHeight: 1.5,
+        }}
+      >
+        Each person will receive every question on the cadence you choose. They
+        can reply without logging in &mdash; we send them a private link.
+      </p>
+      <p
+        style={{
+          fontFamily: "var(--font-ui)",
+          fontSize: 12,
+          color: "var(--ink-faded)",
+          margin: "0 0 14px",
+          lineHeight: 1.4,
+        }}
+      >
+        Enter email addresses, comma- or newline-separated.
+      </p>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="grandma@example.com, aunt@example.com"
+        rows={3}
+        style={{ ...inputStyle, fontFamily: "var(--font-ui)", resize: "vertical" }}
+      />
+      {count > 0 && (
+        <div
+          style={{
+            fontFamily: "var(--font-ui)",
+            fontSize: 12,
+            color: "var(--moss)",
+            marginTop: 6,
+          }}
+        >
+          {count} recipient{count === 1 ? "" : "s"} will receive questions
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---- Step 4: Cadence + start date ---- */
+
+function StepCadence({
+  cadenceDays,
+  setCadenceDays,
+  startsAt,
+  setStartsAt,
+}: {
+  cadenceDays: number;
+  setCadenceDays: (d: number) => void;
+  startsAt: string;
+  setStartsAt: (d: string) => void;
+}) {
+  const presets = [
+    { days: 7, label: "Weekly" },
+    { days: 14, label: "Biweekly" },
+    { days: 30, label: "Monthly" },
+  ];
+
+  return (
+    <div>
+      <h2
+        style={{
+          fontFamily: "var(--font-display)",
+          fontSize: 22,
+          fontWeight: 400,
+          margin: "0 0 4px",
+          color: "var(--ink)",
+        }}
+      >
+        How often should questions arrive?
+      </h2>
+      <p
+        style={{
+          fontFamily: "var(--font-ui)",
+          fontSize: 13,
+          color: "var(--ink-faded)",
+          margin: "0 0 18px",
+          lineHeight: 1.5,
+        }}
+      >
+        A slower cadence gives people more time to think. Weekly is a good
+        default; biweekly or monthly may suit gentle reminiscence better.
+      </p>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        {presets.map((p) => (
+          <button
+            key={p.days}
+            type="button"
+            onClick={() => setCadenceDays(p.days)}
+            style={{
+              fontFamily: "var(--font-ui)",
+              fontSize: 13,
+              padding: "8px 16px",
+              border: cadenceDays === p.days ? "2px solid var(--moss)" : "1px solid var(--rule)",
+              borderRadius: 6,
+              background: cadenceDays === p.days ? "rgba(78,93,66,0.06)" : "var(--paper-deep)",
+              color: cadenceDays === p.days ? "var(--moss)" : "var(--ink-soft)",
+              cursor: "pointer",
+            }}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+
       <label
         style={{
           display: "block",
@@ -808,22 +1204,344 @@ function Field({
           marginBottom: 4,
         }}
       >
-        {label}
+        Or set a custom cadence (days between sends)
       </label>
-      {hint && (
+      <input
+        type="number"
+        min={1}
+        max={365}
+        value={cadenceDays}
+        onChange={(e) => setCadenceDays(Math.max(1, Number.parseInt(e.target.value || "1", 10)))}
+        style={{ ...inputStyle, maxWidth: 120 }}
+      />
+
+      <div style={{ marginTop: 18 }}>
+        <label
+          style={{
+            display: "block",
+            fontFamily: "var(--font-ui)",
+            fontSize: 12,
+            color: "var(--ink-faded)",
+            marginBottom: 4,
+          }}
+        >
+          When should the first question send? (optional, defaults to now)
+        </label>
+        <input
+          type="date"
+          value={startsAt}
+          onChange={(e) => setStartsAt(e.target.value)}
+          style={{ ...inputStyle, maxWidth: 200 }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/* ---- Step 5: Customize questions ---- */
+
+function StepCustomizeQuestions({
+  template,
+  customizations,
+  setCustomizations,
+  removedPositions,
+  setRemovedPositions,
+}: {
+  template: CampaignTemplate;
+  customizations: Record<number, string>;
+  setCustomizations: (c: Record<number, string>) => void;
+  removedPositions: Set<number>;
+  setRemovedPositions: (s: Set<number>) => void;
+}) {
+  const questions = template.questions.filter((q) => !removedPositions.has(q.position));
+  const hasSensitive = questions.some(
+    (q) => q.sensitivity === "careful" || q.sensitivity === "grief_safe",
+  );
+
+  return (
+    <div>
+      <h2
+        style={{
+          fontFamily: "var(--font-display)",
+          fontSize: 22,
+          fontWeight: 400,
+          margin: "0 0 4px",
+          color: "var(--ink)",
+        }}
+      >
+        Review and customize questions
+      </h2>
+      <p
+        style={{
+          fontFamily: "var(--font-ui)",
+          fontSize: 13,
+          color: "var(--ink-faded)",
+          margin: "0 0 14px",
+          lineHeight: 1.5,
+        }}
+      >
+        {template.questionCount} questions from the &ldquo;{template.name}&rdquo;
+        template. Click any question to edit its wording, or remove ones that
+        don&apos;t fit.
+      </p>
+
+      {hasSensitive && (
+        <div
+          style={{
+            fontFamily: "var(--font-ui)",
+            fontSize: 12,
+            color: "#8a6a26",
+            background: "rgba(176,139,62,0.1)",
+            border: "1px solid rgba(176,139,62,0.3)",
+            borderRadius: 6,
+            padding: "8px 12px",
+            marginBottom: 14,
+            lineHeight: 1.5,
+          }}
+        >
+          Some questions may touch on sensitive topics. Consider whether each
+          one is appropriate for your family.
+        </div>
+      )}
+
+      <ol style={{ paddingLeft: 0, margin: 0, display: "flex", flexDirection: "column", gap: 8, listStyle: "none" }}>
+        {questions.map((q, displayIndex) => {
+          const isSensitive = q.sensitivity === "careful" || q.sensitivity === "grief_safe";
+          const currentText = customizations[q.position]?.trim() || q.questionText;
+          const isCustom = customizations[q.position]?.trim() && customizations[q.position] !== q.questionText;
+
+          return (
+            <li key={q.id} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <span
+                style={{
+                  fontFamily: "var(--font-ui)",
+                  fontSize: 11,
+                  color: "var(--ink-faded)",
+                  minWidth: 20,
+                  paddingTop: 9,
+                  textAlign: "right",
+                }}
+              >
+                {displayIndex + 1}.
+              </span>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                  <span style={pillStyle}>{q.theme.replace(/_/g, " ")}</span>
+                  {isSensitive && (
+                    <span
+                      style={{
+                        ...pillStyle,
+                        color: "#8a6a26",
+                        borderColor: "rgba(176,139,62,0.4)",
+                      }}
+                    >
+                      {q.sensitivity === "grief_safe" ? "grief-aware" : "sensitive"}
+                    </span>
+                  )}
+                  {isCustom && (
+                    <span
+                      style={{
+                        ...pillStyle,
+                        color: "var(--moss)",
+                        borderColor: "rgba(78,93,66,0.3)",
+                      }}
+                    >
+                      edited
+                    </span>
+                  )}
+                </div>
+                <textarea
+                  value={customizations[q.position] ?? q.questionText}
+                  onChange={(e) =>
+                    setCustomizations({ ...customizations, [q.position]: e.target.value })
+                  }
+                  rows={2}
+                  style={{
+                    ...inputStyle,
+                    fontFamily: "var(--font-body)",
+                    fontSize: 14,
+                    resize: "vertical",
+                  }}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = new Set(removedPositions);
+                  next.add(q.position);
+                  setRemovedPositions(next);
+                }}
+                title="Remove this question"
+                style={{
+                  fontFamily: "var(--font-ui)",
+                  fontSize: 11,
+                  padding: "6px 10px",
+                  border: "1px solid var(--rule)",
+                  background: "var(--paper)",
+                  color: "var(--ink-faded)",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  marginTop: 20,
+                }}
+              >
+                Remove
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+
+      {removedPositions.size > 0 && (
+        <div
+          style={{
+            marginTop: 10,
+            fontFamily: "var(--font-ui)",
+            fontSize: 12,
+            color: "var(--ink-faded)",
+          }}
+        >
+          {removedPositions.size} question{removedPositions.size === 1 ? "" : "s"} removed
+          {" \u00b7 "}
+          <button
+            type="button"
+            onClick={() => setRemovedPositions(new Set())}
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--moss)",
+              cursor: "pointer",
+              fontFamily: "var(--font-ui)",
+              fontSize: 12,
+              padding: 0,
+            }}
+          >
+            Restore all
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---- Step 6: Review ---- */
+
+function StepReview({
+  template,
+  subjectName,
+  recipientCount,
+  cadenceDays,
+  startsAt,
+  questions,
+}: {
+  template: CampaignTemplate;
+  subjectName: string;
+  recipientCount: number;
+  cadenceDays: number;
+  startsAt: string;
+  questions: Array<{ questionText: string }>;
+}) {
+  const cadenceLabel =
+    cadenceDays === 7
+      ? "weekly"
+      : cadenceDays === 14
+        ? "biweekly"
+        : cadenceDays === 30
+          ? "monthly"
+          : `every ${cadenceDays} days`;
+
+  return (
+    <div>
+      <h2
+        style={{
+          fontFamily: "var(--font-display)",
+          fontSize: 22,
+          fontWeight: 400,
+          margin: "0 0 4px",
+          color: "var(--ink)",
+        }}
+      >
+        Ready to start?
+      </h2>
+      <p
+        style={{
+          fontFamily: "var(--font-body)",
+          fontSize: 15,
+          color: "var(--ink-soft)",
+          margin: "0 0 18px",
+          lineHeight: 1.6,
+        }}
+      >
+        {questions.length} question{questions.length === 1 ? "" : "s"} about{" "}
+        <strong>{subjectName}</strong>, {cadenceLabel}, to{" "}
+        <strong>
+          {recipientCount} recipient{recipientCount === 1 ? "" : "s"}
+        </strong>
+        .
+        {startsAt && ` First question sends on ${new Date(startsAt + "T00:00:00").toLocaleDateString()}.`}
+      </p>
+
+      <div
+        style={{
+          border: "1px solid var(--rule)",
+          borderRadius: 10,
+          padding: 16,
+          background: "var(--paper-deep)",
+          marginBottom: 12,
+        }}
+      >
         <div
           style={{
             fontFamily: "var(--font-ui)",
             fontSize: 11,
+            textTransform: "uppercase",
+            letterSpacing: 1,
             color: "var(--ink-faded)",
-            marginBottom: 6,
-            lineHeight: 1.4,
+            marginBottom: 8,
           }}
         >
-          {hint}
+          Preview (first {Math.min(3, questions.length)} questions)
         </div>
-      )}
-      {children}
+        <ol style={{ paddingLeft: 20, margin: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+          {questions.slice(0, 3).map((q, i) => (
+            <li
+              key={i}
+              style={{
+                fontFamily: "var(--font-body)",
+                fontSize: 14,
+                color: "var(--ink)",
+                lineHeight: 1.5,
+              }}
+            >
+              {q.questionText}
+            </li>
+          ))}
+        </ol>
+        {questions.length > 3 && (
+          <div
+            style={{
+              fontFamily: "var(--font-ui)",
+              fontSize: 12,
+              color: "var(--ink-faded)",
+              marginTop: 8,
+            }}
+          >
+            &hellip; and {questions.length - 3} more
+          </div>
+        )}
+      </div>
+
+      <p
+        style={{
+          fontFamily: "var(--font-ui)",
+          fontSize: 12,
+          color: "var(--ink-faded)",
+          lineHeight: 1.5,
+        }}
+      >
+        Once started, you can pause or modify the campaign at any time. Each
+        recipient gets an email with a private reply link &mdash; no account
+        needed.
+      </p>
     </div>
   );
 }
@@ -840,6 +1558,10 @@ const inputStyle: React.CSSProperties = {
   width: "100%",
   boxSizing: "border-box",
 };
+
+/* ------------------------------------------------------------------ */
+/*  Elder Contributors Panel (unchanged)                                */
+/* ------------------------------------------------------------------ */
 
 interface ElderToken {
   id: string;
@@ -867,7 +1589,7 @@ function elderStatus(t: ElderToken): {
   label: string;
   tone: "muted" | "ok" | "installed";
 } {
-  if (t.lastStandaloneAt) return { label: "Installed ✓", tone: "installed" };
+  if (t.lastStandaloneAt) return { label: "Installed \u2713", tone: "installed" };
   if (t.lastUsedAt) return { label: "Opened", tone: "ok" };
   return { label: "Invited", tone: "muted" };
 }
@@ -961,7 +1683,7 @@ function ElderContributorsPanel({
           >
             Send a relative their own private memory page (PWA). They install it
             once from email and can share photos, voice notes, and stories any
-            time — no login.
+            time &mdash; no login.
           </p>
         </div>
         <button
@@ -1001,7 +1723,7 @@ function ElderContributorsPanel({
       )}
 
       {loading ? (
-        <p style={{ fontFamily: "var(--font-ui)", color: "var(--ink-faded)" }}>Loading…</p>
+        <p style={{ fontFamily: "var(--font-ui)", color: "var(--ink-faded)" }}>Loading&hellip;</p>
       ) : active.length === 0 ? (
         <p style={{ fontFamily: "var(--font-ui)", color: "var(--ink-faded)", margin: 0 }}>
           No contributors yet.
@@ -1057,14 +1779,14 @@ function ElderContributorsPanel({
                   </div>
                   <div style={{ color: "var(--ink-faded)", fontSize: 12 }}>
                     {t.email}
-                    {t.associatedPerson && ` · about ${t.associatedPerson.name}`}
+                    {t.associatedPerson && ` \u00b7 about ${t.associatedPerson.name}`}
                   </div>
                 </div>
                 <div
                   style={{ color: "var(--ink-faded)", fontSize: 12, minWidth: 120 }}
                 >
                   {t.lastUsedAt
-                    ? `Opened ${relativeTime(t.lastUsedAt)}${ua ? ` · ${ua}` : ""}`
+                    ? `Opened ${relativeTime(t.lastUsedAt)}${ua ? ` \u00b7 ${ua}` : ""}`
                     : "Not yet opened"}
                 </div>
                 <button
@@ -1072,7 +1794,7 @@ function ElderContributorsPanel({
                   onClick={async () => {
                     if (
                       !confirm(
-                        `Send a fresh install email to ${t.email}? This rotates their private link — the previous one will stop working.`,
+                        `Send a fresh install email to ${t.email}? This rotates their private link \u2014 the previous one will stop working.`,
                       )
                     )
                       return;
@@ -1259,14 +1981,14 @@ function InviteContributorModal({
           />
         </label>
         <label style={modalLabelStyle}>
-          About which person? <span style={{ color: "#8B2F2F" }}>(required — memories will be tagged to them)</span>
+          About which person? <span style={{ color: "#8B2F2F" }}>(required &mdash; memories will be tagged to them)</span>
           <select
             value={associatedPersonId}
             onChange={(e) => setAssociatedPersonId(e.target.value)}
             style={modalInputStyle}
             required
           >
-            <option value="">— choose a person —</option>
+            <option value="">&mdash; choose a person &mdash;</option>
             {people.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -1298,7 +2020,7 @@ function InviteContributorModal({
             disabled={submitting}
             style={{ ...modalSubmitStyle, opacity: submitting ? 0.6 : 1 }}
           >
-            {submitting ? "Sending…" : "Send invite"}
+            {submitting ? "Sending\u2026" : "Send invite"}
           </button>
         </div>
       </div>

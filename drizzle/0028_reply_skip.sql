@@ -1,0 +1,1 @@
+ALTER TYPE "public"."prompt_reply_link_status" ADD VALUE 'skipped' AFTER 'used';

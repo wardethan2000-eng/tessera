@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
 import { getApiBase } from "@/lib/api-base";
@@ -12,7 +13,18 @@ interface CurationMemory {
   title: string;
   kind: string;
   primaryPersonName: string | null;
+  mediaUrl: string | null;
+  sourceFilename: string | null;
+  dateOfEventText: string | null;
+  placeLabelOverride: string | null;
   createdAt: string;
+}
+
+interface CurationCounts {
+  needsDate: number;
+  needsPlace: number;
+  needsPeople: number;
+  needsReview: number;
 }
 
 interface Queue {
@@ -20,10 +32,12 @@ interface Queue {
   needsPlace: CurationMemory[];
   needsPeople: CurationMemory[];
   distinctCount?: number;
+  counts?: CurationCounts;
 }
 
 type Section = "needsDate" | "needsPlace" | "needsPeople";
 type WorkspaceMode = "cleanup" | "editorial";
+type ViewMode = "list" | "grid";
 
 interface CurationPerson {
   id: string;
@@ -53,8 +67,8 @@ const SECTION_META: Record<Section, { label: string; fieldLabel: string; placeho
   },
   needsPeople: {
     label: "Missing people",
-    fieldLabel: "Who else is in this memory?",
-    placeholder: "Tag people by searching… (coming soon)",
+    fieldLabel: "Who is in this memory?",
+    placeholder: "Search people...",
   },
 };
 
@@ -70,6 +84,7 @@ export default function CurationPage() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<Section>("needsDate");
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("cleanup");
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [people, setPeople] = useState<CurationPerson[]>([]);
   const [selectedPersonId, setSelectedPersonId] = useState("");
   const [editorialMemories, setEditorialMemories] = useState<EditorialMemory[]>([]);
@@ -78,8 +93,15 @@ export default function CurationPage() {
   const [editorialSaving, setEditorialSaving] = useState(false);
   const [editorialSaveError, setEditorialSaveError] = useState<string | null>(null);
   const [editorialSaved, setEditorialSaved] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkPersonId, setBulkPersonId] = useState("");
+  const [bulkValue, setBulkValue] = useState("");
+  const [bulkApplying, setBulkApplying] = useState(false);
+  const [personSearchQuery, setPersonSearchQuery] = useState("");
+  const [personSearchResults, setPersonSearchResults] = useState<CurationPerson[]>([]);
+  const [focusIndex, setFocusIndex] = useState(0);
+  const cardContainerRef = useRef<HTMLDivElement>(null);
 
-  // Per-card inline edit state: memoryId → draft value
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [saved, setSaved] = useState<Record<string, boolean>>({});
@@ -108,7 +130,9 @@ export default function CurationPage() {
     setLoading(false);
   }, [batchId, treeId]);
 
-  useEffect(() => { fetchQueue(); }, [fetchQueue]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchQueue(); }, [fetchQueue]);
 
   const fetchPeople = useCallback(async () => {
     if (!treeId) return;
@@ -180,13 +204,10 @@ export default function CurationPage() {
     }
   }, [selectedPersonId, treeId]);
 
-  useEffect(() => {
-    void fetchPeople();
-  }, [fetchPeople]);
-
-  useEffect(() => {
-    void fetchEditorialMemories();
-  }, [fetchEditorialMemories]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { void fetchPeople(); }, [fetchPeople]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { void fetchEditorialMemories(); }, [fetchEditorialMemories]);
 
   const selectedPersonName = useMemo(
     () => people.find((person) => person.id === selectedPersonId)?.displayName ?? "this person",
@@ -226,9 +247,7 @@ export default function CurationPage() {
       const res = await fetch(`${API}/api/trees/${treeId}/people/${selectedPersonId}/memory-curation`, {
         method: "PATCH",
         credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           items: editorialMemories.map((memory) => ({
             memoryId: memory.id,
@@ -252,7 +271,7 @@ export default function CurationPage() {
   }, [editorialMemories, fetchEditorialMemories, selectedPersonId, treeId]);
 
   async function saveField(memoryId: string, section: Section) {
-    if (section === "needsPeople") return; // People tagging not handled here
+    if (section === "needsPeople") return;
     const value = drafts[memoryId]?.trim();
     if (!value) return;
     setSaving((s) => ({ ...s, [memoryId]: true }));
@@ -273,12 +292,12 @@ export default function CurationPage() {
 
       if (res.ok) {
         setSaved((s) => ({ ...s, [memoryId]: true }));
+        setSelectedIds((prev) => { const next = new Set(prev); next.delete(memoryId); return next; });
         setTimeout(() => {
           setQueue((q) => {
             if (!q) return q;
             return { ...q, [section]: q[section].filter((m) => m.id !== memoryId) };
           });
-          // Clean up stale state for removed card
           setDrafts((d) => { const copy = { ...d }; delete copy[memoryId]; return copy; });
           setSaved((s) => { const copy = { ...s }; delete copy[memoryId]; return copy; });
         }, 800);
@@ -289,7 +308,6 @@ export default function CurationPage() {
     } catch {
       setSaveErrors((s) => ({ ...s, [memoryId]: "Network error" }));
     }
-
     setSaving((s) => ({ ...s, [memoryId]: false }));
   }
 
@@ -298,7 +316,161 @@ export default function CurationPage() {
       if (!q) return q;
       return { ...q, [section]: q[section].filter((m) => m.id !== memoryId) };
     });
+    setSelectedIds((prev) => { const next = new Set(prev); next.delete(memoryId); return next; });
   }
+
+  function toggleSelect(memoryId: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(memoryId)) next.delete(memoryId);
+      else next.add(memoryId);
+      return next;
+    });
+  }
+
+  function selectAll() {
+    const currentItems = queue?.[activeSection] ?? [];
+    setSelectedIds(new Set(currentItems.map((m) => m.id)));
+  }
+
+  function selectNone() {
+    setSelectedIds(new Set());
+  }
+
+  async function applyBulkAction() {
+    if (selectedIds.size === 0) return;
+    setBulkApplying(true);
+    try {
+      const action =
+        activeSection === "needsDate" ? "assignDate"
+        : activeSection === "needsPlace" ? "assignPlace"
+        : "tagPeople";
+
+      const value =
+        activeSection === "needsPeople"
+          ? bulkPersonId
+          : bulkValue;
+
+      const res = await fetch(`${API}/api/trees/${treeId}/curation/bulk`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          memoryIds: [...selectedIds],
+          action,
+          value: value || undefined,
+        }),
+      });
+
+      if (res.ok) {
+        const data = (await res.json()) as { applied: number };
+        setSelectedIds(new Set());
+        setBulkValue("");
+        setBulkPersonId("");
+        void fetchQueue();
+      }
+    } catch {
+      // Best-effort bulk action
+    } finally {
+      setBulkApplying(false);
+    }
+  }
+
+  async function tagPersonOnMemory(memoryId: string, personId: string) {
+    try {
+      const res = await fetch(`${API}/api/trees/${treeId}/memories/${memoryId}/tag-person`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ personId }),
+      });
+
+      if (res.ok) {
+        setSaved((s) => ({ ...s, [memoryId]: true }));
+        setTimeout(() => {
+          setQueue((q) => {
+            if (!q) return q;
+            return { ...q, needsPeople: q.needsPeople.filter((m) => m.id !== memoryId) };
+          });
+          setSaved((s) => { const copy = { ...s }; delete copy[memoryId]; return copy; });
+        }, 800);
+      }
+    } catch {
+      // Best-effort tag
+    }
+  }
+
+  async function searchPeople(query: string) {
+    if (!query.trim()) {
+      setPersonSearchResults([]);
+      return;
+    }
+    try {
+      const res = await fetch(`${API}/api/trees/${treeId}/people`, {
+        credentials: "include",
+      });
+      if (res.ok) {
+        const data = (await res.json()) as CurationPerson[];
+        const lower = query.toLowerCase();
+        setPersonSearchResults(
+          data.filter((p) => p.displayName.toLowerCase().includes(lower)).slice(0, 8),
+        );
+      }
+    } catch {
+      // Best-effort search
+    }
+  }
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void searchPeople(personSearchQuery);
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [personSearchQuery]);
+
+  useEffect(() => {
+    function handleKeyboard(e: KeyboardEvent) {
+      if (workspaceMode !== "cleanup") return;
+      const currentItems = queue?.[activeSection] ?? [];
+      if (currentItems.length === 0) return;
+
+      if (e.key === "ArrowDown" || e.key === "j") {
+        e.preventDefault();
+        setFocusIndex((i) => Math.min(i + 1, currentItems.length - 1));
+      } else if (e.key === "ArrowUp" || e.key === "k") {
+        e.preventDefault();
+        setFocusIndex((i) => Math.max(i - 1, 0));
+      } else if (e.key === "x" || e.key === " ") {
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+        e.preventDefault();
+        const memory = currentItems[focusIndex];
+        if (memory) toggleSelect(memory.id);
+      } else if (e.key === "Enter") {
+        if (e.target instanceof HTMLSelectElement) return;
+        const memory = currentItems[focusIndex];
+        if (memory) {
+          if (activeSection === "needsPeople") {
+            // No-op for people section without a selected person
+          } else if (drafts[memory.id]?.trim()) {
+            saveField(memory.id, activeSection);
+          }
+        }
+      } else if (e.key === "s") {
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+        const memory = currentItems[focusIndex];
+        if (memory) skipCard(memory.id, activeSection);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyboard);
+    return () => window.removeEventListener("keydown", handleKeyboard);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSection, focusIndex, queue, workspaceMode, drafts]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFocusIndex(0);
+  }, [activeSection]);
 
   if (isPending || loading) {
     return (
@@ -334,10 +506,11 @@ export default function CurationPage() {
   const sections: Section[] = ["needsDate", "needsPlace", "needsPeople"];
   const currentItems = queue?.[activeSection] ?? [];
   const meta = SECTION_META[activeSection];
+  const counts = queue?.counts;
 
   return (
     <main style={pageStyle}>
-      <div style={{ maxWidth: 660, width: "100%", margin: "0 auto" }}>
+      <div style={{ maxWidth: 860, width: "100%", margin: "0 auto" }}>
         <button
           onClick={() => router.push(`/trees/${treeId}/home`)}
           style={backBtnStyle}
@@ -345,10 +518,21 @@ export default function CurationPage() {
           ← Back to archive
         </button>
 
-        <h1 style={headingStyle}>Review queue</h1>
-        <p style={subheadStyle}>
-          Clean up missing metadata, then shape a person page into a calmer chapter by featuring and ordering direct memories.
-        </p>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
+          <div>
+            <h1 style={headingStyle}>Review queue</h1>
+            <p style={subheadStyle}>
+              Clean up missing metadata, then shape a person page into a calmer chapter.
+            </p>
+          </div>
+          {counts && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <span style={countPillStyle}>{counts.needsDate} need date</span>
+              <span style={countPillStyle}>{counts.needsPlace} need place</span>
+              <span style={countPillStyle}>{counts.needsPeople} need people</span>
+            </div>
+          )}
+        </div>
 
         {batchId && (
           <div style={{ ...cardStyle, marginBottom: 24 }}>
@@ -358,46 +542,28 @@ export default function CurationPage() {
             <p style={{ fontFamily: "var(--font-body)", fontSize: 14, lineHeight: 1.6, color: "var(--ink-soft)", margin: 0 }}>
               This queue is filtered to the memories created by the selected collection import.
             </p>
-            <a
+            <Link
               href={`/trees/${treeId}/import`}
               style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--moss)", textDecoration: "underline", marginTop: 10, display: "inline-flex" }}
             >
               Back to imports
-            </a>
+            </Link>
           </div>
         )}
 
         <div style={{ display: "flex", gap: 8, marginBottom: 28, flexWrap: "wrap" }}>
           <button
             onClick={() => setWorkspaceMode("cleanup")}
-            style={{
-              fontFamily: "var(--font-ui)",
-              fontSize: 13,
-              padding: "6px 14px",
-              borderRadius: 20,
-              border:
-                workspaceMode === "cleanup" ? "1px solid var(--moss)" : "1px solid var(--rule)",
-              background: workspaceMode === "cleanup" ? "var(--moss)" : "var(--paper)",
-              color: workspaceMode === "cleanup" ? "var(--paper)" : "var(--ink)",
-              cursor: "pointer",
-            }}
+            style={modeBtnStyle(workspaceMode === "cleanup")}
           >
             Cleanup queue
-            {totalCount > 0 && <span style={{ marginLeft: 6, opacity: 0.75 }}>({totalCount})</span>}
+            {counts && counts.needsReview > 0 && (
+              <span style={{ marginLeft: 6, opacity: 0.75 }}>({counts.needsReview})</span>
+            )}
           </button>
           <button
             onClick={() => setWorkspaceMode("editorial")}
-            style={{
-              fontFamily: "var(--font-ui)",
-              fontSize: 13,
-              padding: "6px 14px",
-              borderRadius: 20,
-              border:
-                workspaceMode === "editorial" ? "1px solid var(--moss)" : "1px solid var(--rule)",
-              background: workspaceMode === "editorial" ? "var(--moss)" : "var(--paper)",
-              color: workspaceMode === "editorial" ? "var(--paper)" : "var(--ink)",
-              cursor: "pointer",
-            }}
+            style={modeBtnStyle(workspaceMode === "editorial")}
           >
             Editorial order
           </button>
@@ -406,7 +572,7 @@ export default function CurationPage() {
         {workspaceMode === "cleanup" ? (
           totalCount > 0 ? (
             <>
-              <div style={{ display: "flex", gap: 8, marginBottom: 28, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
                 {sections.map((s) => {
                   const count = queue?.[s].length ?? 0;
                   const isActive = s === activeSection;
@@ -414,23 +580,74 @@ export default function CurationPage() {
                     <button
                       key={s}
                       onClick={() => setActiveSection(s)}
-                      style={{
-                        fontFamily: "var(--font-ui)",
-                        fontSize: 13,
-                        padding: "6px 14px",
-                        borderRadius: 20,
-                        border: isActive ? "1px solid var(--moss)" : "1px solid var(--rule)",
-                        background: isActive ? "var(--moss)" : "var(--paper)",
-                        color: isActive ? "var(--paper)" : count === 0 ? "var(--ink-faded)" : "var(--ink)",
-                        cursor: "pointer",
-                      }}
+                      style={sectionBtnStyle(isActive, count === 0)}
                     >
                       {SECTION_META[s].label}
                       {count > 0 && <span style={{ marginLeft: 6, opacity: 0.75 }}>({count})</span>}
                     </button>
                   );
                 })}
+
+                <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+                  <button
+                    onClick={() => setViewMode("list")}
+                    style={viewToggleStyle(viewMode === "list")}
+                    title="List view"
+                  >
+                    ☰
+                  </button>
+                  <button
+                    onClick={() => setViewMode("grid")}
+                    style={viewToggleStyle(viewMode === "grid")}
+                    title="Grid view"
+                  >
+                    ⊞
+                  </button>
+                </div>
               </div>
+
+              {selectedIds.size > 0 && (
+                <div style={{ ...cardStyle, marginBottom: 16, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--ink-soft)" }}>
+                    {selectedIds.size} selected
+                  </span>
+                  <button onClick={selectAll} style={secondaryBtnStyle}>Select all</button>
+                  <button onClick={selectNone} style={secondaryBtnStyle}>Select none</button>
+
+                  {activeSection === "needsPeople" ? (
+                    <select
+                      value={bulkPersonId}
+                      onChange={(e) => setBulkPersonId(e.target.value)}
+                      style={inputStyle}
+                    >
+                      <option value="">Choose person...</option>
+                      {people.map((p) => (
+                        <option key={p.id} value={p.id}>{p.displayName}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder={meta.placeholder}
+                      value={bulkValue}
+                      onChange={(e) => setBulkValue(e.target.value)}
+                      style={inputStyle}
+                    />
+                  )}
+
+                  <button
+                    onClick={() => void applyBulkAction()}
+                    disabled={bulkApplying}
+                    style={saveBtnStyle}
+                  >
+                    {bulkApplying ? "Applying…" : `Apply to ${selectedIds.size}`}
+                  </button>
+                </div>
+              )}
+
+              <p style={{ fontFamily: "var(--font-ui)", fontSize: 11, color: "var(--ink-faded)", margin: "0 0 8px" }}>
+                j/k: navigate · x: select · Enter: save · s: skip
+              </p>
 
               {currentItems.length === 0 ? (
                 <div style={emptyCardStyle}>
@@ -438,85 +655,223 @@ export default function CurationPage() {
                     All done for this category ✓
                   </p>
                 </div>
+              ) : viewMode === "grid" ? (
+                <div ref={cardContainerRef} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12 }}>
+                  {currentItems.map((memory, index) => {
+                    const isSaved = saved[memory.id];
+                    const isSaving = saving[memory.id];
+                    const isSelected = selectedIds.has(memory.id);
+                    const isFocused = index === focusIndex;
+
+                    return (
+                      <div
+                        key={memory.id}
+                        onClick={() => setFocusIndex(index)}
+                        style={{
+                          ...cardStyle,
+                          padding: 12,
+                          cursor: "pointer",
+                          outline: isFocused ? "2px solid var(--moss)" : isSelected ? "2px solid var(--moss)" : "none",
+                          outlineOffset: -2,
+                          opacity: isSaved ? 0.5 : 1,
+                          transition: "opacity 0.3s",
+                        }}
+                      >
+                        {memory.mediaUrl && (
+                          <div style={{
+                            width: "100%",
+                            aspectRatio: "1",
+                            borderRadius: 6,
+                            overflow: "hidden",
+                            background: "var(--paper)",
+                            marginBottom: 8,
+                          }}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={memory.mediaUrl}
+                              alt={memory.title}
+                              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                            />
+                          </div>
+                        )}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelect(memory.id)}
+                            style={{ cursor: "pointer" }}
+                          />
+                          <span style={{ fontFamily: "var(--font-ui)", fontSize: 10, color: "var(--ink-faded)", textTransform: "uppercase" }}>
+                            {memory.kind}
+                          </span>
+                        </div>
+                        <p style={{
+                          fontFamily: "var(--font-ui)",
+                          fontSize: 12,
+                          fontWeight: 500,
+                          color: "var(--ink)",
+                          margin: "0 0 2px",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap" as const,
+                        }}>
+                          {memory.title}
+                        </p>
+                        <p style={{ fontFamily: "var(--font-ui)", fontSize: 10, color: "var(--ink-faded)", margin: 0 }}>
+                          {memory.primaryPersonName ?? "No person"}
+                        </p>
+                        {isSaved && (
+                          <p style={{ fontFamily: "var(--font-ui)", fontSize: 11, color: "var(--moss)", margin: "4px 0 0" }}>
+                            ✓ Saved
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  {currentItems.map((memory) => {
+                <div ref={cardContainerRef} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {currentItems.map((memory, index) => {
                     const isSaved = saved[memory.id];
                     const isSaving = saving[memory.id];
                     const draft = drafts[memory.id] ?? "";
                     const isPeopleSection = activeSection === "needsPeople";
+                    const isSelected = selectedIds.has(memory.id);
+                    const isFocused = index === focusIndex;
 
                     return (
-                      <div key={memory.id} style={cardStyle}>
-                        <div style={{ marginBottom: 12 }}>
-                          <p style={{ fontFamily: "var(--font-ui)", fontSize: 14, fontWeight: 500, color: "var(--ink)", margin: "0 0 2px" }}>
-                            {memory.title}
-                          </p>
-                          <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", margin: 0 }}>
-                            {memory.kind}
-                            {memory.primaryPersonName && ` · ${memory.primaryPersonName}`}
-                            {` · ${new Date(memory.createdAt).toLocaleDateString()}`}
-                          </p>
-                        </div>
+                      <div
+                        key={memory.id}
+                        style={{
+                          ...cardStyle,
+                          outline: isFocused ? "2px solid var(--moss)" : isSelected ? "1px solid var(--moss)" : "none",
+                          outlineOffset: -1,
+                          opacity: isSaved ? 0.5 : 1,
+                          transition: "opacity 0.3s",
+                        }}
+                      >
+                        <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelect(memory.id)}
+                            style={{ marginTop: 4, cursor: "pointer" }}
+                          />
 
-                        {isSaved ? (
-                          <p style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--moss)", margin: 0 }}>
-                            ✓ Saved
-                          </p>
-                        ) : isPeopleSection ? (
-                          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                            <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", margin: 0, flex: 1 }}>
-                              {meta.fieldLabel}
-                            </p>
-                            <a
-                              href={`/trees/${treeId}/memories/${memory.id}`}
-                              style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--moss)", textDecoration: "underline" }}
-                            >
-                              Open memory →
-                            </a>
-                            <button
-                              onClick={() => skipCard(memory.id, activeSection)}
-                              style={skipBtnStyle}
-                            >
-                              Skip
-                            </button>
-                          </div>
-                        ) : (
-                          <div>
-                            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                              <input
-                                type="text"
-                                placeholder={meta.placeholder}
-                                value={draft}
-                                onChange={(e) =>
-                                  setDrafts((d) => ({ ...d, [memory.id]: e.target.value }))
-                                }
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") saveField(memory.id, activeSection);
-                                }}
-                                style={inputStyle}
+                          {memory.mediaUrl && (
+                            <div style={{
+                              width: 56,
+                              height: 56,
+                              borderRadius: 6,
+                              overflow: "hidden",
+                              background: "var(--paper)",
+                              flexShrink: 0,
+                            }}>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={memory.mediaUrl}
+                                alt={memory.title}
+                                style={{ width: "100%", height: "100%", objectFit: "cover" }}
                               />
-                              <button
-                                onClick={() => saveField(memory.id, activeSection)}
-                                disabled={isSaving || !draft.trim()}
-                                style={saveBtnStyle}
-                              >
-                                {isSaving ? "Saving…" : "Save"}
-                              </button>
-                              <button
-                                onClick={() => skipCard(memory.id, activeSection)}
-                                style={skipBtnStyle}
-                              >
-                                Skip
-                              </button>
                             </div>
-                            {saveErrors[memory.id] && (
-                              <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--rose, #b91c1c)", margin: "6px 0 0" }}>
-                                {saveErrors[memory.id]}
+                          )}
+
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ fontFamily: "var(--font-ui)", fontSize: 14, fontWeight: 500, color: "var(--ink)", margin: "0 0 2px" }}>
+                              {memory.title}
+                            </p>
+                            <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", margin: 0 }}>
+                              {memory.kind}
+                              {memory.primaryPersonName && ` · ${memory.primaryPersonName}`}
+                              {memory.sourceFilename && ` · ${memory.sourceFilename}`}
+                              {` · ${new Date(memory.createdAt).toLocaleDateString()}`}
+                            </p>
+
+                            {isSaved ? (
+                              <p style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--moss)", margin: "8px 0 0" }}>
+                                ✓ Saved
                               </p>
+                            ) : isPeopleSection ? (
+                              <div style={{ marginTop: 8 }}>
+                                <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--ink-faded)", margin: "0 0 6px" }}>
+                                  {meta.fieldLabel}
+                                </p>
+                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                  <input
+                                    type="text"
+                                    placeholder="Search people..."
+                                    value={personSearchQuery}
+                                    onChange={(e) => setPersonSearchQuery(e.target.value)}
+                                    style={inputStyle}
+                                  />
+                                </div>
+                                {personSearchResults.length > 0 && (
+                                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                                    {personSearchResults.map((p) => (
+                                    <button
+                                        key={p.id}
+                                        onClick={() => tagPersonOnMemory(memory.id, p.id)}
+                                        style={chipBtnStyle}
+                                      >
+                                        {p.displayName}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                                <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                                  <Link
+                                    href={`/trees/${treeId}/memories/${memory.id}`}
+                                    style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--moss)", textDecoration: "underline" }}
+                                  >
+                                    Open memory →
+                                  </Link>
+                                  <button
+                                    onClick={() => skipCard(memory.id, activeSection)}
+                                    style={skipBtnStyle}
+                                  >
+                                    Skip
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div style={{ marginTop: 8 }}>
+                                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                                  <input
+                                    type="text"
+                                    placeholder={meta.placeholder}
+                                    value={draft}
+                                    onChange={(e) =>
+                                      setDrafts((d) => ({ ...d, [memory.id]: e.target.value }))
+                                    }
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") saveField(memory.id, activeSection);
+                                    }}
+                                    style={inputStyle}
+                                    autoFocus={isFocused && !isPeopleSection}
+                                  />
+                                  <button
+                                    onClick={() => saveField(memory.id, activeSection)}
+                                    disabled={isSaving || !draft.trim()}
+                                    style={saveBtnStyle}
+                                  >
+                                    {isSaving ? "Saving…" : "Save"}
+                                  </button>
+                                  <button
+                                    onClick={() => skipCard(memory.id, activeSection)}
+                                    style={skipBtnStyle}
+                                  >
+                                    Skip
+                                  </button>
+                                </div>
+                                {saveErrors[memory.id] && (
+                                  <p style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--rose, #b91c1c)", margin: "6px 0 0" }}>
+                                    {saveErrors[memory.id]}
+                                  </p>
+                                )}
+                              </div>
                             )}
                           </div>
-                        )}
+                        </div>
                       </div>
                     );
                   })}
@@ -672,6 +1027,56 @@ export default function CurationPage() {
   );
 }
 
+function modeBtnStyle(active: boolean): React.CSSProperties {
+  return {
+    fontFamily: "var(--font-ui)",
+    fontSize: 13,
+    padding: "6px 14px",
+    borderRadius: 20,
+    border: active ? "1px solid var(--moss)" : "1px solid var(--rule)",
+    background: active ? "var(--moss)" : "var(--paper)",
+    color: active ? "var(--paper)" : "var(--ink)",
+    cursor: "pointer",
+  };
+}
+
+function sectionBtnStyle(active: boolean, empty: boolean): React.CSSProperties {
+  return {
+    fontFamily: "var(--font-ui)",
+    fontSize: 13,
+    padding: "6px 14px",
+    borderRadius: 20,
+    border: active ? "1px solid var(--moss)" : "1px solid var(--rule)",
+    background: active ? "var(--moss)" : "var(--paper)",
+    color: active ? "var(--paper)" : empty ? "var(--ink-faded)" : "var(--ink)",
+    cursor: "pointer",
+  };
+}
+
+function viewToggleStyle(active: boolean): React.CSSProperties {
+  return {
+    fontFamily: "var(--font-ui)",
+    fontSize: 14,
+    padding: "4px 8px",
+    border: active ? "1px solid var(--moss)" : "1px solid var(--rule)",
+    background: active ? "var(--moss)" : "var(--paper)",
+    color: active ? "var(--paper)" : "var(--ink-faded)",
+    borderRadius: 6,
+    cursor: "pointer",
+  };
+}
+
+const chipBtnStyle: React.CSSProperties = {
+  fontFamily: "var(--font-ui)",
+  fontSize: 12,
+  padding: "4px 10px",
+  border: "1px solid var(--moss)",
+  borderRadius: 999,
+  background: "transparent",
+  color: "var(--moss)",
+  cursor: "pointer",
+};
+
 const pageStyle: React.CSSProperties = {
   minHeight: "100vh",
   background: "var(--paper)",
@@ -766,4 +1171,14 @@ const skipBtnStyle: React.CSSProperties = {
   border: "none",
   cursor: "pointer",
   padding: "8px 4px",
+};
+
+const countPillStyle: React.CSSProperties = {
+  fontFamily: "var(--font-ui)",
+  fontSize: 11,
+  color: "var(--ink-soft)",
+  border: "1px solid var(--rule)",
+  borderRadius: 999,
+  padding: "3px 8px",
+  whiteSpace: "nowrap" as const,
 };

@@ -94,6 +94,7 @@ export const transcriptionJobStatusEnum = pgEnum("transcription_job_status", [
 export const promptReplyLinkStatusEnum = pgEnum("prompt_reply_link_status", [
   "pending",
   "used",
+  "skipped",
   "revoked",
   "expired",
 ]);
@@ -128,6 +129,49 @@ export const treeSubscriptionStatusEnum = pgEnum("tree_subscription_status", [
   "grace_period",
   "dormant",
   "cancelled",
+]);
+
+export const promptLibraryThemeEnum = pgEnum("prompt_library_theme", [
+  "warmup",
+  "childhood",
+  "family_home",
+  "work",
+  "service",
+  "courtship",
+  "holidays",
+  "food",
+  "migration",
+  "legacy",
+  "grief_safe",
+]);
+
+export const promptLibraryTierEnum = pgEnum("prompt_library_tier", [
+  "warm_up",
+  "middle",
+  "deep",
+  "legacy",
+]);
+
+export const promptLibrarySensitivityEnum = pgEnum("prompt_library_sensitivity", [
+  "ordinary",
+  "careful",
+  "grief_safe",
+]);
+
+export const promptCampaignTypeEnum = pgEnum("prompt_campaign_type", [
+  "one_relative",
+  "about_person",
+  "photo_identify",
+  "reunion",
+  "anniversary",
+  "place_drive",
+  "theme_based",
+]);
+
+export const recipientStatusEnum = pgEnum("recipient_status", [
+  "active",
+  "bounced",
+  "opted_out",
 ]);
 
 // ── Better Auth core tables ────────────────────────────────────────────────────
@@ -503,6 +547,7 @@ export const promptCampaigns = pgTable(
       .notNull()
       .references(() => people.id, { onDelete: "cascade" }),
     name: varchar("name", { length: 200 }).notNull(),
+    campaignType: promptCampaignTypeEnum("campaign_type").default("about_person"),
     cadenceDays: integer("cadence_days").default(7).notNull(),
     status: promptCampaignStatusEnum("status").default("active").notNull(),
     nextSendAt: timestamp("next_send_at", { withTimezone: true })
@@ -557,12 +602,21 @@ export const promptCampaignRecipients = pgTable(
       .notNull()
       .references(() => promptCampaigns.id, { onDelete: "cascade" }),
     email: varchar("email", { length: 320 }).notNull(),
+    status: recipientStatusEnum("status").default("active").notNull(),
+    lastSentAt: timestamp("last_sent_at", { withTimezone: true }),
+    lastOpenedAt: timestamp("last_opened_at", { withTimezone: true }),
+    repliedCount: integer("replied_count").default(0).notNull(),
+    reminderCount: integer("reminder_count").default(0).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
   },
   (table) => [
     index("prompt_campaign_recipients_campaign_idx").on(table.campaignId),
+    index("prompt_campaign_recipients_status_idx").on(table.status),
   ],
 );
 
@@ -673,6 +727,13 @@ export const memories = pgTable(
       .notNull(),
     transcriptError: text("transcript_error"),
     transcriptUpdatedAt: timestamp("transcript_updated_at", { withTimezone: true }),
+    sourceBatchId: uuid("source_batch_id").references(() => importBatches.id, {
+      onDelete: "set null",
+    }),
+    sourceFilename: text("source_filename"),
+    captureConfidenceJson: jsonb("capture_confidence_json").$type<
+      Record<string, unknown> | null
+    >(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -686,6 +747,7 @@ export const memories = pgTable(
     index("memories_linked_media_item_idx").on(table.linkedMediaProviderItemId),
     index("memories_place_idx").on(table.placeId),
     index("memories_transcript_status_idx").on(table.transcriptStatus),
+    index("memories_source_batch_idx").on(table.sourceBatchId),
   ],
 );
 
@@ -704,6 +766,7 @@ export const importBatchItems = pgTable(
       onDelete: "set null",
     }),
     originalFilename: text("original_filename").notNull(),
+    relativePath: text("relative_path"),
     detectedMimeType: varchar("detected_mime_type", { length: 255 }),
     sizeBytes: bigint("size_bytes", { mode: "number" }),
     checksum: varchar("checksum", { length: 128 }),
@@ -724,6 +787,64 @@ export const importBatchItems = pgTable(
     index("import_batch_items_memory_idx").on(table.memoryId),
     index("import_batch_items_status_idx").on(table.status),
     index("import_batch_items_review_state_idx").on(table.reviewState),
+  ],
+);
+
+export const promptLibraryQuestions = pgTable(
+  "prompt_library_questions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    theme: promptLibraryThemeEnum("theme").notNull(),
+    tier: promptLibraryTierEnum("tier").default("middle").notNull(),
+    questionText: text("question_text").notNull(),
+    sensitivity: promptLibrarySensitivityEnum("sensitivity").default("ordinary").notNull(),
+    recommendedPosition: integer("recommended_position").default(0).notNull(),
+    followUpTags: text("follow_up_tags").array().default([]).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("prompt_library_theme_idx").on(table.theme),
+    index("prompt_library_tier_idx").on(table.tier),
+    index("prompt_library_sensitivity_idx").on(table.sensitivity),
+  ],
+);
+
+export const promptCampaignTemplates = pgTable(
+  "prompt_campaign_templates",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    name: varchar("name", { length: 200 }).notNull(),
+    description: text("description"),
+    campaignType: promptCampaignTypeEnum("campaign_type").default("about_person").notNull(),
+    theme: promptLibraryThemeEnum("theme").default("warmup").notNull(),
+    defaultCadenceDays: integer("default_cadence_days").default(7).notNull(),
+    sensitivityCeiling: promptLibrarySensitivityEnum("sensitivity_ceiling").default("ordinary").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("prompt_campaign_templates_type_idx").on(table.campaignType),
+    index("prompt_campaign_templates_theme_idx").on(table.theme),
+  ],
+);
+
+export const promptCampaignTemplateQuestions = pgTable(
+  "prompt_campaign_template_questions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    templateId: uuid("template_id")
+      .notNull()
+      .references(() => promptCampaignTemplates.id, { onDelete: "cascade" }),
+    libraryQuestionId: uuid("library_question_id")
+      .notNull()
+      .references(() => promptLibraryQuestions.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("prompt_campaign_template_questions_template_idx").on(table.templateId),
+    index("prompt_campaign_template_questions_library_idx").on(table.libraryQuestionId),
+    index("prompt_campaign_template_questions_position_idx").on(table.templateId, table.position),
   ],
 );
 
@@ -1303,6 +1424,10 @@ export const memoriesRelations = relations(memories, ({ one, many }) => ({
   personSuppressions: many(memoryPersonSuppressions),
   branches: many(memoryBranches),
   importBatchItems: many(importBatchItems),
+  sourceBatch: one(importBatches, {
+    fields: [memories.sourceBatchId],
+    references: [importBatches.id],
+  }),
 }));
 
 export const promptsRelations = relations(prompts, ({ one, many }) => ({
@@ -1392,6 +1517,9 @@ export const importBatchesRelations = relations(importBatches, ({ one, many }) =
     references: [people.id],
   }),
   items: many(importBatchItems),
+  sourcedMemories: many(memories, {
+    relationName: "importBatchMemories",
+  }),
 }));
 
 export const importBatchItemsRelations = relations(importBatchItems, ({ one }) => ({
@@ -1606,3 +1734,25 @@ export const personMergeAuditRelations = relations(personMergeAudit, ({ one }) =
     references: [users.id],
   }),
 }));
+
+export const promptLibraryQuestionsRelations = relations(promptLibraryQuestions, ({ many }) => ({
+  templateQuestions: many(promptCampaignTemplateQuestions),
+}));
+
+export const promptCampaignTemplatesRelations = relations(promptCampaignTemplates, ({ many }) => ({
+  questions: many(promptCampaignTemplateQuestions),
+}));
+
+export const promptCampaignTemplateQuestionsRelations = relations(
+  promptCampaignTemplateQuestions,
+  ({ one }) => ({
+    template: one(promptCampaignTemplates, {
+      fields: [promptCampaignTemplateQuestions.templateId],
+      references: [promptCampaignTemplates.id],
+    }),
+    libraryQuestion: one(promptLibraryQuestions, {
+      fields: [promptCampaignTemplateQuestions.libraryQuestionId],
+      references: [promptLibraryQuestions.id],
+    }),
+  }),
+);

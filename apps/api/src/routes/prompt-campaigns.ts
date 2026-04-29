@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
-import { and, eq, lte } from "drizzle-orm";
+import { and, eq, lte, sql } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import { z } from "zod";
 import * as schema from "@tessera/database";
 import { db } from "../lib/db.js";
@@ -329,6 +330,410 @@ export async function promptCampaignsPlugin(app: FastifyInstance): Promise<void>
       sent: result.recipientsSent,
     });
   });
+
+  /** GET /api/prompt-library */
+  app.get("/api/prompt-library", async (request, reply) => {
+    const session = await getSession(request.headers);
+    if (!session) return reply.status(401).send({ error: "Unauthorized" });
+
+    const query = request.query as { theme?: string; tier?: string };
+    const whereParts: SQL[] = [];
+    if (query.theme) {
+      whereParts.push(eq(schema.promptLibraryQuestions.theme, query.theme as typeof schema.promptLibraryThemeEnum.enumValues[number]));
+    }
+    if (query.tier) {
+      whereParts.push(eq(schema.promptLibraryQuestions.tier, query.tier as typeof schema.promptLibraryTierEnum.enumValues[number]));
+    }
+
+    const questions = await db.query.promptLibraryQuestions.findMany({
+      where: whereParts.length > 0 ? and(...whereParts) : undefined,
+      orderBy: (q, { asc }) => [asc(q.theme), asc(q.recommendedPosition)],
+    });
+
+    return reply.send({
+      questions: questions.map((q) => ({
+        id: q.id,
+        theme: q.theme,
+        tier: q.tier,
+        questionText: q.questionText,
+        sensitivity: q.sensitivity,
+        recommendedPosition: q.recommendedPosition,
+        followUpTags: q.followUpTags,
+      })),
+    });
+  });
+
+  /** GET /api/prompt-campaign-templates */
+  app.get("/api/prompt-campaign-templates", async (request, reply) => {
+    const session = await getSession(request.headers);
+    if (!session) return reply.status(401).send({ error: "Unauthorized" });
+
+    const templates = await db.query.promptCampaignTemplates.findMany({
+      with: {
+        questions: {
+          with: {
+            libraryQuestion: true,
+          },
+          orderBy: (tq, { asc }) => [asc(tq.position)],
+        },
+      },
+      orderBy: (t, { asc }) => [asc(t.createdAt)],
+    });
+
+    return reply.send({
+      templates: templates.map((t) => ({
+        id: t.id,
+        name: t.name,
+        description: t.description,
+        campaignType: t.campaignType,
+        theme: t.theme,
+        defaultCadenceDays: t.defaultCadenceDays,
+        sensitivityCeiling: t.sensitivityCeiling,
+        questionCount: t.questions.length,
+        questions: t.questions.map((tq) => ({
+          id: tq.id,
+          position: tq.position,
+          questionText: tq.libraryQuestion.questionText,
+          theme: tq.libraryQuestion.theme,
+          tier: tq.libraryQuestion.tier,
+          sensitivity: tq.libraryQuestion.sensitivity,
+        })),
+      })),
+    });
+  });
+
+  /** POST /api/trees/:treeId/prompt-campaigns/from-template */
+  app.post("/api/trees/:treeId/prompt-campaigns/from-template", async (request, reply) => {
+    const session = await getSession(request.headers);
+    if (!session) return reply.status(401).send({ error: "Unauthorized" });
+
+    const { treeId } = request.params as { treeId: string };
+    const membership = await verifyMembership(treeId, session.user.id);
+    if (!membership) return reply.status(403).send({ error: "Not a member" });
+    if (!canManageCampaigns(membership.role)) {
+      return reply.status(403).send({ error: "Not allowed to create campaigns" });
+    }
+
+    const body = request.body as {
+      templateId?: string;
+      toPersonId?: string;
+      name?: string;
+      cadenceDays?: number;
+      recipientEmails?: string[];
+      startsAt?: string;
+      customizations?: Record<number, string>;
+    };
+
+    if (!body.templateId || !body.toPersonId) {
+      return reply.status(400).send({ error: "templateId and toPersonId are required" });
+    }
+
+    const template = await db.query.promptCampaignTemplates.findFirst({
+      where: (t, { eq }) => eq(t.id, body.templateId!),
+      with: {
+        questions: {
+          with: { libraryQuestion: true },
+          orderBy: (tq, { asc }) => [asc(tq.position)],
+        },
+      },
+    });
+    if (!template) return reply.status(404).send({ error: "Template not found" });
+
+    const person = await db.query.people.findFirst({
+      where: (p, { and, eq }) => and(eq(p.id, body.toPersonId!), eq(p.treeId, treeId)),
+    });
+    if (!person) return reply.status(404).send({ error: "Person not found in this tree" });
+
+    const questions = template.questions.map((tq) => {
+      const custom = body.customizations?.[tq.position];
+      return (custom?.trim() || tq.libraryQuestion.questionText);
+    });
+
+    const recipientEmails = body.recipientEmails ?? [];
+    const dedupedEmails = Array.from(new Set(recipientEmails.map((e) => e.toLowerCase().trim())));
+    const startsAt = body.startsAt ? new Date(body.startsAt) : new Date();
+    const cadence = body.cadenceDays ?? template.defaultCadenceDays;
+
+    const [campaign] = await db
+      .insert(schema.promptCampaigns)
+      .values({
+        treeId,
+        fromUserId: session.user.id,
+        toPersonId: body.toPersonId,
+        name: body.name?.trim() || template.name,
+        campaignType: template.campaignType,
+        cadenceDays: cadence,
+        nextSendAt: startsAt,
+        status: "active",
+      })
+      .returning();
+    if (!campaign) return reply.status(500).send({ error: "Failed to create campaign" });
+
+    if (dedupedEmails.length > 0) {
+      await db.insert(schema.promptCampaignRecipients).values(
+        dedupedEmails.map((email) => ({ campaignId: campaign.id, email })),
+      );
+
+      const tree = await db.query.trees.findFirst({ where: (t, { eq }) => eq(t.id, treeId) });
+      const inviter = await db.query.users.findFirst({ where: (u, { eq }) => eq(u.id, session.user.id) });
+      const inviterName = inviter?.name ?? inviter?.email ?? "A family member";
+      for (const email of dedupedEmails) {
+        const existing = await db.query.elderCaptureTokens.findFirst({
+          where: (t, { and, eq, isNull }) =>
+            and(eq(t.treeId, treeId), eq(t.email, email), isNull(t.revokedAt)),
+        });
+        if (!existing) {
+          const rawToken = randomBytes(32).toString("hex");
+          const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+          await db.insert(schema.elderCaptureTokens).values({
+            treeId, email, tokenHash,
+            associatedPersonId: body.toPersonId,
+            createdByUserId: session.user.id,
+          });
+          if (tree) {
+            void sendElderInstallEmail({ email, rawToken, treeName: tree.name, familyLabel: null, inviterName });
+          }
+        }
+      }
+    }
+
+    await db.insert(schema.promptCampaignQuestions).values(
+      questions.map((questionText, index) => ({
+        campaignId: campaign.id,
+        questionText,
+        position: index,
+      })),
+    );
+
+    return reply.status(201).send({ id: campaign.id, questionCount: questions.length });
+  });
+
+  /** GET /api/trees/:treeId/prompt-campaigns/:id/activity */
+  app.get("/api/trees/:treeId/prompt-campaigns/:id/activity", async (request, reply) => {
+    const session = await getSession(request.headers);
+    if (!session) return reply.status(401).send({ error: "Unauthorized" });
+
+    const { treeId, id } = request.params as { treeId: string; id: string };
+    const membership = await verifyMembership(treeId, session.user.id);
+    if (!membership) return reply.status(403).send({ error: "Not a member" });
+
+    const campaign = await db.query.promptCampaigns.findFirst({
+      where: (c, { and, eq }) => and(eq(c.id, id), eq(c.treeId, treeId)),
+      with: {
+        toPerson: true,
+        fromUser: true,
+        questions: { orderBy: (q, { asc }) => [asc(q.position)] },
+        recipients: true,
+      },
+    });
+    if (!campaign) return reply.status(404).send({ error: "Campaign not found" });
+
+    const sentPromptIds = campaign.questions
+      .filter((q) => q.sentPromptId)
+      .map((q) => q.sentPromptId!);
+
+    const recentReplies: Array<{ promptId: string; questionText: string; memoryId: string; memoryTitle: string; createdAt: string }> = [];
+    if (sentPromptIds.length > 0) {
+      const replyMemories = await db.query.memories.findMany({
+        where: (m, { and, eq, inArray }) =>
+          and(eq(m.treeId, treeId), inArray(m.promptId, sentPromptIds)),
+        columns: { id: true, title: true, promptId: true, createdAt: true },
+        orderBy: (m, { desc }) => [desc(m.createdAt)],
+        limit: 10,
+      });
+      const promptMap = new Map<string, string>();
+      for (const q of campaign.questions) {
+        if (q.sentPromptId) promptMap.set(q.sentPromptId, q.questionText);
+      }
+      for (const mem of replyMemories) {
+        if (mem.promptId) {
+          recentReplies.push({
+            promptId: mem.promptId,
+            questionText: promptMap.get(mem.promptId) ?? "",
+            memoryId: mem.id,
+            memoryTitle: mem.title,
+            createdAt: mem.createdAt.toISOString(),
+          });
+        }
+      }
+    }
+
+    const totalRecipients = campaign.recipients.length;
+    const activeRecipients = campaign.recipients.filter((r) => r.status === "active").length;
+    const totalReplies = campaign.recipients.reduce((sum, r) => sum + r.repliedCount, 0);
+
+    return reply.send({
+      id: campaign.id,
+      name: campaign.name,
+      status: campaign.status,
+      campaignType: campaign.campaignType,
+      cadenceDays: campaign.cadenceDays,
+      nextSendAt: campaign.nextSendAt,
+      lastSentAt: campaign.lastSentAt,
+      toPerson: campaign.toPerson ? { id: campaign.toPerson.id, name: campaign.toPerson.displayName } : null,
+      fromUser: campaign.fromUser ? { id: campaign.fromUser.id, name: campaign.fromUser.name ?? "A tree member" } : null,
+      questions: campaign.questions.map((q) => ({
+        id: q.id,
+        questionText: q.questionText,
+        position: q.position,
+        sentAt: q.sentAt,
+        sentPromptId: q.sentPromptId,
+      })),
+      sentCount: campaign.questions.filter((q) => q.sentAt !== null).length,
+      totalCount: campaign.questions.length,
+      recipients: campaign.recipients.map((r) => ({
+        id: r.id,
+        email: r.email,
+        status: r.status,
+        lastSentAt: r.lastSentAt,
+        lastOpenedAt: r.lastOpenedAt,
+        repliedCount: r.repliedCount,
+        reminderCount: r.reminderCount,
+      })),
+      recipientSummary: {
+        total: totalRecipients,
+        active: activeRecipients,
+        bounced: campaign.recipients.filter((r) => r.status === "bounced").length,
+        optedOut: campaign.recipients.filter((r) => r.status === "opted_out").length,
+        totalReplies,
+      },
+      recentReplies,
+    });
+  });
+
+  /** POST /api/trees/:treeId/prompt-campaigns/:id/reminders */
+  app.post("/api/trees/:treeId/prompt-campaigns/:id/reminders", async (request, reply) => {
+    const session = await getSession(request.headers);
+    if (!session) return reply.status(401).send({ error: "Unauthorized" });
+
+    const { treeId, id } = request.params as { treeId: string; id: string };
+    const membership = await verifyMembership(treeId, session.user.id);
+    if (!membership) return reply.status(403).send({ error: "Not a member" });
+    if (!canManageCampaigns(membership.role)) return reply.status(403).send({ error: "Not allowed" });
+
+    const campaign = await db.query.promptCampaigns.findFirst({
+      where: (c, { and, eq }) => and(eq(c.id, id), eq(c.treeId, treeId)),
+      with: {
+        toPerson: true,
+        fromUser: true,
+        questions: { orderBy: (q, { asc }) => [asc(q.position)] },
+        recipients: true,
+      },
+    });
+    if (!campaign) return reply.status(404).send({ error: "Campaign not found" });
+    if (campaign.status !== "active") return reply.status(400).send({ error: "Campaign is not active" });
+
+    const lastQuestion = campaign.questions
+      .filter((q) => q.sentAt !== null)
+      .sort((a, b) => (b.position ?? 0) - (a.position ?? 0))[0];
+    if (!lastQuestion || !lastQuestion.sentPromptId) {
+      return reply.status(400).send({ error: "No sent question to remind about" });
+    }
+
+    const fromName = campaign.fromUser?.name ?? campaign.fromUser?.email ?? "A family member";
+    const personName = campaign.toPerson?.displayName ?? "your family member";
+    let sent = 0;
+
+    for (const recipient of campaign.recipients.filter((r) => r.status === "active")) {
+      if (!(await mayEmailUser(recipient.email, "promptsEmail"))) continue;
+
+      const prompt = await db.query.prompts.findFirst({
+        where: (p, { and, eq }) => and(eq(p.id, lastQuestion.sentPromptId!), eq(p.treeId, treeId)),
+      });
+      if (!prompt || prompt.status !== "pending") continue;
+
+      const rawToken = randomBytes(32).toString("hex");
+      const tokenHash = hashToken(rawToken);
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      const replyUrl = `${WEB_URL}/prompts/reply?token=${encodeURIComponent(rawToken)}`;
+
+      await db.insert(schema.promptReplyLinks).values({
+        treeId,
+        promptId: prompt.id,
+        email: recipient.email,
+        tokenHash,
+        status: "pending",
+        createdByUserId: session.user.id,
+        expiresAt,
+      });
+
+      try {
+        await mailer.sendMail({
+          from: MAIL_FROM,
+          to: recipient.email,
+          subject: `A gentle reminder — ${campaign.name}`,
+          html: `
+            <div style="font-family: Georgia, serif; max-width: 560px; margin: 0 auto; padding: 32px 20px; color: #1C1915; background: #F6F1E7;">
+              <h1 style="font-size: 22px; font-weight: 400; margin: 0 0 14px;">Still thinking?</h1>
+              <p style="font-size: 15px; line-height: 1.7; color: #403A2E; margin: 0 0 12px;">
+                No rush — just a friendly nudge. ${escapeHtml(fromName)} is still gathering memories about <strong>${escapeHtml(personName)}</strong>.
+              </p>
+              <blockquote style="margin: 0 0 20px; padding: 14px 16px; border-left: 3px solid #B08B3E; background: #EDE6D6; color: #1C1915;">
+                ${escapeHtml(lastQuestion.questionText)}
+              </blockquote>
+              <p style="margin: 0 0 24px;">
+                <a href="${replyUrl}"
+                   style="background: #4E5D42; color: #F6F1E7; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-size: 15px; display: inline-block;">
+                  Share a story or voice note
+                </a>
+              </p>
+              <p style="font-size: 12px; color: #847A66; line-height: 1.6;">
+                This link expires in 7 days. You can reply or skip — another question will arrive soon.
+              </p>
+            </div>
+          `,
+          text: `A gentle reminder: "${lastQuestion.questionText}"\n\nReply: ${replyUrl}\n\nThis link expires in 7 days.`,
+        });
+        sent += 1;
+      } catch (err) {
+        request.log.error({ err, email: recipient.email }, "Reminder send failed");
+      }
+
+      await db
+        .update(schema.promptCampaignRecipients)
+        .set({
+          reminderCount: sql`${schema.promptCampaignRecipients.reminderCount} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.promptCampaignRecipients.id, recipient.id));
+    }
+
+    return reply.send({ sent, totalRecipients: campaign.recipients.length });
+  });
+
+  /** POST /api/trees/:treeId/prompts/:promptId/follow-ups */
+  app.post("/api/trees/:treeId/prompts/:promptId/follow-ups", async (request, reply) => {
+    const session = await getSession(request.headers);
+    if (!session) return reply.status(401).send({ error: "Unauthorized" });
+
+    const { treeId, promptId } = request.params as { treeId: string; promptId: string };
+    const membership = await verifyMembership(treeId, session.user.id);
+    if (!membership) return reply.status(403).send({ error: "Not a member" });
+    if (!canManageCampaigns(membership.role)) return reply.status(403).send({ error: "Not allowed" });
+
+    const body = request.body as { questionText?: string };
+    if (!body.questionText?.trim()) {
+      return reply.status(400).send({ error: "questionText is required" });
+    }
+
+    const originalPrompt = await db.query.prompts.findFirst({
+      where: (p, { and, eq }) => and(eq(p.id, promptId), eq(p.treeId, treeId)),
+    });
+    if (!originalPrompt) return reply.status(404).send({ error: "Prompt not found" });
+
+    const [followUp] = await db
+      .insert(schema.prompts)
+      .values({
+        treeId,
+        fromUserId: session.user.id,
+        toPersonId: originalPrompt.toPersonId,
+        questionText: body.questionText.trim(),
+        status: "pending",
+      })
+      .returning();
+
+    return reply.status(201).send({ id: followUp?.id ?? null, questionText: body.questionText });
+  });
 }
 
 type CampaignRow = typeof schema.promptCampaigns.$inferSelect;
@@ -485,6 +890,10 @@ async function processCampaignOnce(
         text: `${fromName} asked: "${nextQuestion.questionText}"\n\nReply: ${replyUrl}\n\nThis private link expires in 14 days.`,
       });
       sentCount += 1;
+      await db
+        .update(schema.promptCampaignRecipients)
+        .set({ lastSentAt: new Date(), updatedAt: new Date() })
+        .where(eq(schema.promptCampaignRecipients.id, recipient.id));
     } catch (err) {
       log.error(
         { err, campaignId: campaign.id, email },
