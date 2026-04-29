@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getProxiedMediaUrl, handleMediaError } from "@/lib/media-url";
 
@@ -540,7 +541,7 @@ export function SearchOverlay({ treeId, people, memories, open, onClose }: Searc
           )}
         </div>
 
-        {/* Footer hint */}
+        {/* See all results + Footer hint */}
         <div
           style={{
             borderTop: "1px solid var(--rule)",
@@ -548,38 +549,56 @@ export function SearchOverlay({ treeId, people, memories, open, onClose }: Searc
             display: "flex",
             gap: 16,
             alignItems: "center",
+            justifyContent: "space-between",
           }}
         >
-          {[
-            { key: "↑↓", hint: "navigate" },
-            { key: "↵", hint: "open" },
-            { key: "Esc", hint: "close" },
-          ].map(({ key, hint }) => (
-            <div
-              key={key}
+          {q && (
+            <Link
+              href={`/trees/${treeId}/search?q=${encodeURIComponent(query.trim())}`}
+              onClick={() => onClose()}
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 4,
                 fontFamily: "var(--font-ui)",
-                fontSize: 11,
-                color: "var(--ink-faded)",
+                fontSize: 13,
+                color: "var(--moss)",
+                textDecoration: "none",
               }}
             >
-              <span
+              See all results →
+            </Link>
+          )}
+          {!q && <span />}
+          <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+            {[
+              { key: "↑↓", hint: "navigate" },
+              { key: "↵", hint: "open" },
+              { key: "Esc", hint: "close" },
+            ].map(({ key, hint }) => (
+              <div
+                key={key}
                 style={{
-                  background: "var(--paper-deep)",
-                  border: "1px solid var(--rule)",
-                  borderRadius: 3,
-                  padding: "2px 5px",
-                  fontSize: 10,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  fontFamily: "var(--font-ui)",
+                  fontSize: 11,
+                  color: "var(--ink-faded)",
                 }}
               >
-                {key}
-              </span>
-              {hint}
-            </div>
-          ))}
+                <span
+                  style={{
+                    background: "var(--paper-deep)",
+                    border: "1px solid var(--rule)",
+                    borderRadius: 3,
+                    padding: "2px 5px",
+                    fontSize: 10,
+                  }}
+                >
+                  {key}
+                </span>
+                {hint}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

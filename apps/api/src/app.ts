@@ -21,6 +21,7 @@ import { mePlugin } from "./routes/me.js";
 import { driftPlugin } from "./routes/drift.js";
 import { castTokenPlugin } from "./routes/cast-token.js";
 import { branchesPlugin } from "./routes/branches.js";
+import { searchPlugin } from "./routes/search.js";
 
 export function buildApp() {
   const trustedOriginsEnv = process.env.TRUSTED_ORIGINS;
@@ -132,6 +133,7 @@ export function buildApp() {
   app.register(driftPlugin);
   app.register(castTokenPlugin);
   app.register(branchesPlugin);
+  app.register(searchPlugin);
 
   return app;
 }

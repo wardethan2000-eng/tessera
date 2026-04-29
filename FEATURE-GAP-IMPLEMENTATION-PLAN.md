@@ -817,20 +817,31 @@ insufficient or when the user chooses "See all results".
 
 Milestone 1:
 
-- API-backed text search,
-- result snippets,
-- direct memory routing.
+- [x] API-backed text search (`GET /api/trees/:treeId/search`)
+- [x] PostgreSQL tsvector + pg_trgm hybrid search
+- [x] search_vector generated columns on memories, people, places
+- [x] GIN indexes for FTS and trigram matching
+- [x] result snippets with ts_headline highlighting
+- [x] direct memory routing
+- [x] search page at `/trees/:treeId/search`
+- [x] SearchOverlay "See all results" link to discovery page
+- [x] visibility enforcement via getViewableMemoryIdsForTree
+- [x] person, memory, and place search with tab filtering
+- [x] trigram fallback for fuzzy/partial name matching
 
 Milestone 2:
 
-- filters and facets,
-- transcript-aware ranking,
-- contributor/place/year filters.
+- [x] filters (person, memory kind, year range, place, has transcript, has media)
+- [x] facet endpoint (`GET /api/trees/:treeId/search/facets`)
+- [x] transcript-aware ranking (0.05 boost for completed transcripts)
+- [x] contributor/place/year filters
+- [x] filter panel UI with toggle buttons
+- [x] active filter chip bar with clear-all
 
 Milestone 3:
 
-- saved discovery views,
-- "least seen" and "recently enriched" discovery rails.
+- [ ] saved discovery views,
+- [ ] "least seen" and "recently enriched" discovery rails.
 
 ### Risks
 

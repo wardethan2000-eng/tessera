@@ -13,8 +13,15 @@ import {
   uniqueIndex,
   uuid,
   varchar,
+  customType,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
+
+const tsvector = customType<{ data: string; driverData: string }>({
+  dataType() {
+    return "tsvector";
+  },
+});
 
 // ── Enums ──────────────────────────────────────────────────────────────────────
 
@@ -370,6 +377,7 @@ export const places = pgTable(
     }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    searchVector: tsvector("search_vector"),
   },
   (table) => [
     uniqueIndex("places_tree_normalized_label_unique_idx").on(
@@ -378,6 +386,7 @@ export const places = pgTable(
     ),
     index("places_tree_idx").on(table.treeId),
     index("places_created_by_idx").on(table.createdByUserId),
+    index("places_search_gin_idx").on(table.searchVector),
   ],
 );
 
@@ -416,6 +425,7 @@ export const people = pgTable(
     }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    searchVector: tsvector("search_vector"),
   },
   (table) => [
     index("people_tree_idx").on(table.treeId),
@@ -424,6 +434,7 @@ export const people = pgTable(
     index("people_portrait_media_idx").on(table.portraitMediaId),
     index("people_birth_place_idx").on(table.birthPlaceId),
     index("people_death_place_idx").on(table.deathPlaceId),
+    index("people_search_gin_idx").on(table.searchVector),
   ],
 );
 
@@ -736,6 +747,7 @@ export const memories = pgTable(
     >(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    searchVector: tsvector("search_vector"),
   },
   (table) => [
     index("memories_tree_idx").on(table.treeId),
@@ -748,6 +760,7 @@ export const memories = pgTable(
     index("memories_place_idx").on(table.placeId),
     index("memories_transcript_status_idx").on(table.transcriptStatus),
     index("memories_source_batch_idx").on(table.sourceBatchId),
+    index("memories_search_gin_idx").on(table.searchVector),
   ],
 );
 
